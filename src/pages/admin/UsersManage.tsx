@@ -16,6 +16,7 @@ import {
 import { resetPasswordSchema } from "@/lib/schemas";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
+import { fetchAll } from "@/lib/fetchAll";
 
 type Profile = {
   user_id: string;
@@ -49,17 +50,18 @@ const UsersManage = () => {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: roles }, { data: profiles }, appsRes] = await Promise.all([
-      supabase.from("user_roles").select("user_id").eq("role", role),
-      supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone"),
+    const [roles, profiles, apps] = await Promise.all([
+      fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", role)),
+      fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone")),
       role === "student"
-        ? supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit")
-        : Promise.resolve({ data: [] as any[] }),
+        ? fetchAll<{ student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }>(
+            supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit"))
+        : Promise.resolve([] as { student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }[]),
     ]);
-    const ids = new Set((roles ?? []).map((r) => r.user_id));
-    setRows((profiles ?? []).filter((p) => ids.has(p.user_id)));
+    const ids = new Set(roles.map((r) => r.user_id));
+    setRows(profiles.filter((p) => ids.has(p.user_id)));
     const m = new Map<string, { total: number; count: number }>();
-    ((appsRes as any).data ?? []).forEach((a: any) => {
+    apps.forEach((a) => {
       if (!["approved", "auto_approved"].includes(a.status)) return;
       const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
       const cur = m.get(a.student_id) ?? { total: 0, count: 0 };

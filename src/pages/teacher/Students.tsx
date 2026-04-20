@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { fetchAll } from "@/lib/fetchAll";
 
 type Profile = {
   user_id: string;
@@ -35,13 +36,13 @@ const Students = () => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [{ data: roleRows }, { data: profileRows }] = await Promise.all([
-        supabase.from("user_roles").select("user_id").eq("role", "student"),
-        supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email"),
+      const [roleRows, profileRows] = await Promise.all([
+        fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", "student")),
+        fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email")),
       ]);
-      const ids = new Set((roleRows ?? []).map((r) => r.user_id));
+      const ids = new Set(roleRows.map((r) => r.user_id));
       setStudentIds(ids);
-      setRows((profileRows ?? []).filter((p) => ids.has(p.user_id)));
+      setRows(profileRows.filter((p) => ids.has(p.user_id)));
       setLoading(false);
     })();
   }, []);

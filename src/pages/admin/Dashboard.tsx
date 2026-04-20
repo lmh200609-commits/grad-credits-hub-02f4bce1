@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { Link } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
+import { fetchAll } from "@/lib/fetchAll";
 
 type App = Pick<
   Database["public"]["Tables"]["applications"]["Row"],
@@ -31,20 +32,20 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     (async () => {
-      const [{ data: a }, { data: roles }, { count: rc }, { data: profiles }] = await Promise.all([
-        supabase.from("applications").select("id, status, submitted_at, final_credit, ai_suggested_credit, student_id"),
-        supabase.from("user_roles").select("user_id, role"),
+      const [a, roles, { count: rc }, profiles] = await Promise.all([
+        fetchAll<App>(supabase.from("applications").select("id, status, submitted_at, final_credit, ai_suggested_credit, student_id")),
+        fetchAll<{ user_id: string; role: string }>(supabase.from("user_roles").select("user_id, role")),
         supabase.from("rules").select("id", { count: "exact", head: true }).eq("active", true),
-        supabase.from("profiles").select("user_id, department"),
+        fetchAll<{ user_id: string; department: string | null }>(supabase.from("profiles").select("user_id, department")),
       ]);
-      setApps(a ?? []);
-      setStudentCount((roles ?? []).filter((r) => r.role === "student").length);
-      setTeacherCount((roles ?? []).filter((r) => r.role === "teacher").length);
+      setApps(a);
+      setStudentCount(roles.filter((r) => r.role === "student").length);
+      setTeacherCount(roles.filter((r) => r.role === "teacher").length);
       setRuleCount(rc ?? 0);
 
-      const studentIds = new Set((roles ?? []).filter((r) => r.role === "student").map((r) => r.user_id));
+      const studentIds = new Set(roles.filter((r) => r.role === "student").map((r) => r.user_id));
       const deptMap = new Map<string, number>();
-      (profiles ?? []).filter((p) => studentIds.has(p.user_id)).forEach((p) => {
+      profiles.filter((p) => studentIds.has(p.user_id)).forEach((p) => {
         const k = p.department ?? "未填写";
         deptMap.set(k, (deptMap.get(k) ?? 0) + 1);
       });
