@@ -35,6 +35,7 @@ const Students = () => {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState<string>(ALL);
   const [major, setMajor] = useState<string>(ALL);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -70,6 +71,9 @@ const Students = () => {
         .some((v) => v!.toLowerCase().includes(q));
     });
   }, [rows, search, dept, major]);
+
+  useEffect(() => { setPage(0); }, [search, dept, major]);
+  const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   return (
     <AppLayout>
