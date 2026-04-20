@@ -1,7 +1,8 @@
-// Dev-only seed: creates 5 fixed test accounts (idempotent).
-// Accounts: 2024001 白雪/student, 2024002 李明/student, 2024003 王芳/student,
-//           T001 张老师/teacher, A001 系统管理员二号/admin
-// Password for all: Test1234
+// Dev-only seed:
+//  - Default mode: creates 5 fixed test accounts (idempotent). Password: Test1234.
+//  - Perf mode (POST { mode: "perf", students?: 2000, applications?: 5000, cases?: 500 }):
+//      bulk-create perf-test data marked with department='__perftest__' / cases.notes='__perftest__'.
+//  - Cleanup mode (POST { mode: "cleanup_perf" }): removes all perf-test data and auth users.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -27,6 +28,17 @@ const SEEDS: Seed[] = [
 ];
 
 const PASSWORD = "Test1234";
+const PERF_PASSWORD = "PerfTest1234";
+const PERF_MARK = "__perftest__";
+const CONCURRENCY = 20;
+
+const STATUSES = ["pending_ai", "auto_approved", "pending_review", "rejected_by_ai", "approved", "rejected"] as const;
+const MAJORS = ["软件工程", "计算机科学", "英语", "电子商务", "机械设计", "金融学", "市场营销", "法学"];
+const CLASSES = ["软工2401", "软工2402", "计科2401", "英语2401", "商务2401", "机设2401", "金融2401", "法学2401"];
+const COMP_NAMES = ["全国大学生英语竞赛", "蓝桥杯", "数学建模", "创新创业大赛", "机器人大赛", "电子商务三创赛"];
+const ACHIEVES = ["英语竞赛", "蓝桥杯", "数模", "创新创业", "机器人", "三创赛"];
+const LEVELS = ["国家级一等奖", "国家级二等奖", "省级一等奖", "省级二等奖", "校级一等奖", "校级二等奖"];
+const IDENTS = ["第一作者", "第一参与人", "主持人", "参与人"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -36,6 +48,26 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    // Parse mode
+    let mode = "default";
+    let perfStudents = 2000, perfApps = 5000, perfCases = 500;
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        if (body?.mode) mode = body.mode;
+        if (typeof body?.students === "number") perfStudents = body.students;
+        if (typeof body?.applications === "number") perfApps = body.applications;
+        if (typeof body?.cases === "number") perfCases = body.cases;
+      } catch { /* no body */ }
+    }
+
+    if (mode === "perf") {
+      return await runPerfSeed(admin, perfStudents, perfApps, perfCases);
+    }
+    if (mode === "cleanup_perf") {
+      return await runCleanup(admin);
+    }
 
     const results: { email: string; status: string }[] = [];
 
@@ -102,3 +134,156 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runPerfSeed(admin: any, nStudents: number, nApps: number, nCases: number) {
+  const t0 = Date.now();
+  // 1) Create N auth users in parallel batches
+  const userIds: string[] = [];
+  const failures: string[] = [];
+
+  // Find existing perf students to skip recreation (idempotent-ish)
+  const { data: existing } = await admin
+    .from("profiles").select("user_id, student_no")
+    .eq("department", PERF_MARK).limit(nStudents);
+  const existingNos = new Set<string>((existing ?? []).map((p: { student_no: string }) => p.student_no));
+  (existing ?? []).forEach((p: { user_id: string }) => userIds.push(p.user_id));
+
+  const toCreate: number[] = [];
+  for (let i = 1; i <= nStudents; i++) {
+    const no = "PT" + String(i).padStart(5, "0");
+    if (!existingNos.has(no)) toCreate.push(i);
+  }
+
+  for (let i = 0; i < toCreate.length; i += CONCURRENCY) {
+    const batch = toCreate.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map((idx) => createPerfStudent(admin, idx)),
+    );
+    settled.forEach((r, j) => {
+      if (r.status === "fulfilled") userIds.push(r.value);
+      else failures.push(`student #${batch[j]}: ${String(r.reason).slice(0, 80)}`);
+    });
+  }
+
+  // 2) Bulk insert applications (chunked)
+  if (userIds.length === 0) {
+    return json({ error: "no perf students available", failures }, 500);
+  }
+  const appRows: Record<string, unknown>[] = [];
+  for (let i = 1; i <= nApps; i++) {
+    const stuId = userIds[(i - 1) % userIds.length];
+    const st = STATUSES[i % STATUSES.length];
+    const isApproved = st === "auto_approved" || st === "approved";
+    const hasAi = st === "auto_approved" || st === "rejected_by_ai";
+    appRows.push({
+      student_id: stuId,
+      description: `性能测试申请 #${i}：参加${COMP_NAMES[i % COMP_NAMES.length]}获奖`,
+      selected_keywords: ["学科竞赛", LEVELS[i % LEVELS.length], IDENTS[i % IDENTS.length]],
+      custom_keywords: [],
+      status: st,
+      ai_suggested_credit: isApproved ? 1.5 : null,
+      ai_confidence: hasAi ? 0.9 : null,
+      final_credit: isApproved ? 1.5 : null,
+      submitted_at: new Date(Date.now() - i * 60_000).toISOString(),
+    });
+  }
+  const APP_CHUNK = 500;
+  let appsInserted = 0;
+  for (let i = 0; i < appRows.length; i += APP_CHUNK) {
+    const slice = appRows.slice(i, i + APP_CHUNK);
+    const { error } = await admin.from("applications").insert(slice);
+    if (error) { failures.push(`apps batch ${i}: ${error.message}`); }
+    else appsInserted += slice.length;
+  }
+
+  // 3) Bulk insert cases
+  const caseRows: Record<string, unknown>[] = [];
+  for (let i = 1; i <= nCases; i++) {
+    caseRows.push({
+      title: `测试案例 #${String(i).padStart(3, "0")}：${COMP_NAMES[i % COMP_NAMES.length]}`,
+      summary: `项目=学科竞赛；成果=${ACHIEVES[i % ACHIEVES.length]}；级别=${LEVELS[i % LEVELS.length]}；身份=${IDENTS[i % IDENTS.length]}`,
+      awarded_credit: [0.5, 1.0, 1.5, 2.0, 3.0][i % 5],
+      notes: PERF_MARK,
+    });
+  }
+  let casesInserted = 0;
+  for (let i = 0; i < caseRows.length; i += APP_CHUNK) {
+    const slice = caseRows.slice(i, i + APP_CHUNK);
+    const { error } = await admin.from("cases").insert(slice);
+    if (error) { failures.push(`cases batch ${i}: ${error.message}`); }
+    else casesInserted += slice.length;
+  }
+
+  return json({
+    success: true,
+    elapsed_sec: ((Date.now() - t0) / 1000).toFixed(1),
+    students_total: userIds.length,
+    students_created_now: toCreate.length - failures.filter((f) => f.startsWith("student")).length,
+    applications_inserted: appsInserted,
+    cases_inserted: casesInserted,
+    failures: failures.slice(0, 10),
+    failure_count: failures.length,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function createPerfStudent(admin: any, idx: number): Promise<string> {
+  const no = "PT" + String(idx).padStart(5, "0");
+  const email = `${no.toLowerCase()}@perftest.local`;
+  const { data: u, error } = await admin.auth.admin.createUser({
+    email,
+    password: PERF_PASSWORD,
+    email_confirm: true,
+    user_metadata: { full_name: `测试学生${String(idx).padStart(4, "0")}`, student_no: no },
+  });
+  if (error || !u?.user) throw new Error(error?.message ?? "create failed");
+  const userId = u.user.id;
+  await admin.from("profiles").update({
+    full_name: `测试学生${String(idx).padStart(4, "0")}`,
+    student_no: no,
+    department: PERF_MARK,
+    major: MAJORS[idx % MAJORS.length],
+    class_name: CLASSES[idx % CLASSES.length],
+    email,
+  }).eq("user_id", userId);
+  await admin.from("user_roles").insert({ user_id: userId, role: "student" });
+  return userId;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runCleanup(admin: any) {
+  const t0 = Date.now();
+  const { data: profs } = await admin
+    .from("profiles").select("user_id").eq("department", PERF_MARK).limit(10000);
+  const ids: string[] = (profs ?? []).map((p: { user_id: string }) => p.user_id);
+
+  // Delete applications first
+  if (ids.length) {
+    await admin.from("applications").delete().in("student_id", ids);
+  }
+  // Delete cases
+  await admin.from("cases").delete().eq("notes", PERF_MARK);
+  // Delete auth users (cascades roles + profile via fk)
+  let deleted = 0;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map((id) => admin.auth.admin.deleteUser(id)),
+    );
+    settled.forEach((r) => { if (r.status === "fulfilled") deleted++; });
+  }
+  return json({
+    success: true,
+    elapsed_sec: ((Date.now() - t0) / 1000).toFixed(1),
+    auth_users_deleted: deleted,
+    perf_profiles_targeted: ids.length,
+  });
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
