@@ -14,6 +14,182 @@ export type Database = {
   }
   public: {
     Tables: {
+      application_reviews: {
+        Row: {
+          action: Database["public"]["Enums"]["review_action"]
+          application_id: string
+          confidence: number | null
+          created_at: string
+          credit: number | null
+          decision: Database["public"]["Enums"]["application_status"]
+          id: string
+          matched_rule_id: string | null
+          note: string | null
+          reviewer_id: string | null
+        }
+        Insert: {
+          action: Database["public"]["Enums"]["review_action"]
+          application_id: string
+          confidence?: number | null
+          created_at?: string
+          credit?: number | null
+          decision: Database["public"]["Enums"]["application_status"]
+          id?: string
+          matched_rule_id?: string | null
+          note?: string | null
+          reviewer_id?: string | null
+        }
+        Update: {
+          action?: Database["public"]["Enums"]["review_action"]
+          application_id?: string
+          confidence?: number | null
+          created_at?: string
+          credit?: number | null
+          decision?: Database["public"]["Enums"]["application_status"]
+          id?: string
+          matched_rule_id?: string | null
+          note?: string | null
+          reviewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_reviews_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_reviews_matched_rule_id_fkey"
+            columns: ["matched_rule_id"]
+            isOneToOne: false
+            referencedRelation: "rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      applications: {
+        Row: {
+          ai_confidence: number | null
+          ai_matched_rule_id: string | null
+          ai_reasoning: string | null
+          ai_suggested_credit: number | null
+          created_at: string
+          description: string
+          file_path: string | null
+          final_credit: number | null
+          final_review_note: string | null
+          final_reviewer_id: string | null
+          id: string
+          project_id: string
+          reviewed_at: string | null
+          selected_keywords: string[]
+          status: Database["public"]["Enums"]["application_status"]
+          student_id: string
+          submitted_at: string
+          updated_at: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_matched_rule_id?: string | null
+          ai_reasoning?: string | null
+          ai_suggested_credit?: number | null
+          created_at?: string
+          description: string
+          file_path?: string | null
+          final_credit?: number | null
+          final_review_note?: string | null
+          final_reviewer_id?: string | null
+          id?: string
+          project_id: string
+          reviewed_at?: string | null
+          selected_keywords?: string[]
+          status?: Database["public"]["Enums"]["application_status"]
+          student_id: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_matched_rule_id?: string | null
+          ai_reasoning?: string | null
+          ai_suggested_credit?: number | null
+          created_at?: string
+          description?: string
+          file_path?: string | null
+          final_credit?: number | null
+          final_review_note?: string | null
+          final_reviewer_id?: string | null
+          id?: string
+          project_id?: string
+          reviewed_at?: string | null
+          selected_keywords?: string[]
+          status?: Database["public"]["Enums"]["application_status"]
+          student_id?: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "applications_ai_matched_rule_id_fkey"
+            columns: ["ai_matched_rule_id"]
+            isOneToOne: false
+            referencedRelation: "rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "applications_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cases: {
+        Row: {
+          awarded_credit: number | null
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          rule_id: string | null
+          summary: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          awarded_credit?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          rule_id?: string | null
+          summary: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          awarded_credit?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          rule_id?: string | null
+          summary?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cases_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           class_name: string | null
@@ -56,6 +232,113 @@ export type Database = {
         }
         Relationships: []
       }
+      project_collaborators: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_collaborators_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string
+          description: string | null
+          ends_at: string | null
+          id: string
+          name: string
+          rule_ids: string[]
+          starts_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by: string
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          name: string
+          rule_ids?: string[]
+          starts_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          name?: string
+          rule_ids?: string[]
+          starts_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rules: {
+        Row: {
+          active: boolean
+          category: string | null
+          created_at: string
+          created_by: string | null
+          credit: number
+          description: string | null
+          id: string
+          keywords: string[]
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          credit?: number
+          description?: string | null
+          id?: string
+          keywords?: string[]
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          credit?: number
+          description?: string | null
+          id?: string
+          keywords?: string[]
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -89,9 +372,21 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_project_reviewer: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "teacher" | "student"
+      application_status:
+        | "pending_ai"
+        | "auto_approved"
+        | "pending_review"
+        | "rejected_by_ai"
+        | "approved"
+        | "rejected"
+      review_action: "ai_evaluation" | "teacher_review" | "admin_review"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -220,6 +515,15 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "teacher", "student"],
+      application_status: [
+        "pending_ai",
+        "auto_approved",
+        "pending_review",
+        "rejected_by_ai",
+        "approved",
+        "rejected",
+      ],
+      review_action: ["ai_evaluation", "teacher_review", "admin_review"],
     },
   },
 } as const
