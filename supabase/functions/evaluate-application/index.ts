@@ -104,8 +104,6 @@ reasoning 必须用中文，结构：「材料一致性：…；图片相关性�
 
 如果"参考案例"中存在与本次申请关键词高度相似且已被人工通过的案例，可作为放宽判断的依据：当四项核验只是模糊不确定（非明显造假）时，倾向于 approve 或 review，而不是直接 reject。`;
 
-如果"参考案例"中存在与本次申请关键词高度相似且已被人工通过的案例，可作为放宽判断的依据：当四项核验只是模糊不确定（非明显造假）时，倾向于 approve 或 review，而不是直接 reject。`;
-
     const userPayload = {
       student: {
         name: studentProfile?.full_name ?? "未知",
