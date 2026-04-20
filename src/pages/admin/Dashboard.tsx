@@ -18,7 +18,9 @@ const APPROVED: App["status"][] = ["approved", "auto_approved"];
 const REJECTED: App["status"][] = ["rejected", "rejected_by_ai"];
 const PENDING: App["status"][] = ["pending_ai", "pending_review"];
 
-const COLORS = ["hsl(var(--primary))", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#06b6d4"];
+// 高对比度多彩配色
+const COLORS = ["#10b981", "#ef4444", "#f59e0b", "#3b82f6", "#a855f7", "#06b6d4"];
+const DEPT_COLORS = ["#6366f1", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#0ea5e9", "#84cc16", "#f43f5e"];
 
 const AdminDashboard = () => {
   const [apps, setApps] = useState<App[]>([]);
@@ -80,11 +82,12 @@ const AdminDashboard = () => {
   }, [apps]);
 
   const statusPie = useMemo(() => [
-    { name: "AI 已通过", value: apps.filter((a) => a.status === "auto_approved").length },
-    { name: "AI 拒绝", value: apps.filter((a) => a.status === "rejected_by_ai").length },
-    { name: "待复核", value: apps.filter((a) => a.status === "pending_review").length },
-    { name: "人工通过", value: apps.filter((a) => a.status === "approved").length },
-    { name: "人工拒绝", value: apps.filter((a) => a.status === "rejected").length },
+    { name: "系统初审通过", value: apps.filter((a) => a.status === "auto_approved").length },
+    { name: "系统未通过", value: apps.filter((a) => a.status === "rejected_by_ai").length },
+    { name: "待教师复核", value: apps.filter((a) => a.status === "pending_review").length },
+    { name: "人工已通过", value: apps.filter((a) => a.status === "approved").length },
+    { name: "人工已驳回", value: apps.filter((a) => a.status === "rejected").length },
+    { name: "系统核验中", value: apps.filter((a) => a.status === "pending_ai").length },
   ].filter((d) => d.value > 0), [apps]);
 
   return (
