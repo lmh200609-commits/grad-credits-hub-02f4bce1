@@ -1,13 +1,14 @@
 import { useRef, useState } from "react";
-import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { Download, Upload } from "lucide-react";
+import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle } from "lucide-react";
 
 type ParsedRow = {
   student_no: string;
@@ -20,239 +21,346 @@ type ParsedRow = {
   password: string;
 };
 
-const HEADER_MAP: Record<string, keyof ParsedRow> = {
-  "学号": "student_no",
-  "工号": "student_no",
-  "学号/工号": "student_no",
-  "姓名": "full_name",
-  "手机号": "phone",
-  "班级": "class_name",
-  "院系": "department",
-  "专业": "major",
-  "角色": "role",
-  "密码": "password",
-};
+type ChatMsg =
+  | { kind: "ai"; text: string }
+  | { kind: "user"; text: string }
+  | { kind: "file"; name: string; rowCount: number }
+  | { kind: "preview"; rows: ParsedRow[]; notes?: string }
+  | { kind: "result"; ok: boolean; text: string };
 
-const ROLE_MAP: Record<string, ParsedRow["role"]> = {
-  "管理员": "admin",
-  "admin": "admin",
-  "教师": "teacher",
-  "老师": "teacher",
-  "teacher": "teacher",
-  "学生": "student",
-  "student": "student",
-};
+const ROLE_LABEL: Record<string, string> = { admin: "管理员", teacher: "教师", student: "学生" };
 
 const ImportUsers = () => {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [rows, setRows] = useState<ParsedRow[]>([]);
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [serverErrors, setServerErrors] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [fileName, setFileName] = useState<string>("");
+  const [messages, setMessages] = useState<ChatMsg[]>([
+    {
+      kind: "ai",
+      text:
+        "你好👋，我是名册导入助手。\n\n直接上传 Excel 或 CSV 表格即可，我会自动识别列（学号 / 姓名 / 专业 / 班级 / 院系 / 手机号 / 角色），生成账号并完成实名绑定。\n\n小提示：你可以在下方输入框告诉我默认角色和默认密码（例如：默认角色=学生，默认密码=Abc12345），我会按你的要求处理。",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [pendingRows, setPendingRows] = useState<ParsedRow[] | null>(null);
+  const [defaults, setDefaults] = useState<{ role: ParsedRow["role"]; password: string }>({
+    role: "student",
+    password: "123456",
+  });
 
-  const handleFile = (file: File) => {
-    setFileName(file.name);
-    setRows([]);
-    setParseErrors([]);
-    setServerErrors([]);
+  const push = (m: ChatMsg) => setMessages((prev) => [...prev, m]);
 
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (result) => {
-        const errors: string[] = [];
-        const parsed: ParsedRow[] = [];
+  const handleUserMessage = () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
+    push({ kind: "user", text });
 
-        result.data.forEach((raw, idx) => {
-          const line = idx + 2;
-          const r: Partial<ParsedRow> = {};
-          Object.entries(raw).forEach(([key, value]) => {
-            const trimmedKey = key.trim();
-            const mapped = HEADER_MAP[trimmedKey];
-            if (mapped) (r as any)[mapped] = (value ?? "").trim();
-          });
-
-          if (!r.student_no) errors.push(`第 ${line} 行：学号/工号为空`);
-          if (!r.full_name) errors.push(`第 ${line} 行：姓名为空`);
-          if (!r.password || r.password.length < 6) errors.push(`第 ${line} 行：密码至少 6 位`);
-
-          const roleRaw = (r.role as string)?.toLowerCase().trim();
-          const mappedRole = ROLE_MAP[r.role as string] ?? ROLE_MAP[roleRaw];
-          if (!mappedRole) errors.push(`第 ${line} 行：角色非法（应为 教师/学生/管理员）`);
-          else r.role = mappedRole;
-
-          parsed.push(r as ParsedRow);
-        });
-
-        setParseErrors(errors);
-        setRows(parsed);
-      },
-      error: (err) => setParseErrors([err.message]),
-    });
+    // Parse simple instructions like 默认角色=教师 / 默认密码=Abc123
+    const roleMatch = text.match(/默认角色\s*[=:：]\s*(管理员|教师|老师|学生)/);
+    const pwdMatch = text.match(/默认密码\s*[=:：]\s*(\S+)/);
+    let updated = false;
+    const next = { ...defaults };
+    if (roleMatch) {
+      const m = roleMatch[1];
+      next.role = m === "管理员" ? "admin" : m === "学生" ? "student" : "teacher";
+      updated = true;
+    }
+    if (pwdMatch && pwdMatch[1].length >= 6) {
+      next.password = pwdMatch[1];
+      updated = true;
+    }
+    if (updated) {
+      setDefaults(next);
+      push({
+        kind: "ai",
+        text: `好的，已更新默认值：角色=${ROLE_LABEL[next.role]}，密码=${next.password}。点击 📎 上传 Excel/CSV 即可开始。`,
+      });
+    } else {
+      push({
+        kind: "ai",
+        text:
+          "我主要负责名册导入。请点击下方 📎 上传 Excel 或 CSV 文件；如需调整默认设置可以输入：\n• 默认角色=学生\n• 默认密码=Abc12345",
+      });
+    }
   };
 
-  const handleSubmit = async () => {
-    setServerErrors([]);
-    setSubmitting(true);
+  const handleFile = async (file: File) => {
+    setLoading(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      if (rawRows.length === 0) {
+        push({ kind: "ai", text: "❌ 没有读到任何行，请确认文件第一行是表头、之后是数据。" });
+        return;
+      }
+
+      push({ kind: "file", name: file.name, rowCount: rawRows.length });
+      push({ kind: "ai", text: `已读取 ${rawRows.length} 行原始数据，正在让 AI 识别字段并规范化…` });
+
+      const { data, error } = await supabase.functions.invoke("ai-parse-roster", {
+        body: { rows: rawRows, defaultRole: defaults.role, defaultPassword: defaults.password },
+      });
+
+      if (error) {
+        const ctx: any = (error as any).context;
+        let detail = error.message;
+        try {
+          const t = await ctx?.text?.();
+          if (t) detail = JSON.parse(t).error ?? detail;
+        } catch {}
+        push({ kind: "ai", text: `❌ 解析失败：${detail}` });
+        return;
+      }
+
+      const rows = (data?.rows ?? []) as ParsedRow[];
+      if (rows.length === 0) {
+        push({ kind: "ai", text: "❌ AI 没有识别出任何有效行。请检查表格内容。" });
+        return;
+      }
+
+      setPendingRows(rows);
+      push({ kind: "preview", rows, notes: data?.notes });
+      push({
+        kind: "ai",
+        text: `识别完成 ✅ 共 ${rows.length} 个账号待创建。请核对预览，确认无误后点击下方 "确认导入"。`,
+      });
+    } catch (e) {
+      push({ kind: "ai", text: `❌ 读取文件失败：${(e as Error).message}` });
+    } finally {
+      setLoading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!pendingRows) return;
+    setLoading(true);
+    push({ kind: "user", text: "确认导入" });
+
     const { data, error } = await supabase.functions.invoke("import-users", {
-      body: { rows },
+      body: { rows: pendingRows },
     });
-    setSubmitting(false);
+    setLoading(false);
 
     if (error) {
-      // Supabase wraps non-2xx as error; try to extract details
       const ctx: any = (error as any).context;
       let detail = error.message;
+      let extras: string[] = [];
       try {
-        const txt = await ctx?.text?.();
-        if (txt) {
-          const j = JSON.parse(txt);
+        const t = await ctx?.text?.();
+        if (t) {
+          const j = JSON.parse(t);
           detail = j.error ?? detail;
-          if (j.errors) setServerErrors(j.errors.map((e: any) => `第 ${e.line} 行：${e.message}`));
-          if (j.conflicts) setServerErrors(j.conflicts.map((c: string) => `已存在：${c}`));
+          if (j.errors) extras = j.errors.map((e: any) => `第 ${e.line} 行：${e.message}`);
+          if (j.conflicts) extras = j.conflicts.map((c: string) => `已存在：${c}`);
         }
-      } catch {/* ignore */}
+      } catch {}
+      push({ kind: "result", ok: false, text: [detail, ...extras].join("\n") });
       toast({ title: "导入失败", description: detail, variant: "destructive" });
       return;
     }
 
     if (data?.success) {
+      push({ kind: "result", ok: true, text: `成功创建 ${data.created} 个账号，已绑定姓名 / 学号 / 专业 / 班级 / 院系 / 手机号。` });
       toast({ title: "导入成功", description: `已新增 ${data.created} 个账号` });
-      setRows([]);
-      setFileName("");
-      if (fileRef.current) fileRef.current.value = "";
+      setPendingRows(null);
     }
-  };
-
-  const downloadTemplate = () => {
-    const csv = "学号/工号,姓名,手机号,班级,院系,专业,角色,密码\n2024001,张三,13800000000,计科2401,计算机学院,软件工程,学生,123456\nT001,李老师,13900000000,,计算机学院,,教师,123456\n";
-    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "用户导入模板.csv";
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">批量导入账号</h1>
-          <p className="text-sm text-muted-foreground">CSV 一次创建教师/学生账号</p>
+      <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-4xl flex-col">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold">AI 名册导入助手</h1>
+            <p className="text-xs text-muted-foreground">
+              上传 Excel/CSV，自动识别字段并批量创建账号
+            </p>
+          </div>
+          <div className="ml-auto flex gap-2 text-xs">
+            <Badge variant="outline">默认角色：{ROLE_LABEL[defaults.role]}</Badge>
+            <Badge variant="outline">默认密码：{defaults.password}</Badge>
+          </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>第 1 步：准备 CSV</CardTitle>
-            <CardDescription>
-              列：学号/工号、姓名、手机号、班级、院系、专业、角色、密码。角色填 教师 / 学生 / 管理员。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" onClick={downloadTemplate}>
-              <Download className="mr-2 h-4 w-4" /> 下载模板
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>第 2 步：上传文件</CardTitle>
-            <CardDescription>{fileName || "尚未选择文件"}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv"
-              className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-              }}
-            />
-
-            {parseErrors.length > 0 && (
-              <Alert variant="destructive">
-                <AlertTitle>CSV 解析错误（{parseErrors.length}）</AlertTitle>
-                <AlertDescription>
-                  <ul className="list-disc pl-4 text-sm">
-                    {parseErrors.slice(0, 10).map((e, i) => <li key={i}>{e}</li>)}
-                    {parseErrors.length > 10 && <li>…其余 {parseErrors.length - 10} 条已省略</li>}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {serverErrors.length > 0 && (
-              <Alert variant="destructive">
-                <AlertTitle>服务端校验错误</AlertTitle>
-                <AlertDescription>
-                  <ul className="list-disc pl-4 text-sm">
-                    {serverErrors.map((e, i) => <li key={i}>{e}</li>)}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {rows.length > 0 && (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>学号/工号</TableHead>
-                      <TableHead>姓名</TableHead>
-                      <TableHead>角色</TableHead>
-                      <TableHead>院系</TableHead>
-                      <TableHead>班级</TableHead>
-                      <TableHead>手机号</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.slice(0, 20).map((r, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{r.student_no}</TableCell>
-                        <TableCell>{r.full_name}</TableCell>
-                        <TableCell>{r.role}</TableCell>
-                        <TableCell>{r.department}</TableCell>
-                        <TableCell>{r.class_name}</TableCell>
-                        <TableCell>{r.phone}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {rows.length > 20 && (
-                  <p className="border-t p-2 text-center text-xs text-muted-foreground">
-                    仅预览前 20 行，共 {rows.length} 行
-                  </p>
-                )}
+        <Card className="flex flex-1 flex-col overflow-hidden">
+          <CardContent className="flex-1 space-y-4 overflow-y-auto p-4">
+            {messages.map((m, i) => (
+              <MessageBubble key={i} msg={m} onConfirm={confirmImport} loading={loading} />
+            ))}
+            {loading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> 处理中…
               </div>
             )}
           </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>第 3 步：执行导入</CardTitle>
-            <CardDescription>
-              如果有任何学号已存在或校验未通过，整批中止。导入成功后系统会立即创建对应登录账号。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              onClick={handleSubmit}
-              disabled={submitting || rows.length === 0 || parseErrors.length > 0}
-            >
-              <Upload className="mr-2 h-4 w-4" />
-              {submitting ? "导入中…" : `导入 ${rows.length} 条`}
-            </Button>
-          </CardContent>
+          <div className="border-t bg-muted/30 p-3">
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                }}
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => fileRef.current?.click()}
+                disabled={loading}
+                title="上传 Excel/CSV"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleUserMessage()}
+                placeholder="可输入：默认角色=学生  或  默认密码=Abc12345"
+                disabled={loading}
+              />
+              <Button onClick={handleUserMessage} disabled={loading || !input.trim()}>
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </Card>
       </div>
     </AppLayout>
+  );
+};
+
+const MessageBubble = ({
+  msg,
+  onConfirm,
+  loading,
+}: {
+  msg: ChatMsg;
+  onConfirm: () => void;
+  loading: boolean;
+}) => {
+  if (msg.kind === "user") {
+    return (
+      <div className="flex justify-end gap-2">
+        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
+          {msg.text}
+        </div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+          <User className="h-4 w-4" />
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.kind === "ai") {
+    return (
+      <div className="flex gap-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground">
+          <Bot className="h-4 w-4" />
+        </div>
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-4 py-2 text-sm">
+          {msg.text}
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.kind === "file") {
+    return (
+      <div className="flex justify-end gap-2">
+        <div className="max-w-[80%] rounded-2xl rounded-tr-sm border bg-background px-4 py-2 text-sm">
+          📄 {msg.name} · {msg.rowCount} 行
+        </div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+          <User className="h-4 w-4" />
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.kind === "preview") {
+    return (
+      <div className="flex gap-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground">
+          <Bot className="h-4 w-4" />
+        </div>
+        <div className="w-full max-w-[90%] space-y-2 rounded-2xl rounded-tl-sm border bg-background p-3">
+          {msg.notes && (
+            <p className="text-xs italic text-muted-foreground">AI 备注：{msg.notes}</p>
+          )}
+          <div className="max-h-72 overflow-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>学号/工号</TableHead>
+                  <TableHead>姓名</TableHead>
+                  <TableHead>角色</TableHead>
+                  <TableHead>院系</TableHead>
+                  <TableHead>专业</TableHead>
+                  <TableHead>班级</TableHead>
+                  <TableHead>手机号</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {msg.rows.slice(0, 50).map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono text-xs">{r.student_no}</TableCell>
+                    <TableCell>{r.full_name}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{ROLE_LABEL[r.role]}</Badge>
+                    </TableCell>
+                    <TableCell>{r.department ?? "—"}</TableCell>
+                    <TableCell>{r.major ?? "—"}</TableCell>
+                    <TableCell>{r.class_name ?? "—"}</TableCell>
+                    <TableCell>{r.phone ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {msg.rows.length > 50 && (
+              <p className="border-t p-2 text-center text-xs text-muted-foreground">
+                仅预览前 50 行，共 {msg.rows.length} 行
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={onConfirm} disabled={loading} size="sm">
+              ✅ 确认导入 {msg.rows.length} 个账号
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // result
+  return (
+    <div className="flex gap-2">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground">
+        <Bot className="h-4 w-4" />
+      </div>
+      <div
+        className={`max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border px-4 py-2 text-sm ${
+          msg.ok ? "border-green-500/40 bg-green-500/10" : "border-destructive/40 bg-destructive/10"
+        }`}
+      >
+        <div className="mb-1 flex items-center gap-1 font-medium">
+          {msg.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+          {msg.ok ? "导入成功" : "导入失败"}
+        </div>
+        {msg.text}
+      </div>
+    </div>
   );
 };
 
