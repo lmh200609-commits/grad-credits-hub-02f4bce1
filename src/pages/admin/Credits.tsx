@@ -39,6 +39,7 @@ const Credits = () => {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState(ALL);
   const [passFilter, setPassFilter] = useState<PassFilter>("all");
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -84,6 +85,9 @@ const Credits = () => {
         .some((v) => v!.toLowerCase().includes(q));
     });
   }, [rows, search, dept, passFilter]);
+
+  useEffect(() => { setPage(0); }, [search, dept, passFilter]);
+  const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const passStats = useMemo(() => ({
     pass: rows.filter((r) => r.total_credit >= PASS_THRESHOLD).length,
