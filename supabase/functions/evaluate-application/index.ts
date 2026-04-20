@@ -42,9 +42,22 @@ Deno.serve(async (req) => {
 
     // 找出与申请关键词最契合的规则（用于建议学分）
     const selected: string[] = app.selected_keywords ?? [];
+    const custom: string[] = app.custom_keywords ?? [];
     const candidate = rules?.find((r) =>
       [r.project, r.achievement, r.level, r.identity].filter(Boolean).every((v) => selected.includes(v as string))
     ) ?? null;
+
+    // 拉取与本次申请关键词相关的人工通过案例（教师覆盖系统驳回时沉淀）
+    const allKw = [...selected, ...custom];
+    const { data: allCases } = await admin
+      .from("cases")
+      .select("title, summary, awarded_credit, rule_id")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    const relatedCases = (allCases ?? []).filter((c) => {
+      const blob = `${c.title}\n${c.summary}`;
+      return allKw.some((kw) => kw && blob.includes(kw));
+    }).slice(0, 5);
 
     // 下载附件图片
     let imageDataUrl: string | null = null;
