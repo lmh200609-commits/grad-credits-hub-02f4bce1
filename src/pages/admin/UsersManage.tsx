@@ -153,7 +153,7 @@ const UsersManage = () => {
                   <TableSkeleton rows={5} cols={role === "student" ? 9 : 6} />
                 ) : filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={role === "student" ? 9 : 6}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
-                ) : filtered.map((r) => {
+                ) : paged.map((r) => {
                   const c = credits.get(r.user_id);
                   return (
                   <TableRow key={r.user_id}>
@@ -187,6 +187,9 @@ const UsersManage = () => {
                 })}
               </TableBody>
             </Table>
+            {!loading && filtered.length > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            )}
           </CardContent>
         </Card>
       </div>
