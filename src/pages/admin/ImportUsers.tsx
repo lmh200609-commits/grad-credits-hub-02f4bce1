@@ -1,14 +1,13 @@
 import { useRef, useState } from "react";
 import Papa from "papaparse";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Download, Upload } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 
 type ParsedRow = {
   student_no: string;
@@ -45,8 +44,6 @@ const ROLE_MAP: Record<string, ParsedRow["role"]> = {
 };
 
 const ImportUsers = () => {
-  const navigate = useNavigate();
-  const { signOut } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
@@ -140,20 +137,12 @@ const ImportUsers = () => {
   };
 
   return (
-    <main className="min-h-screen bg-background p-8">
+    <AppLayout>
       <div className="mx-auto max-w-5xl space-y-6">
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-              <ArrowLeft />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold">批量导入账号</h1>
-              <p className="text-sm text-muted-foreground">CSV 一次创建教师/学生账号</p>
-            </div>
-          </div>
-          <Button variant="outline" onClick={signOut}>退出登录</Button>
-        </header>
+        <div>
+          <h1 className="text-2xl font-bold">批量导入账号</h1>
+          <p className="text-sm text-muted-foreground">CSV 一次创建教师/学生账号</p>
+        </div>
 
         <Card>
           <CardHeader>
@@ -263,7 +252,7 @@ const ImportUsers = () => {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </AppLayout>
   );
 };
 
