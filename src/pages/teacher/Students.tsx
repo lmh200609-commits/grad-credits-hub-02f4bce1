@@ -137,7 +137,7 @@ const Students = () => {
                 ) : filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">暂无符合条件的学生</TableCell></TableRow>
                 ) : (
-                  filtered.map((r) => (
+                  paged.map((r) => (
                     <TableRow key={r.user_id}>
                       <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
                       <TableCell>{r.student_no ?? "—"}</TableCell>
@@ -155,6 +155,9 @@ const Students = () => {
                 )}
               </TableBody>
             </Table>
+            {!loading && filtered.length > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            )}
           </CardContent>
         </Card>
       </div>
