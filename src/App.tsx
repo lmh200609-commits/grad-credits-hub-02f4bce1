@@ -9,6 +9,13 @@ import RoleRoute from "@/components/RoleRoute";
 import Index from "./pages/Index.tsx";
 import Login from "./pages/Login.tsx";
 import ImportUsers from "./pages/admin/ImportUsers.tsx";
+import Rules from "./pages/admin/Rules.tsx";
+import Cases from "./pages/admin/Cases.tsx";
+import Projects from "./pages/Projects.tsx";
+import Reviews from "./pages/Reviews.tsx";
+import Apply from "./pages/student/Apply.tsx";
+import MyApplications from "./pages/student/MyApplications.tsx";
+import ApplicationDetail from "./pages/ApplicationDetail.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -22,23 +29,15 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Index />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/import"
-              element={
-                <RoleRoute role="admin">
-                  <ImportUsers />
-                </RoleRoute>
-              }
-            />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/admin/import" element={<RoleRoute role="admin"><ImportUsers /></RoleRoute>} />
+            <Route path="/admin/rules" element={<RoleRoute role="admin"><Rules /></RoleRoute>} />
+            <Route path="/admin/cases" element={<RoleRoute role="admin"><Cases /></RoleRoute>} />
+            <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+            <Route path="/projects/:id/apply" element={<RoleRoute role="student"><Apply /></RoleRoute>} />
+            <Route path="/reviews" element={<ProtectedRoute><Reviews /></ProtectedRoute>} />
+            <Route path="/my-applications" element={<RoleRoute role="student"><MyApplications /></RoleRoute>} />
+            <Route path="/applications/:id" element={<ProtectedRoute><ApplicationDetail /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

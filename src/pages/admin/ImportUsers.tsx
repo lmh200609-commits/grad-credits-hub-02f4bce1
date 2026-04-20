@@ -1,14 +1,13 @@
 import { useRef, useState } from "react";
 import Papa from "papaparse";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Download, Upload } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 
 type ParsedRow = {
   student_no: string;
@@ -255,7 +254,7 @@ const ImportUsers = () => {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </AppLayout>
   );
 };
 
