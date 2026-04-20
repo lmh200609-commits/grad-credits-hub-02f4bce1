@@ -1,6 +1,5 @@
-// AI evaluator with vision: pulls application + active rules + recent cases,
-// downloads attached image (if any) and asks Qwen3-VL-32B-Thinking to match a rule
-// and decide credit + confidence, then writes review record and updates application.
+// 系统材料核验：仅校验"材料 vs 关键词 vs 学生姓名"一致性，及是否存在
+// 明显篡改 / AI 生成痕迹 / 无关图片。其他内容（学分大小等）不严格校验。
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -15,18 +14,6 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
-
-    const userClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } },
-    );
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claims, error: claimErr } = await userClient.auth.getClaims(token);
-    if (claimErr || !claims?.claims) return json({ error: "Unauthorized" }, 401);
-
     const { application_id } = await req.json();
     if (!application_id) return json({ error: "application_id required" }, 400);
 
@@ -42,17 +29,24 @@ Deno.serve(async (req) => {
       .single();
     if (appErr || !app) return json({ error: "Application not found" }, 404);
 
+    const { data: studentProfile } = await admin
+      .from("profiles")
+      .select("full_name, student_no")
+      .eq("user_id", app.student_id)
+      .single();
+
     const { data: rules } = await admin
       .from("rules")
-      .select("id, name, category, keywords, credit, description")
+      .select("id, name, project, achievement, level, identity, credit")
       .eq("active", true);
 
-    const { data: cases } = await admin
-      .from("cases")
-      .select("title, summary, rule_id, awarded_credit, notes")
-      .limit(20);
+    // 找出与申请关键词最契合的规则（用于建议学分）
+    const selected: string[] = app.selected_keywords ?? [];
+    const candidate = rules?.find((r) =>
+      [r.project, r.achievement, r.level, r.identity].filter(Boolean).every((v) => selected.includes(v as string))
+    ) ?? null;
 
-    // Try to fetch the attachment as image (Qwen3-VL accepts image_url with data: URLs)
+    // 下载附件图片
     let imageDataUrl: string | null = null;
     let attachmentNote = "无附件";
     if (app.file_path) {
@@ -62,42 +56,52 @@ Deno.serve(async (req) => {
           .download(app.file_path);
         if (!dlErr && blob) {
           const buf = new Uint8Array(await blob.arrayBuffer());
-          // base64 encode
           let bin = "";
           for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
           const b64 = btoa(bin);
           const ext = app.file_path.split(".").pop()!.toLowerCase();
           const mime = ext === "jpg" ? "jpeg" : ext;
           imageDataUrl = `data:image/${mime};base64,${b64}`;
-          attachmentNote = "已附图片，请同时审阅";
+          attachmentNote = "已附图片";
         } else {
           attachmentNote = "附件下载失败";
         }
       } else {
-        attachmentNote = `附件为非图片文件 (${app.file_path.split(".").pop()})，未传入视觉模型`;
+        attachmentNote = `非图片附件 (${app.file_path.split(".").pop()})，未做视觉核验`;
       }
     }
 
-    const systemPrompt = `你是大学学分认证审核助手，可以同时阅读文字材料和证明图片。请基于"规则库"和"案例库"评估学生申请：
-1. 若提供了图片，先 OCR / 描述图片关键信息（证书名称、级别、获奖人、机构、日期），并判断与申请描述是否一致；明显伪造、AI 生成、信息冲突应大幅降低 confidence。
-2. 从规则库挑选最匹配的一条规则（matched_rule_id 必须严格来自规则库 id）。如果没有任何规则匹配，matched_rule_id 返回 null。
-3. confidence ∈ [0,1]：完全契合 ≥ 0.85；部分契合 0.35~0.85；几乎不符 < 0.35。
-4. credit：建议给的学分（参考规则中默认学分，可上下浮动 ±0.5）。
-5. recommendation：approve / review / reject。
-6. reasoning：用中文 2-4 句话说明判断依据，含图片观察结论。
-不允许编造规则或学分。`;
+    const systemPrompt = `你是大学学分材料核验助手。你只负责四件事，其他内容（学分多少、规则归类是否最优等）不要严格判断：
+1. 材料与关键词一致性：图片/文件展示的内容（证书名称、奖项、级别、身份）是否与学生选择的关键词描述一致。
+2. 是否无关图片：图片是否完全与申请主题无关（如随手拍、风景、聊天截图）。
+3. 篡改 / AI 生成痕迹：是否有明显 PS、拼接、字体不一致、AI 生成（不自然纹理、伪造印章、扭曲文字）等痕迹。
+4. 姓名匹配：图片中获奖人 / 持证人姓名是否与系统记录的学生姓名一致；多人合作奖项，姓名出现在名单中即可。
 
-    const userText = JSON.stringify({
+判定规则：
+- 四项都没有问题 → recommendation=approve, confidence≥0.85
+- 任一项明显有问题 → recommendation=reject, confidence≥0.85，reasoning 必须详细列出问题（中文 3-6 句，逐项说明哪一项出问题、依据是什么）
+- 模糊不清 / 文件缺失 / 无法判断 → recommendation=review, confidence 0.4~0.7，说明缺什么
+- 没有附件时只能基于文字说明判断材料-关键词一致性，无法核验姓名/篡改 → 默认 recommendation=review
+
+reasoning 必须用中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；结论：…」`;
+
+    const userPayload = {
+      student: {
+        name: studentProfile?.full_name ?? "未知",
+        student_no: studentProfile?.student_no ?? "未知",
+      },
       application: {
         description: app.description,
-        selected_keywords: app.selected_keywords,
+        selected_keywords: selected,
+        custom_keywords: app.custom_keywords ?? [],
         attachment: attachmentNote,
       },
-      rules,
-      reference_cases: cases,
-    });
+      candidate_rule: candidate
+        ? { id: candidate.id, name: candidate.name, credit: candidate.credit }
+        : null,
+    };
 
-    const userContent: unknown[] = [{ type: "text", text: userText }];
+    const userContent: unknown[] = [{ type: "text", text: JSON.stringify(userPayload) }];
     if (imageDataUrl) {
       userContent.push({ type: "image_url", image_url: { url: imageDataUrl } });
     }
@@ -120,17 +124,19 @@ Deno.serve(async (req) => {
             type: "function",
             function: {
               name: "submit_evaluation",
-              description: "提交评估结果",
+              description: "提交材料核验结果",
               parameters: {
                 type: "object",
                 properties: {
-                  matched_rule_id: { type: ["string", "null"] },
-                  credit: { type: "number" },
+                  consistency_ok: { type: "boolean", description: "材料是否与关键词一致" },
+                  relevance_ok: { type: "boolean", description: "图片是否与申请相关" },
+                  authenticity_ok: { type: "boolean", description: "是否无篡改/AI 生成痕迹" },
+                  name_match_ok: { type: ["boolean", "null"], description: "姓名是否匹配，无附件时为 null" },
                   confidence: { type: "number" },
                   recommendation: { type: "string", enum: ["approve", "review", "reject"] },
                   reasoning: { type: "string" },
                 },
-                required: ["matched_rule_id", "credit", "confidence", "recommendation", "reasoning"],
+                required: ["consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok", "confidence", "recommendation", "reasoning"],
                 additionalProperties: false,
               },
             },
@@ -143,18 +149,15 @@ Deno.serve(async (req) => {
     if (!aiResp.ok) {
       const t = await aiResp.text();
       console.error("Qwen gateway error:", aiResp.status, t);
-      if (aiResp.status === 429) return json({ error: "AI 请求过于频繁，请稍后再试" }, 429);
-      if (aiResp.status === 401 || aiResp.status === 403) {
-        return json({ error: "DashScope 鉴权失败，请检查 DASHSCOPE_API_KEY" }, 500);
-      }
-      return json({ error: `AI 评估失败: ${t.slice(0, 200)}` }, 500);
+      if (aiResp.status === 429) return json({ error: "系统繁忙，请稍后再试" }, 429);
+      return json({ error: `系统核验失败: ${t.slice(0, 200)}` }, 500);
     }
 
     const aiJson = await aiResp.json();
     const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
     if (!call) {
       console.error("Qwen unexpected payload:", JSON.stringify(aiJson).slice(0, 500));
-      return json({ error: "AI 返回格式错误" }, 500);
+      return json({ error: "系统返回格式错误" }, 500);
     }
     const result = JSON.parse(call.function.arguments);
 
@@ -167,15 +170,15 @@ Deno.serve(async (req) => {
       nextStatus = "pending_review";
     }
 
-    let matchedRuleId: string | null = result.matched_rule_id;
-    if (matchedRuleId && !rules?.some((r) => r.id === matchedRuleId)) matchedRuleId = null;
+    const matchedRuleId = candidate?.id ?? null;
+    const suggestedCredit = candidate?.credit ?? null;
 
     await admin.from("application_reviews").insert({
       application_id,
       reviewer_id: null,
       action: "ai_evaluation",
       decision: nextStatus,
-      credit: result.credit,
+      credit: suggestedCredit,
       confidence: result.confidence,
       matched_rule_id: matchedRuleId,
       note: result.reasoning,
@@ -186,7 +189,7 @@ Deno.serve(async (req) => {
       .update({
         status: nextStatus,
         ai_matched_rule_id: matchedRuleId,
-        ai_suggested_credit: result.credit,
+        ai_suggested_credit: suggestedCredit,
         ai_confidence: result.confidence,
         ai_reasoning: result.reasoning,
       })

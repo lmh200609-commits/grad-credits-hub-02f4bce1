@@ -175,14 +175,14 @@ const ApplyPage = () => {
         .single();
       if (error) throw error;
 
-      toast({ title: "已提交，AI 正在评估…" });
+      toast({ title: "已提交，系统正在核验材料…" });
       const { data: aiRes, error: aiErr } = await supabase.functions.invoke("evaluate-application", {
         body: { application_id: (app as any).id },
       });
       if (aiErr) {
-        toast({ title: "AI 评估失败，已转人工复核", description: aiErr.message, variant: "destructive" });
+        toast({ title: "系统核验失败，已转人工复核", description: aiErr.message, variant: "destructive" });
       } else if (aiRes?.status) {
-        toast({ title: "AI 评估完成", description: `结果：${aiRes.status}` });
+        toast({ title: "系统核验完成" });
       }
       navigate("/my-applications");
     } catch (e: any) {

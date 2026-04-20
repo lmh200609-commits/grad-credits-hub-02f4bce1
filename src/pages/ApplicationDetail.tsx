@@ -151,15 +151,23 @@ const ApplicationDetail = () => {
         </Card>
 
         {app.ai_reasoning && (
-          <Card>
+          <Card className={app.status === "rejected_by_ai" ? "border-destructive" : ""}>
             <CardHeader>
-              <CardTitle className="text-base">AI 评估</CardTitle>
+              <CardTitle className="text-base">系统核验结果</CardTitle>
               <CardDescription>
-                匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}
+                {isReviewer ? (
+                  <>建议匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}</>
+                ) : (
+                  <>建议匹配规则：{matchedRule?.name ?? "未匹配"}</>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm">{app.ai_reasoning}</p>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
+              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">{app.ai_reasoning}</p>
+              {app.status === "rejected_by_ai" && !isReviewer && (
+                <p className="mt-3 text-xs text-muted-foreground">如对结果有异议，可联系教师复核或重新提交申请。</p>
+              )}
             </CardContent>
           </Card>
         )}
@@ -192,11 +200,13 @@ const ApplicationDetail = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">
-                      {r.action === "ai_evaluation" ? "AI 评估" : r.action === "teacher_review" ? "教师复核" : "管理员复核"}
+                      {r.action === "ai_evaluation" ? "系统核验" : r.action === "teacher_review" ? "教师复核" : "管理员复核"}
                     </Badge>
                     <StatusBadge status={r.decision as any} />
                     {r.credit != null && <span className="text-muted-foreground">学分 {r.credit}</span>}
-                    {r.confidence != null && <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>}
+                    {isReviewer && r.confidence != null && (
+                      <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
                 </div>
