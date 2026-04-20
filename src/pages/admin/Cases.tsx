@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { Plus, Trash2, Pencil } from "lucide-react";
 import { caseSchema } from "@/lib/schemas";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
+import TablePagination from "@/components/TablePagination";
+import { fetchAll } from "@/lib/fetchAll";
 
 type Rule = { id: string; name: string };
 type Case = { id: string; title: string; summary: string; rule_id: string | null; awarded_credit: number | null; notes: string | null };
@@ -27,18 +29,32 @@ const CasesPage = () => {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Case | null>(null);
   const [form, setForm] = useState<typeof empty>(empty);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
 
   const load = async () => {
     setLoading(true);
     const [c, r] = await Promise.all([
-      supabase.from("cases").select("*").order("created_at", { ascending: false }),
+      fetchAll<Case>(supabase.from("cases").select("*").order("created_at", { ascending: false })),
       supabase.from("rules").select("id, name").eq("active", true),
     ]);
-    setCases((c.data as Case[]) ?? []);
+    setCases(c);
     setRules((r.data as Rule[]) ?? []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return cases;
+    return cases.filter((c) =>
+      c.title.toLowerCase().includes(q) || c.summary.toLowerCase().includes(q),
+    );
+  }, [cases, search]);
+
+  useEffect(() => { setPage(0); }, [search]);
+  const pageRows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   const openNew = () => { setEditing(null); setForm(empty); setOpen(true); };
   const openEdit = (c: Case) => {
@@ -110,7 +126,17 @@ const CasesPage = () => {
           </Dialog>
         </div>
         <Card>
-          <CardHeader><CardTitle className="text-base">案例列表（{cases.length}）</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base">案例列表（{filtered.length} / 共 {cases.length}）</CardTitle>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索标题或摘要"
+                className="max-w-xs"
+              />
+            </div>
+          </CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow>
@@ -120,9 +146,9 @@ const CasesPage = () => {
               <TableBody>
                 {loading ? (
                   <TableSkeleton rows={4} cols={4} />
-                ) : cases.length === 0 ? (
+                ) : filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={4}><EmptyState title="暂无案例" description="新增历史通过案例帮助 AI 评估" /></TableCell></TableRow>
-                ) : cases.map((c) => (
+                ) : pageRows.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.title}</TableCell>
                     <TableCell>{rules.find((r) => r.id === c.rule_id)?.name ?? "—"}</TableCell>
@@ -135,6 +161,7 @@ const CasesPage = () => {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
           </CardContent>
         </Card>
       </div>
