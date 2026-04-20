@@ -184,6 +184,8 @@ reasoning 必须用中文，结构：「材料一致性：…；图片相关性�
       note: result.reasoning,
     });
 
+    // 系统通过时直接落实学分，无需教师确认；教师仍可在详情页修改
+    const isAutoApproved = nextStatus === "auto_approved";
     await admin
       .from("applications")
       .update({
@@ -192,6 +194,8 @@ reasoning 必须用中文，结构：「材料一致性：…；图片相关性�
         ai_suggested_credit: suggestedCredit,
         ai_confidence: result.confidence,
         ai_reasoning: result.reasoning,
+        final_credit: isAutoApproved ? suggestedCredit : null,
+        reviewed_at: isAutoApproved ? new Date().toISOString() : null,
       })
       .eq("id", application_id);
 

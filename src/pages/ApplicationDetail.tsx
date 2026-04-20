@@ -172,9 +172,22 @@ const ApplicationDetail = () => {
           </Card>
         )}
 
-        {isReviewer && !["approved", "rejected"].includes(app.status) && (
+        {isReviewer && app.status !== "pending_ai" && (
           <Card>
-            <CardHeader><CardTitle className="text-base">人工复核</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {["approved", "auto_approved"].includes(app.status) || app.status === "rejected" || app.status === "rejected_by_ai"
+                  ? "修改审核结果"
+                  : "人工复核"}
+              </CardTitle>
+              <CardDescription>
+                {app.status === "auto_approved" && "系统已自动通过并计入学分。如需调整可在此修改。"}
+                {app.status === "rejected_by_ai" && "系统已自动驳回。如学生有异议可在此覆盖结果。"}
+                {app.status === "approved" && "已通过的申请，可在此调整最终学分或改判驳回。"}
+                {app.status === "rejected" && "已驳回的申请，可在此重新通过。"}
+                {app.status === "pending_review" && "系统无法自动判定，需要人工复核。"}
+              </CardDescription>
+            </CardHeader>
             <CardContent className="space-y-3">
               <div>
                 <Label>最终学分（通过时必填）</Label>
