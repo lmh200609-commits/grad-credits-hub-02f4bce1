@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import AppLayout from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,17 +24,23 @@ const MyApplications = () => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<Row[]>([]);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!user) return;
-    (async () => {
-      const { data } = await supabase
-        .from("applications")
-        .select("id, description, status, ai_suggested_credit, final_credit, submitted_at, projects(name)")
-        .eq("student_id", user.id)
-        .order("submitted_at", { ascending: false });
-      setRows((data as any[]) ?? []);
-    })();
+    const { data } = await supabase
+      .from("applications")
+      .select("id, description, status, ai_suggested_credit, final_credit, submitted_at, projects(name)")
+      .eq("student_id", user.id)
+      .order("submitted_at", { ascending: false });
+    setRows((data as any[]) ?? []);
   }, [user]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useRealtimeTable(
+    "applications",
+    load,
+    { filter: user ? `student_id=eq.${user.id}` : undefined },
+  );
 
   return (
     <AppLayout>
