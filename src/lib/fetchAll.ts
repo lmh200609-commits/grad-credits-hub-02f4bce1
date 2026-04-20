@@ -2,7 +2,7 @@
 const PAGE_SIZE = 1000;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyBuilder = { range: (from: number, to: number) => Promise<{ data: any[] | null; error: any }> };
+type AnyBuilder = { range: (from: number, to: number) => any };
 
 export async function fetchAll<T>(builder: AnyBuilder): Promise<T[]> {
   const all: T[] = [];
