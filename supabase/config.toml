@@ -4,13 +4,13 @@ project_id = "eceqokilpppnwtfzgbvq"
 verify_jwt = false
 
 [functions.import-users]
-verify_jwt = true
+verify_jwt = false
 
 [functions.evaluate-application]
-verify_jwt = true
+verify_jwt = false
 
 [functions.reset-password]
-verify_jwt = true
+verify_jwt = false
 
 [functions.dev-seed]
 verify_jwt = false
