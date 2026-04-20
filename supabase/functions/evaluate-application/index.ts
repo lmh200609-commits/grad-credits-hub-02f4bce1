@@ -196,8 +196,36 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
     }
     const result = JSON.parse(call.function.arguments);
 
+    // 用 AI 从图片中识别到的真实属性重新匹配规则（防止学生选高分关键词配低级别证书）
+    const detected = {
+      project: result.detected_project as string | null,
+      achievement: result.detected_achievement as string | null,
+      level: result.detected_level as string | null,
+      identity: result.detected_identity as string | null,
+    };
+    const hasDetection = !!(detected.project || detected.achievement || detected.level);
+    const detectedRule = hasDetection
+      ? rules?.find((r) => {
+          const dims = [
+            [r.project, detected.project],
+            [r.achievement, detected.achievement],
+            [r.level, detected.level],
+            [r.identity, detected.identity],
+          ] as const;
+          // 规则中非空的维度必须与 detected 完全一致；规则中为空的维度跳过
+          return dims.every(([rv, dv]) => !rv || (dv && (dv === rv || dv.includes(rv as string) || (rv as string).includes(dv))));
+        }) ?? null
+      : null;
+
+    // 优先使用 detected 匹配的规则；若 detected 与学生关键词派生的 candidate 不一致，强制走人工复核
+    const effectiveRule = detectedRule ?? candidate;
+    const detectedMismatch = hasDetection && candidate && detectedRule && detectedRule.id !== candidate.id;
+
     let nextStatus: string;
-    if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
+    if (detectedMismatch) {
+      // 学生选的关键词与图片识别结果对应不同规则 → 不能自动通过
+      nextStatus = result.recommendation === "reject" ? "rejected_by_ai" : "pending_review";
+    } else if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "auto_approved";
     } else if (result.recommendation === "reject" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "rejected_by_ai";
@@ -205,8 +233,8 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
       nextStatus = "pending_review";
     }
 
-    const matchedRuleId = candidate?.id ?? null;
-    const suggestedCredit = candidate?.credit ?? null;
+    const matchedRuleId = effectiveRule?.id ?? null;
+    const suggestedCredit = effectiveRule?.credit ?? null;
 
     await admin.from("application_reviews").insert({
       application_id,
