@@ -27,10 +27,14 @@ type Row = {
 const ALL = "__all__";
 const APPROVED = ["approved", "auto_approved"];
 
+const PASS_THRESHOLD = 4;
+type PassFilter = "all" | "pass" | "fail";
+
 const Credits = () => {
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState(ALL);
+  const [passFilter, setPassFilter] = useState<PassFilter>("all");
 
   useEffect(() => {
     (async () => {
@@ -67,12 +71,19 @@ const Credits = () => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (dept !== ALL && r.department !== dept) return false;
+      if (passFilter === "pass" && r.total_credit < PASS_THRESHOLD) return false;
+      if (passFilter === "fail" && r.total_credit >= PASS_THRESHOLD) return false;
       if (!q) return true;
       return [r.full_name, r.student_no, r.class_name, r.major]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q));
     });
-  }, [rows, search, dept]);
+  }, [rows, search, dept, passFilter]);
+
+  const passStats = useMemo(() => ({
+    pass: rows.filter((r) => r.total_credit >= PASS_THRESHOLD).length,
+    fail: rows.filter((r) => r.total_credit < PASS_THRESHOLD).length,
+  }), [rows]);
 
   const exportCsv = () => {
     const header = ["排名", "姓名", "学号", "院系", "专业", "班级", "通过申请数", "累计学分"];

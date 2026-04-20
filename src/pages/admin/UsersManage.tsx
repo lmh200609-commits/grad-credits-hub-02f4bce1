@@ -39,6 +39,7 @@ const UsersManage = () => {
   const meta = TITLES[roleParam ?? "students"] ?? TITLES.students;
 
   const [rows, setRows] = useState<Profile[]>([]);
+  const [credits, setCredits] = useState<Map<string, { total: number; count: number }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [resetTarget, setResetTarget] = useState<Profile | null>(null);
@@ -48,12 +49,23 @@ const UsersManage = () => {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: roles }, { data: profiles }] = await Promise.all([
+    const [{ data: roles }, { data: profiles }, appsRes] = await Promise.all([
       supabase.from("user_roles").select("user_id").eq("role", role),
       supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone"),
+      role === "student"
+        ? supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit")
+        : Promise.resolve({ data: [] as any[] }),
     ]);
     const ids = new Set((roles ?? []).map((r) => r.user_id));
     setRows((profiles ?? []).filter((p) => ids.has(p.user_id)));
+    const m = new Map<string, { total: number; count: number }>();
+    ((appsRes as any).data ?? []).forEach((a: any) => {
+      if (!["approved", "auto_approved"].includes(a.status)) return;
+      const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
+      const cur = m.get(a.student_id) ?? { total: 0, count: 0 };
+      m.set(a.student_id, { total: cur.total + c, count: cur.count + 1 });
+    });
+    setCredits(m);
     setLoading(false);
   };
 
@@ -123,15 +135,18 @@ const UsersManage = () => {
                   {role === "student" && <TableHead>班级</TableHead>}
                   <TableHead>邮箱</TableHead>
                   <TableHead>电话</TableHead>
+                  {role === "student" && <TableHead className="text-right">累计学分</TableHead>}
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableSkeleton rows={5} cols={role === "student" ? 8 : 6} />
+                  <TableSkeleton rows={5} cols={role === "student" ? 9 : 6} />
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
-                ) : filtered.map((r) => (
+                  <TableRow><TableCell colSpan={role === "student" ? 9 : 6}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
+                ) : filtered.map((r) => {
+                  const c = credits.get(r.user_id);
+                  return (
                   <TableRow key={r.user_id}>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
                     <TableCell>{r.student_no ?? "—"}</TableCell>
@@ -140,6 +155,14 @@ const UsersManage = () => {
                     {role === "student" && <TableCell>{r.class_name ?? "—"}</TableCell>}
                     <TableCell className="text-muted-foreground">{r.email ?? "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{r.phone ?? "—"}</TableCell>
+                    {role === "student" && (
+                      <TableCell className="text-right">
+                        <span className={`font-semibold ${(c?.total ?? 0) >= 4 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                          {(c?.total ?? 0).toFixed(1)}
+                        </span>
+                        <span className="ml-1 text-xs text-muted-foreground">({c?.count ?? 0})</span>
+                      </TableCell>
+                    )}
                     <TableCell className="space-x-2 text-right">
                       {role === "student" && (
                         <Button asChild variant="outline" size="sm">
@@ -151,7 +174,8 @@ const UsersManage = () => {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
