@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard, Upload, BookOpen, FolderKanban, ClipboardCheck, FileText, Library, LogOut,
+  LayoutDashboard, Upload, BookOpen, FolderKanban, ClipboardCheck, FileText, Library, LogOut, Users,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -19,12 +19,14 @@ const adminItems: Item[] = [
   { title: "案例库", url: "/admin/cases", icon: Library },
   { title: "项目管理", url: "/projects", icon: FolderKanban },
   { title: "全部审核", url: "/reviews", icon: ClipboardCheck },
+  { title: "学生管理", url: "/teacher/students", icon: Users },
 ];
 
 const teacherItems: Item[] = [
   { title: "工作台", url: "/", icon: LayoutDashboard },
   { title: "我的项目", url: "/projects", icon: FolderKanban },
   { title: "待审核", url: "/reviews", icon: ClipboardCheck },
+  { title: "学生管理", url: "/teacher/students", icon: Users },
 ];
 
 const studentItems: Item[] = [

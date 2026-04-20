@@ -16,6 +16,8 @@ import Reviews from "./pages/Reviews.tsx";
 import Apply from "./pages/student/Apply.tsx";
 import MyApplications from "./pages/student/MyApplications.tsx";
 import ApplicationDetail from "./pages/ApplicationDetail.tsx";
+import Students from "./pages/teacher/Students.tsx";
+import StudentDetail from "./pages/teacher/StudentDetail.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -38,6 +40,8 @@ const App = () => (
             <Route path="/reviews" element={<ProtectedRoute><Reviews /></ProtectedRoute>} />
             <Route path="/my-applications" element={<RoleRoute role="student"><MyApplications /></RoleRoute>} />
             <Route path="/applications/:id" element={<ProtectedRoute><ApplicationDetail /></ProtectedRoute>} />
+            <Route path="/teacher/students" element={<ProtectedRoute><Students /></ProtectedRoute>} />
+            <Route path="/teacher/students/:id" element={<ProtectedRoute><StudentDetail /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
