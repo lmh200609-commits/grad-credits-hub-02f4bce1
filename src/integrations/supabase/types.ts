@@ -75,6 +75,7 @@ export type Database = {
           ai_reasoning: string | null
           ai_suggested_credit: number | null
           created_at: string
+          custom_keywords: string[]
           description: string
           file_path: string | null
           final_credit: number | null
@@ -94,6 +95,7 @@ export type Database = {
           ai_reasoning?: string | null
           ai_suggested_credit?: number | null
           created_at?: string
+          custom_keywords?: string[]
           description: string
           file_path?: string | null
           final_credit?: number | null
@@ -113,6 +115,7 @@ export type Database = {
           ai_reasoning?: string | null
           ai_suggested_credit?: number | null
           created_at?: string
+          custom_keywords?: string[]
           description?: string
           file_path?: string | null
           final_credit?: number | null
@@ -224,6 +227,7 @@ export type Database = {
       }
       rules: {
         Row: {
+          achievement: string | null
           active: boolean
           category: string | null
           created_at: string
@@ -231,11 +235,15 @@ export type Database = {
           credit: number
           description: string | null
           id: string
+          identity: string | null
           keywords: string[]
+          level: string | null
           name: string
+          project: string | null
           updated_at: string
         }
         Insert: {
+          achievement?: string | null
           active?: boolean
           category?: string | null
           created_at?: string
@@ -243,11 +251,15 @@ export type Database = {
           credit?: number
           description?: string | null
           id?: string
+          identity?: string | null
           keywords?: string[]
+          level?: string | null
           name: string
+          project?: string | null
           updated_at?: string
         }
         Update: {
+          achievement?: string | null
           active?: boolean
           category?: string | null
           created_at?: string
@@ -255,8 +267,11 @@ export type Database = {
           credit?: number
           description?: string | null
           id?: string
+          identity?: string | null
           keywords?: string[]
+          level?: string | null
           name?: string
+          project?: string | null
           updated_at?: string
         }
         Relationships: []
