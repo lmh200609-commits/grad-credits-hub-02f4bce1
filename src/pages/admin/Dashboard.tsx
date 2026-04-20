@@ -24,21 +24,21 @@ const AdminDashboard = () => {
   const [apps, setApps] = useState<App[]>([]);
   const [studentCount, setStudentCount] = useState(0);
   const [teacherCount, setTeacherCount] = useState(0);
-  const [projectCount, setProjectCount] = useState(0);
+  const [ruleCount, setRuleCount] = useState(0);
   const [deptStats, setDeptStats] = useState<{ name: string; value: number }[]>([]);
 
   useEffect(() => {
     (async () => {
-      const [{ data: a }, { data: roles }, { count: pc }, { data: profiles }] = await Promise.all([
+      const [{ data: a }, { data: roles }, { count: rc }, { data: profiles }] = await Promise.all([
         supabase.from("applications").select("id, status, submitted_at, final_credit, ai_suggested_credit, student_id"),
         supabase.from("user_roles").select("user_id, role"),
-        supabase.from("projects").select("id", { count: "exact", head: true }),
+        supabase.from("rules").select("id", { count: "exact", head: true }).eq("active", true),
         supabase.from("profiles").select("user_id, department"),
       ]);
       setApps(a ?? []);
       setStudentCount((roles ?? []).filter((r) => r.role === "student").length);
       setTeacherCount((roles ?? []).filter((r) => r.role === "teacher").length);
-      setProjectCount(pc ?? 0);
+      setRuleCount(rc ?? 0);
 
       const studentIds = new Set((roles ?? []).filter((r) => r.role === "student").map((r) => r.user_id));
       const deptMap = new Map<string, number>();
@@ -101,7 +101,7 @@ const AdminDashboard = () => {
           <StatCard label="待复核" value={stats.pending} accent="text-amber-600" />
           <StatCard label="已拒绝" value={stats.rejected} accent="text-rose-600" />
           <StatCard label="累计学分" value={stats.totalCredit.toFixed(1)} accent="text-primary" />
-          <StatCard label="项目 / 师生" value={`${projectCount} / ${teacherCount}+${studentCount}`} />
+          <StatCard label="规则 / 师生" value={`${ruleCount} / ${teacherCount}+${studentCount}`} />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
