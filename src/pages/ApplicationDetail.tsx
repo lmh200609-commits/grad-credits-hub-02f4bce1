@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import AppLayout from "@/components/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,7 +50,8 @@ const ApplicationDetail = () => {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [collabIds, setCollabIds] = useState<string[]>([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    if (!id) return;
     const { data: a } = await supabase.from("applications").select("*").eq("id", id).single();
     if (!a) return;
     setApp(a as App);
@@ -75,8 +77,10 @@ const ApplicationDetail = () => {
         .createSignedUrl((a as App).file_path!, 3600);
       setFileUrl(signed?.signedUrl ?? null);
     }
-  };
-  useEffect(() => { load(); }, [id]);
+  }, [id]);
+  useEffect(() => { load(); }, [load]);
+  useRealtimeTable("applications", load, { filter: id ? `id=eq.${id}` : undefined });
+  useRealtimeTable("application_reviews", load, { filter: id ? `application_id=eq.${id}` : undefined });
 
   const isReviewer = !!app && (
     hasRole("admin")
