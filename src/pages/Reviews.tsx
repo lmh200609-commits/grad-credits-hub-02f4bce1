@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import AppLayout from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -44,18 +45,19 @@ const ReviewsList = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
-  useEffect(() => {
-    (async () => {
-      let q = supabase
-        .from("applications")
-        .select("id, description, status, ai_suggested_credit, ai_confidence, submitted_at, projects(name), profiles!applications_student_id_fkey(full_name, student_no)")
-        .order("submitted_at", { ascending: false });
-      if (FILTERS[tab].length) q = q.in("status", FILTERS[tab] as any);
-      if (projectFilter) q = q.eq("project_id", projectFilter);
-      const { data } = await q;
-      setRows((data as any[]) ?? []);
-    })();
+  const load = useCallback(async () => {
+    let q = supabase
+      .from("applications")
+      .select("id, description, status, ai_suggested_credit, ai_confidence, submitted_at, projects(name), profiles!applications_student_id_fkey(full_name, student_no)")
+      .order("submitted_at", { ascending: false });
+    if (FILTERS[tab].length) q = q.in("status", FILTERS[tab] as any);
+    if (projectFilter) q = q.eq("project_id", projectFilter);
+    const { data } = await q;
+    setRows((data as any[]) ?? []);
   }, [tab, projectFilter]);
+
+  useEffect(() => { load(); }, [load]);
+  useRealtimeTable("applications", load);
 
   return (
     <AppLayout>
