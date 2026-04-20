@@ -42,9 +42,22 @@ Deno.serve(async (req) => {
 
     // 找出与申请关键词最契合的规则（用于建议学分）
     const selected: string[] = app.selected_keywords ?? [];
+    const custom: string[] = app.custom_keywords ?? [];
     const candidate = rules?.find((r) =>
       [r.project, r.achievement, r.level, r.identity].filter(Boolean).every((v) => selected.includes(v as string))
     ) ?? null;
+
+    // 拉取与本次申请关键词相关的人工通过案例（教师覆盖系统驳回时沉淀）
+    const allKw = [...selected, ...custom];
+    const { data: allCases } = await admin
+      .from("cases")
+      .select("title, summary, awarded_credit, rule_id")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    const relatedCases = (allCases ?? []).filter((c) => {
+      const blob = `${c.title}\n${c.summary}`;
+      return allKw.some((kw) => kw && blob.includes(kw));
+    }).slice(0, 5);
 
     // 下载附件图片
     let imageDataUrl: string | null = null;
@@ -83,7 +96,9 @@ Deno.serve(async (req) => {
 - 模糊不清 / 文件缺失 / 无法判断 → recommendation=review, confidence 0.4~0.7，说明缺什么
 - 没有附件时只能基于文字说明判断材料-关键词一致性，无法核验姓名/篡改 → 默认 recommendation=review
 
-reasoning 必须用中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；结论：…」`;
+reasoning 必须用中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；结论：…」
+
+如果"参考案例"中存在与本次申请关键词高度相似且已被人工通过的案例，可作为放宽判断的依据：当四项核验只是模糊不确定（非明显造假）时，倾向于 approve 或 review，而不是直接 reject。`;
 
     const userPayload = {
       student: {
@@ -93,12 +108,17 @@ reasoning 必须用中文，结构：「材料一致性：…；图片相关性�
       application: {
         description: app.description,
         selected_keywords: selected,
-        custom_keywords: app.custom_keywords ?? [],
+        custom_keywords: custom,
         attachment: attachmentNote,
       },
       candidate_rule: candidate
         ? { id: candidate.id, name: candidate.name, credit: candidate.credit }
         : null,
+      reference_cases: relatedCases.map((c) => ({
+        title: c.title,
+        summary: c.summary,
+        awarded_credit: c.awarded_credit,
+      })),
     };
 
     const userContent: unknown[] = [{ type: "text", text: JSON.stringify(userPayload) }];

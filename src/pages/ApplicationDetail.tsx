@@ -20,6 +20,7 @@ type App = {
   student_id: string;
   description: string;
   selected_keywords: string[];
+  custom_keywords: string[];
   file_path: string | null;
   status: any;
   ai_matched_rule_id: string | null;
@@ -83,6 +84,9 @@ const ApplicationDetail = () => {
       return toast({ title: "请填写最终学分", variant: "destructive" });
     }
     const action = hasRole("admin") ? "admin_review" : "teacher_review";
+    const wasRejectedByAi = app.status === "rejected_by_ai";
+    const hasCustom = (app.custom_keywords?.length ?? 0) > 0;
+
     const { error: re } = await supabase.from("application_reviews").insert({
       application_id: app.id,
       reviewer_id: user!.id,
@@ -104,7 +108,36 @@ const ApplicationDetail = () => {
       })
       .eq("id", app.id);
     if (ue) return toast({ title: "更新失败", description: ue.message, variant: "destructive" });
-    toast({ title: decision === "approved" ? "已通过" : "已驳回" });
+
+    // 系统驳回 + 自定义关键词 + 人工通过 → 沉淀到案例库供下次系统核验参考
+    if (decision === "approved" && wasRejectedByAi && hasCustom) {
+      const allKw = [...(app.selected_keywords ?? []), ...(app.custom_keywords ?? [])];
+      const title = (app.custom_keywords[0] ?? app.description).slice(0, 60);
+      const summary = `关键词：${allKw.join("、")}\n申请说明：${app.description.slice(0, 300)}`;
+      const { error: ce } = await supabase.from("cases").insert({
+        title,
+        summary,
+        rule_id: app.ai_matched_rule_id,
+        awarded_credit: credit,
+        notes: `由人工复核覆盖系统驳回沉淀。复核备注：${note.trim() || "（无）"}`,
+        created_by: user!.id,
+      });
+      if (!ce) toast({ title: "已通过", description: "该案例已加入案例库，将影响后续系统核验" });
+      else toast({ title: "已通过" });
+    } else {
+      toast({ title: decision === "approved" ? "已通过" : "已驳回" });
+    }
+    load();
+  };
+
+  const requestManualReview = async () => {
+    if (!app) return;
+    const { error } = await supabase
+      .from("applications")
+      .update({ status: "pending_review" })
+      .eq("id", app.id);
+    if (error) return toast({ title: "申请失败", description: error.message, variant: "destructive" });
+    toast({ title: "已转人工复核", description: "教师将尽快处理" });
     load();
   };
 
@@ -165,8 +198,18 @@ const ApplicationDetail = () => {
             <CardContent>
               <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
               <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">{app.ai_reasoning}</p>
-              {app.status === "rejected_by_ai" && !isReviewer && (
-                <p className="mt-3 text-xs text-muted-foreground">如对结果有异议，可联系教师复核或重新提交申请。</p>
+              {app.status === "rejected_by_ai" && !isReviewer && app.student_id === user?.id && (
+                <div className="mt-3 flex flex-col gap-2 rounded-md border border-dashed border-destructive/40 bg-destructive/5 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    如果你对系统判定有异议，可申请教师人工复核。教师将根据你的材料和自定义关键词重新评估。
+                  </p>
+                  <Button size="sm" variant="outline" onClick={requestManualReview} className="self-start">
+                    申请人工复核
+                  </Button>
+                </div>
+              )}
+              {app.status === "pending_review" && !isReviewer && app.student_id === user?.id && (
+                <p className="mt-3 text-xs text-muted-foreground">已转人工复核，请耐心等待教师处理。</p>
               )}
             </CardContent>
           </Card>

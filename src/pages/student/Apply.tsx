@@ -337,7 +337,11 @@ const ApplyPage = () => {
           <CardHeader>
             <CardTitle className="text-base">自定义关键词（可选）</CardTitle>
             <CardDescription>
-              系统未收录的活动可在此添加补充说明，将随申请一起转人工审核
+              系统未收录的活动可在此补充。建议按以下格式逐条添加，便于教师人工复核识别：
+              <span className="mt-1 block rounded bg-muted px-2 py-1 font-mono text-xs">
+                项目=国家级B类；成果=电子商务三创赛；级别=校级最佳创意奖；身份=第一参与人
+              </span>
+              你也可以拆成多条，如 <code className="rounded bg-muted px-1">项目=国家级B类</code>、<code className="rounded bg-muted px-1">成果=电子商务三创赛</code> 等。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -346,7 +350,7 @@ const ApplyPage = () => {
                 value={customInput}
                 onChange={(e) => setCustomInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomKeyword(); } }}
-                placeholder="输入关键词后回车或点击添加"
+                placeholder="项目=…；成果=…；级别=…；身份=…"
               />
               <Button type="button" variant="outline" onClick={addCustomKeyword}>
                 <Plus className="h-4 w-4" />
