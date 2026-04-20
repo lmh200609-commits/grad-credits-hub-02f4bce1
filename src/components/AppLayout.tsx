@@ -7,19 +7,23 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard, Upload, BookOpen, FolderKanban, ClipboardCheck, FileText, Library, LogOut, Users,
+  LayoutDashboard, Upload, BookOpen, FolderKanban, ClipboardCheck, FileText, Library, LogOut,
+  Users, BarChart3, Trophy, UserCog, Inbox,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
 
 const adminItems: Item[] = [
-  { title: "工作台", url: "/", icon: LayoutDashboard },
-  { title: "批量导入账号", url: "/admin/import", icon: Upload },
+  { title: "数据看板", url: "/admin/dashboard", icon: BarChart3 },
+  { title: "复核中心", url: "/admin/review", icon: Inbox },
+  { title: "全部审核", url: "/reviews", icon: ClipboardCheck },
+  { title: "学分排名", url: "/admin/credits", icon: Trophy },
+  { title: "项目管理", url: "/projects", icon: FolderKanban },
   { title: "规则库", url: "/admin/rules", icon: BookOpen },
   { title: "案例库", url: "/admin/cases", icon: Library },
-  { title: "项目管理", url: "/projects", icon: FolderKanban },
-  { title: "全部审核", url: "/reviews", icon: ClipboardCheck },
-  { title: "学生管理", url: "/teacher/students", icon: Users },
+  { title: "学生管理", url: "/admin/users/students", icon: Users },
+  { title: "教师管理", url: "/admin/users/teachers", icon: UserCog },
+  { title: "批量导入账号", url: "/admin/import", icon: Upload },
 ];
 
 const teacherItems: Item[] = [

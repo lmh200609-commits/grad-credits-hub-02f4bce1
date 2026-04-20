@@ -8,3 +8,6 @@ verify_jwt = true
 
 [functions.evaluate-application]
 verify_jwt = true
+
+[functions.reset-password]
+verify_jwt = true

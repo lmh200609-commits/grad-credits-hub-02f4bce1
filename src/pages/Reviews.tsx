@@ -24,6 +24,9 @@ const FILTERS: Record<string, string[]> = {
   pending_review: ["pending_review"],
   auto_approved: ["auto_approved"],
   rejected_by_ai: ["rejected_by_ai"],
+  approved: ["approved"],
+  rejected: ["rejected"],
+  pending_ai: ["pending_ai"],
   finished: ["approved", "rejected"],
 };
 
@@ -31,8 +34,15 @@ const ReviewsList = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
-  const [tab, setTab] = useState("pending_review");
+  const initial = params.get("status") && FILTERS[params.get("status")!] ? params.get("status")! : "pending_review";
+  const [tab, setTab] = useState(initial);
   const projectFilter = params.get("project");
+
+  useEffect(() => {
+    const s = params.get("status");
+    if (s && FILTERS[s] && s !== tab) setTab(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   useEffect(() => {
     (async () => {
