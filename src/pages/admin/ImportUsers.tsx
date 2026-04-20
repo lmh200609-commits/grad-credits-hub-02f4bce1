@@ -44,8 +44,6 @@ const ROLE_MAP: Record<string, ParsedRow["role"]> = {
 };
 
 const ImportUsers = () => {
-  const navigate = useNavigate();
-  const { signOut } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
