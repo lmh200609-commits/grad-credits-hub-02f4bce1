@@ -67,34 +67,13 @@ const ApplyPage = () => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [rulesRes, casesRes] = await Promise.all([
-        supabase
-          .from("rules")
-          .select("id, name, project, achievement, level, identity, credit, description")
-          .eq("active", true),
-        supabase
-          .from("cases")
-          .select("id, title, summary, awarded_credit"),
-      ]);
+      // 规则数据量小（数十~数百），全量拉取支持关键词导航
+      const rulesRes = await supabase
+        .from("rules")
+        .select("id, name, project, achievement, level, identity, credit, description")
+        .eq("active", true);
       const baseRules: Rule[] = ((rulesRes.data as any[]) ?? []).map((r) => ({ ...r, source: "rule" as const }));
-
-      // 把案例库条目"伪装"成 rule，让学生可在导航/搜索中选到
-      const caseRules: Rule[] = ((casesRes.data as any[]) ?? []).map((c) => {
-        const kw = parseCaseKeywords(c.summary ?? "");
-        return {
-          id: `case:${c.id}`,
-          name: c.title,
-          project: kw.project ?? null,
-          achievement: kw.achievement ?? c.title,
-          level: kw.level ?? null,
-          identity: kw.identity ?? null,
-          credit: Number(c.awarded_credit ?? 0),
-          description: "来自案例库（教师人工通过沉淀）",
-          source: "case" as const,
-        };
-      });
-
-      setRules([...baseRules, ...caseRules]);
+      setRules(baseRules);
       setLoading(false);
     })();
   }, []);
@@ -118,8 +97,8 @@ const ApplyPage = () => {
     return Array.from(set).sort();
   }, [filteredRules, nextDim]);
 
-  // 搜索
-  const searchMatches = useMemo(() => {
+  // 本地搜索：规则
+  const ruleMatches = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
     return rules.filter((r) =>
@@ -130,6 +109,38 @@ const ApplyPage = () => {
       || (r.identity ?? "").toLowerCase().includes(q)
     ).slice(0, 8);
   }, [rules, search]);
+
+  // 服务端搜索：案例库（避免一次拉数千条）
+  const [caseMatches, setCaseMatches] = useState<Rule[]>([]);
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) { setCaseMatches([]); return; }
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from("cases")
+        .select("id, title, summary, awarded_credit")
+        .or(`title.ilike.%${q}%,summary.ilike.%${q}%`)
+        .limit(8);
+      const mapped: Rule[] = ((data as any[]) ?? []).map((c) => {
+        const kw = parseCaseKeywords(c.summary ?? "");
+        return {
+          id: `case:${c.id}`,
+          name: c.title,
+          project: kw.project ?? null,
+          achievement: kw.achievement ?? c.title,
+          level: kw.level ?? null,
+          identity: kw.identity ?? null,
+          credit: Number(c.awarded_credit ?? 0),
+          description: "来自案例库（教师人工通过沉淀）",
+          source: "case" as const,
+        };
+      });
+      setCaseMatches(mapped);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const searchMatches = useMemo(() => [...ruleMatches, ...caseMatches], [ruleMatches, caseMatches]);
 
   const pickValue = (dim: typeof DIMS[number], v: string) =>
     setPicked({ ...picked, [dim]: v });

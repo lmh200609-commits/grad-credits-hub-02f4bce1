@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
@@ -6,10 +6,12 @@ import AppLayout from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
+import TablePagination from "@/components/TablePagination";
 
 type Row = {
   id: string;
@@ -39,10 +41,16 @@ const ReviewsList = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
+  const [total, setTotal] = useState(0);
   const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
   const [loading, setLoading] = useState(true);
   const initial = params.get("status") && FILTERS[params.get("status")!] ? params.get("status")! : "all";
   const [tab, setTab] = useState(initial);
+  const [page, setPage] = useState(0);
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const PAGE_SIZE = 50;
 
   useEffect(() => {
     const s = params.get("status");
@@ -50,16 +58,42 @@ const ReviewsList = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
+  // 搜索防抖
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // 切换 tab/搜索时回到第 0 页
+  useEffect(() => { setPage(0); }, [tab, debounced]);
+
   const load = useCallback(async () => {
     setLoading(true);
+    // 若搜索非空，先按姓名/学号定位 student_id
+    let studentIds: string[] | null = null;
+    if (debounced) {
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .or(`full_name.ilike.%${debounced}%,student_no.ilike.%${debounced}%`)
+        .limit(500);
+      studentIds = (profs ?? []).map((p) => p.user_id as string);
+      if (studentIds.length === 0) {
+        setRows([]); setTotal(0); setProfiles(new Map()); setLoading(false); return;
+      }
+    }
+
     let q = supabase
       .from("applications")
-      .select("id, description, status, ai_suggested_credit, ai_confidence, final_credit, submitted_at, student_id")
+      .select("id, description, status, ai_suggested_credit, ai_confidence, final_credit, submitted_at, student_id", { count: "exact" })
       .order("submitted_at", { ascending: false });
     if (FILTERS[tab].length) q = q.in("status", FILTERS[tab] as any);
-    const { data } = await q;
+    if (studentIds) q = q.in("student_id", studentIds);
+    const from = page * PAGE_SIZE;
+    const { data, count } = await q.range(from, from + PAGE_SIZE - 1);
     const list = (data as Row[]) ?? [];
     setRows(list);
+    setTotal(count ?? 0);
 
     const ids = Array.from(new Set(list.map((r) => r.student_id)));
     if (ids.length) {
@@ -74,10 +108,15 @@ const ReviewsList = () => {
       setProfiles(new Map());
     }
     setLoading(false);
-  }, [tab]);
+  }, [tab, page, debounced]);
 
   useEffect(() => { load(); }, [load]);
-  useRealtimeTable("applications", load);
+
+  // Realtime 防抖：批量审核时避免每次事件都整表 reload
+  useRealtimeTable("applications", () => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => load(), 800);
+  });
 
   const tabLabel = useMemo(() => ({
     all: "全部", pending_review: "待复核", auto_approved: "系统已通过",
@@ -90,6 +129,12 @@ const ReviewsList = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">申请审核</h1>
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索学生姓名/学号"
+            className="max-w-xs"
+          />
         </div>
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="flex-wrap">
@@ -102,7 +147,7 @@ const ReviewsList = () => {
           </TabsList>
         </Tabs>
         <Card>
-          <CardHeader><CardTitle className="text-base">{rows.length} 条记录 · {tabLabel[tab] ?? tab}</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">共 {total} 条 · {tabLabel[tab] ?? tab}</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow>
@@ -137,6 +182,7 @@ const ReviewsList = () => {
                 })}
               </TableBody>
             </Table>
+            <TablePagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
           </CardContent>
         </Card>
       </div>

@@ -49,15 +49,21 @@ Deno.serve(async (req) => {
 
     // 拉取与本次申请关键词相关的人工通过案例（教师覆盖系统驳回时沉淀）
     const allKw = [...selected, ...custom];
-    const { data: allCases } = await admin
-      .from("cases")
-      .select("title, summary, awarded_credit, rule_id")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    const relatedCases = (allCases ?? []).filter((c) => {
-      const blob = `${c.title}\n${c.summary}`;
-      return allKw.some((kw) => kw && blob.includes(kw));
-    }).slice(0, 5);
+    // 服务端按关键词 ilike 匹配，避免数千案例时漏检 / 超量传输
+    let relatedCases: Array<{ title: string; summary: string; awarded_credit: number | null }> = [];
+    const cleanedKw = allKw.filter((k) => k && k.trim().length > 0).slice(0, 8);
+    if (cleanedKw.length) {
+      const orExpr = cleanedKw
+        .flatMap((k) => [`title.ilike.%${k}%`, `summary.ilike.%${k}%`])
+        .join(",");
+      const { data: matched } = await admin
+        .from("cases")
+        .select("title, summary, awarded_credit")
+        .or(orExpr)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      relatedCases = (matched as typeof relatedCases) ?? [];
+    }
 
     // 下载附件图片
     let imageDataUrl: string | null = null;
