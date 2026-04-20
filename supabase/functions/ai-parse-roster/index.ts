@@ -1,5 +1,5 @@
-// AI-powered roster parser: takes raw rows (any column layout) and normalizes
-// them into the import schema using Lovable AI Gateway.
+// AI-powered roster parser: AI identifies column mapping from a sample,
+// then we apply it to ALL rows server-side (supports 2000+ rows).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -45,28 +45,49 @@ Deno.serve(async (req) => {
       return json({ error: "rows 不能为空" }, 400);
     }
 
-    const sample = JSON.stringify(rawRows.slice(0, Math.min(rawRows.length, 200)));
-
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) return json({ error: "LOVABLE_API_KEY 未配置" }, 500);
 
-    const sysPrompt = `你是一个名册解析助手。用户会传入一张 Excel/CSV 表的原始行（每行是一个对象，字段名是表头原文）。
-请把每一行规范化为以下字段：
-- student_no (string, 必填)：学号或工号
-- full_name (string, 必填)：姓名
-- phone (string, 可选)：手机号，纯数字
-- class_name (string, 可选)：班级
-- department (string, 可选)：院系/学院
-- major (string, 可选)：专业
-- role ("admin"|"teacher"|"student", 必填)：默认 "${defaultRole}"，识别"教师/老师"=teacher, "管理员"=admin, "学生"=student
-- password (string, 必填, ≥6位)：默认 "${defaultPassword}"
+    // Send only a small sample to AI to get the COLUMN MAPPING (not parsed rows)
+    const sampleSize = Math.min(rawRows.length, 5);
+    const sample = JSON.stringify(rawRows.slice(0, sampleSize));
+    const allKeys = Object.keys(rawRows[0] ?? {});
+
+    const sysPrompt = `你是一个名册解析助手。用户会传入一张 Excel/CSV 表的前几行样本数据。
+你的任务不是解析所有数据，而是输出一个**列名映射表**，告诉我哪一列对应哪个字段。
+
+目标字段：
+- student_no：学号或工号（必须能找到）
+- full_name：姓名（必须能找到）
+- phone：手机号
+- class_name：班级
+- department：院系/学院
+- major：专业
+- role：角色（教师/学生/管理员）
+- password：密码
+
+原始表头列名：${JSON.stringify(allKeys)}
+
+请输出 JSON，结构：
+{
+  "mapping": {
+    "student_no": "原始列名",
+    "full_name": "原始列名",
+    "phone": "原始列名或null",
+    "class_name": "原始列名或null",
+    "department": "原始列名或null",
+    "major": "原始列名或null",
+    "role": "原始列名或null",
+    "password": "原始列名或null"
+  },
+  "role_map": {"教师": "teacher", "老师": "teacher", "管理员": "admin", "学生": "student"},
+  "notes": "简要说明你识别了什么"
+}
 
 规则：
 1. 表头可能是任意写法（学号/学生编号/工号/编号/Student No 等），灵活匹配。
-2. 缺少角色字段时填默认值。
-3. 缺少密码字段时填默认值。
-4. 跳过明显是表头说明、空行或汇总行。
-5. 只输出 JSON，结构 {"rows":[{...}, ...], "notes":"简要说明你做了哪些识别/转换"}`;
+2. 找不到对应列的填 null。
+3. student_no 和 full_name 必须找到，否则报错。`;
 
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -78,7 +99,7 @@ Deno.serve(async (req) => {
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: sysPrompt },
-          { role: "user", content: `共 ${rawRows.length} 行，下面是前 ${Math.min(rawRows.length, 200)} 行原始数据：\n${sample}` },
+          { role: "user", content: `共 ${rawRows.length} 行，样本：\n${sample}` },
         ],
         response_format: { type: "json_object" },
       }),
@@ -93,25 +114,54 @@ Deno.serve(async (req) => {
 
     const aiData = await aiResp.json();
     const content = aiData.choices?.[0]?.message?.content ?? "{}";
-    let parsed: { rows?: any[]; notes?: string };
+    let parsed: { mapping?: Record<string, string | null>; role_map?: Record<string, string>; notes?: string };
     try {
       parsed = JSON.parse(content);
     } catch {
       return json({ error: "AI 输出不是合法 JSON", raw: content }, 500);
     }
 
-    const normalized = (parsed.rows ?? []).map((r: any) => ({
-      student_no: String(r.student_no ?? "").trim(),
-      full_name: String(r.full_name ?? "").trim(),
-      phone: r.phone ? String(r.phone).trim() : undefined,
-      class_name: r.class_name ? String(r.class_name).trim() : undefined,
-      department: r.department ? String(r.department).trim() : undefined,
-      major: r.major ? String(r.major).trim() : undefined,
-      role: ["admin", "teacher", "student"].includes(r.role) ? r.role : defaultRole,
-      password: r.password && String(r.password).length >= 6 ? String(r.password) : defaultPassword,
-    }));
+    const mapping = parsed.mapping;
+    if (!mapping?.student_no || !mapping?.full_name) {
+      return json({ error: "AI 无法识别学号和姓名列，请检查表头" }, 400);
+    }
 
-    return json({ success: true, rows: normalized, notes: parsed.notes ?? "" });
+    const roleMap: Record<string, string> = {
+      ...{ "教师": "teacher", "老师": "teacher", "管理员": "admin", "学生": "student", "teacher": "teacher", "admin": "admin", "student": "student" },
+      ...(parsed.role_map ?? {}),
+    };
+
+    // Apply mapping to ALL rows (fast, no AI needed)
+    const normalized = rawRows.map((raw: Record<string, unknown>) => {
+      const get = (field: string) => {
+        const col = (mapping as Record<string, string | null>)[field];
+        if (!col) return undefined;
+        const v = raw[col];
+        return v != null ? String(v).trim() : undefined;
+      };
+
+      const rawRole = get("role");
+      const role = rawRole ? (roleMap[rawRole] ?? defaultRole) : defaultRole;
+      const rawPwd = get("password");
+      const password = rawPwd && rawPwd.length >= 6 ? rawPwd : defaultPassword;
+
+      return {
+        student_no: get("student_no") ?? "",
+        full_name: get("full_name") ?? "",
+        phone: get("phone") || undefined,
+        class_name: get("class_name") || undefined,
+        department: get("department") || undefined,
+        major: get("major") || undefined,
+        role: ["admin", "teacher", "student"].includes(role) ? role : defaultRole,
+        password,
+      };
+    }).filter((r: { student_no: string; full_name: string }) => r.student_no && r.full_name);
+
+    return json({
+      success: true,
+      rows: normalized,
+      notes: `${parsed.notes ?? ""} | 列映射：${JSON.stringify(mapping)} | 共处理 ${rawRows.length} 行，有效 ${normalized.length} 行`,
+    });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
