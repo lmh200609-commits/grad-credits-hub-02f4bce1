@@ -19,7 +19,8 @@ export const applySchema = z.object({
     .min(10, "请填写至少 10 字的申请说明")
     .max(2000, "说明不超过 2000 字"),
   selected_keywords: z.array(z.string()).default([]),
-  rule_id: z.string().uuid("请先匹配到一条学分规则"),
+  custom_keywords: z.array(z.string()).default([]),
+  rule_id: z.string().uuid("请先匹配到一条学分规则").optional().nullable(),
 });
 export type ApplyInput = z.infer<typeof applySchema>;
 
