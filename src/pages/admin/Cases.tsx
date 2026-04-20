@@ -11,6 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Pencil } from "lucide-react";
+import { caseSchema } from "@/lib/schemas";
+import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 
 type Rule = { id: string; name: string };
 type Case = { id: string; title: string; summary: string; rule_id: string | null; awarded_credit: number | null; notes: string | null };
@@ -20,17 +23,20 @@ const empty = { title: "", summary: "", rule_id: "none", awarded_credit: 1, note
 const CasesPage = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Case | null>(null);
   const [form, setForm] = useState<typeof empty>(empty);
 
   const load = async () => {
+    setLoading(true);
     const [c, r] = await Promise.all([
       supabase.from("cases").select("*").order("created_at", { ascending: false }),
       supabase.from("rules").select("id, name").eq("active", true),
     ]);
     setCases((c.data as Case[]) ?? []);
     setRules((r.data as Rule[]) ?? []);
+    setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
@@ -45,14 +51,18 @@ const CasesPage = () => {
   };
 
   const save = async () => {
+    const parsed = caseSchema.safeParse(form);
+    if (!parsed.success) {
+      return toast({ title: parsed.error.issues[0]?.message ?? "请检查表单", variant: "destructive" });
+    }
+    const v = parsed.data;
     const payload = {
-      title: form.title.trim(),
-      summary: form.summary.trim(),
-      rule_id: form.rule_id === "none" ? null : form.rule_id,
-      awarded_credit: Number(form.awarded_credit) || 0,
-      notes: form.notes.trim() || null,
+      title: v.title,
+      summary: v.summary,
+      rule_id: v.rule_id === "none" ? null : v.rule_id,
+      awarded_credit: v.awarded_credit,
+      notes: v.notes?.trim() || null,
     };
-    if (!payload.title || !payload.summary) return toast({ title: "标题和摘要必填", variant: "destructive" });
     const { error } = editing
       ? await supabase.from("cases").update(payload).eq("id", editing.id)
       : await supabase.from("cases").insert(payload);
@@ -108,7 +118,11 @@ const CasesPage = () => {
                 <TableHead>学分</TableHead><TableHead className="text-right">操作</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {cases.map((c) => (
+                {loading ? (
+                  <TableSkeleton rows={4} cols={4} />
+                ) : cases.length === 0 ? (
+                  <TableRow><TableCell colSpan={4}><EmptyState title="暂无案例" description="新增历史通过案例帮助 AI 评估" /></TableCell></TableRow>
+                ) : cases.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.title}</TableCell>
                     <TableCell>{rules.find((r) => r.id === c.rule_id)?.name ?? "—"}</TableCell>
@@ -119,7 +133,6 @@ const CasesPage = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {cases.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">暂无案例</TableCell></TableRow>}
               </TableBody>
             </Table>
           </CardContent>

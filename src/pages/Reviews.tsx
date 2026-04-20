@@ -8,6 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/StatusBadge";
+import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 
 type Row = {
   id: string;
@@ -35,6 +37,7 @@ const ReviewsList = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
   const initial = params.get("status") && FILTERS[params.get("status")!] ? params.get("status")! : "pending_review";
   const [tab, setTab] = useState(initial);
   const projectFilter = params.get("project");
@@ -46,6 +49,7 @@ const ReviewsList = () => {
   }, [params]);
 
   const load = useCallback(async () => {
+    setLoading(true);
     let q = supabase
       .from("applications")
       .select("id, description, status, ai_suggested_credit, ai_confidence, submitted_at, projects(name), profiles!applications_student_id_fkey(full_name, student_no)")
@@ -54,6 +58,7 @@ const ReviewsList = () => {
     if (projectFilter) q = q.eq("project_id", projectFilter);
     const { data } = await q;
     setRows((data as any[]) ?? []);
+    setLoading(false);
   }, [tab, projectFilter]);
 
   useEffect(() => { load(); }, [load]);
@@ -88,7 +93,11 @@ const ReviewsList = () => {
                 <TableHead>提交时间</TableHead><TableHead className="text-right">操作</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {loading ? (
+                  <TableSkeleton rows={5} cols={8} />
+                ) : rows.length === 0 ? (
+                  <TableRow><TableCell colSpan={8}><EmptyState title="暂无记录" description="切换筛选标签或等待新申请" /></TableCell></TableRow>
+                ) : rows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>{r.profiles?.full_name ?? "—"} <span className="text-xs text-muted-foreground">{r.profiles?.student_no}</span></TableCell>
                     <TableCell>{r.projects?.name ?? "—"}</TableCell>
@@ -102,7 +111,6 @@ const ReviewsList = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {rows.length === 0 && <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">暂无记录</TableCell></TableRow>}
               </TableBody>
             </Table>
           </CardContent>

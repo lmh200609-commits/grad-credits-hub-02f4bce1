@@ -13,6 +13,9 @@ import {
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { resetPasswordSchema } from "@/lib/schemas";
+import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 
 type Profile = {
   user_id: string;
@@ -36,18 +39,22 @@ const UsersManage = () => {
   const meta = TITLES[roleParam ?? "students"] ?? TITLES.students;
 
   const [rows, setRows] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [resetTarget, setResetTarget] = useState<Profile | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
 
   const load = async () => {
+    setLoading(true);
     const [{ data: roles }, { data: profiles }] = await Promise.all([
       supabase.from("user_roles").select("user_id").eq("role", role),
       supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone"),
     ]);
     const ids = new Set((roles ?? []).map((r) => r.user_id));
     setRows((profiles ?? []).filter((p) => ids.has(p.user_id)));
+    setLoading(false);
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [role]);
@@ -64,13 +71,17 @@ const UsersManage = () => {
 
   const resetPassword = async () => {
     if (!resetTarget) return;
-    if (newPassword.length < 6) {
-      toast.error("密码至少 6 位");
+    const parsed = resetPasswordSchema.safeParse({ password: newPassword });
+    if (!parsed.success) {
+      const msg = parsed.error.issues[0]?.message ?? "密码不合规";
+      setPwError(msg);
+      toast.error(msg);
       return;
     }
+    setPwError(null);
     setResetting(true);
     const { data, error } = await supabase.functions.invoke("reset-password", {
-      body: { user_id: resetTarget.user_id, new_password: newPassword },
+      body: { user_id: resetTarget.user_id, new_password: parsed.data.password },
     });
     setResetting(false);
     if (error || (data as { error?: string })?.error) {
