@@ -99,12 +99,12 @@ const AdminDashboard = () => {
         </div>
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-          <StatCard label="申请总数" value={stats.total} />
+          <StatCard label="申请总数" value={stats.total} accent="text-indigo-600" />
           <StatCard label="已通过" value={stats.approved} accent="text-emerald-600" />
           <StatCard label="待复核" value={stats.pending} accent="text-amber-600" />
           <StatCard label="已拒绝" value={stats.rejected} accent="text-rose-600" />
-          <StatCard label="累计学分" value={stats.totalCredit.toFixed(1)} accent="text-primary" />
-          <StatCard label="规则 / 师生" value={`${ruleCount} / ${teacherCount}+${studentCount}`} />
+          <StatCard label="累计学分" value={stats.totalCredit.toFixed(1)} accent="text-fuchsia-600" />
+          <StatCard label="规则 / 师生" value={`${ruleCount} / ${teacherCount}+${studentCount}`} accent="text-cyan-600" />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
