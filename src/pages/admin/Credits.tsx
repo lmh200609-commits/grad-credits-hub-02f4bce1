@@ -165,11 +165,12 @@ const Credits = () => {
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
-                ) : filtered.map((r, i) => {
+                ) : paged.map((r, i) => {
+                  const rank = page * PAGE_SIZE + i + 1;
                   const passed = r.total_credit >= PASS_THRESHOLD;
                   return (
                   <TableRow key={r.user_id}>
-                    <TableCell className="font-mono text-muted-foreground">#{i + 1}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">#{rank}</TableCell>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
                     <TableCell>{r.student_no ?? "—"}</TableCell>
                     <TableCell>{r.department ?? "—"}</TableCell>
@@ -192,6 +193,9 @@ const Credits = () => {
                 })}
               </TableBody>
             </Table>
+            {filtered.length > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            )}
           </CardContent>
         </Card>
       </div>
