@@ -127,8 +127,10 @@ const UsersManage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+                {loading ? (
+                  <TableSkeleton rows={5} cols={role === "student" ? 8 : 6} />
+                ) : filtered.length === 0 ? (
+                  <TableRow><TableCell colSpan={8}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
                 ) : filtered.map((r) => (
                   <TableRow key={r.user_id}>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
@@ -144,7 +146,7 @@ const UsersManage = () => {
                           <Link to={`/teacher/students/${r.user_id}`}>详情</Link>
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => { setResetTarget(r); setNewPassword(""); }}>
+                      <Button variant="outline" size="sm" onClick={() => { setResetTarget(r); setNewPassword(""); setPwError(null); }}>
                         重置密码
                       </Button>
                     </TableCell>
@@ -162,8 +164,9 @@ const UsersManage = () => {
             <DialogTitle>重置密码 — {resetTarget?.full_name ?? resetTarget?.email}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="np">新密码（至少 6 位）</Label>
-            <Input id="np" type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="例如：Abc12345" />
+            <Label htmlFor="np">新密码（至少 8 位，包含字母和数字）</Label>
+            <Input id="np" type="text" value={newPassword} onChange={(e) => { setNewPassword(e.target.value); if (pwError) setPwError(null); }} placeholder="例如：Abc12345" aria-invalid={!!pwError} />
+            {pwError && <p className="text-xs text-destructive">{pwError}</p>}
             <p className="text-xs text-muted-foreground">请通过安全渠道告知用户新密码，并提醒尽快修改</p>
           </div>
           <DialogFooter>

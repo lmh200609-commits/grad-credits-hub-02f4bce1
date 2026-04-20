@@ -121,9 +121,13 @@ const Students = () => {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">加载中…</TableCell></TableRow>
+                  <>{Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>{Array.from({ length: 7 }).map((_, c) => (
+                      <TableCell key={c}><div className="h-4 animate-pulse rounded bg-muted" /></TableCell>
+                    ))}</TableRow>
+                  ))}</>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">暂无符合条件的学生</TableCell></TableRow>
                 ) : (
                   filtered.map((r) => (
                     <TableRow key={r.user_id}>
