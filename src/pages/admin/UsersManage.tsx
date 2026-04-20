@@ -13,6 +13,9 @@ import {
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { resetPasswordSchema } from "@/lib/schemas";
+import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 
 type Profile = {
   user_id: string;
@@ -36,18 +39,22 @@ const UsersManage = () => {
   const meta = TITLES[roleParam ?? "students"] ?? TITLES.students;
 
   const [rows, setRows] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [resetTarget, setResetTarget] = useState<Profile | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
 
   const load = async () => {
+    setLoading(true);
     const [{ data: roles }, { data: profiles }] = await Promise.all([
       supabase.from("user_roles").select("user_id").eq("role", role),
       supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone"),
     ]);
     const ids = new Set((roles ?? []).map((r) => r.user_id));
     setRows((profiles ?? []).filter((p) => ids.has(p.user_id)));
+    setLoading(false);
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [role]);
@@ -64,13 +71,17 @@ const UsersManage = () => {
 
   const resetPassword = async () => {
     if (!resetTarget) return;
-    if (newPassword.length < 6) {
-      toast.error("密码至少 6 位");
+    const parsed = resetPasswordSchema.safeParse({ password: newPassword });
+    if (!parsed.success) {
+      const msg = parsed.error.issues[0]?.message ?? "密码不合规";
+      setPwError(msg);
+      toast.error(msg);
       return;
     }
+    setPwError(null);
     setResetting(true);
     const { data, error } = await supabase.functions.invoke("reset-password", {
-      body: { user_id: resetTarget.user_id, new_password: newPassword },
+      body: { user_id: resetTarget.user_id, new_password: parsed.data.password },
     });
     setResetting(false);
     if (error || (data as { error?: string })?.error) {
@@ -116,8 +127,10 @@ const UsersManage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+                {loading ? (
+                  <TableSkeleton rows={5} cols={role === "student" ? 8 : 6} />
+                ) : filtered.length === 0 ? (
+                  <TableRow><TableCell colSpan={8}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
                 ) : filtered.map((r) => (
                   <TableRow key={r.user_id}>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
@@ -133,7 +146,7 @@ const UsersManage = () => {
                           <Link to={`/teacher/students/${r.user_id}`}>详情</Link>
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => { setResetTarget(r); setNewPassword(""); }}>
+                      <Button variant="outline" size="sm" onClick={() => { setResetTarget(r); setNewPassword(""); setPwError(null); }}>
                         重置密码
                       </Button>
                     </TableCell>
@@ -151,8 +164,9 @@ const UsersManage = () => {
             <DialogTitle>重置密码 — {resetTarget?.full_name ?? resetTarget?.email}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="np">新密码（至少 6 位）</Label>
-            <Input id="np" type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="例如：Abc12345" />
+            <Label htmlFor="np">新密码（至少 8 位，包含字母和数字）</Label>
+            <Input id="np" type="text" value={newPassword} onChange={(e) => { setNewPassword(e.target.value); if (pwError) setPwError(null); }} placeholder="例如：Abc12345" aria-invalid={!!pwError} />
+            {pwError && <p className="text-xs text-destructive">{pwError}</p>}
             <p className="text-xs text-muted-foreground">请通过安全渠道告知用户新密码，并提醒尽快修改</p>
           </div>
           <DialogFooter>

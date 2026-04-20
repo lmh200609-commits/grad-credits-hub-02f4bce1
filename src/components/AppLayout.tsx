@@ -89,21 +89,22 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
       <div className="flex min-h-screen w-full">
         <AppSidebar />
         <div className="flex flex-1 flex-col">
-          <header className="flex h-14 items-center justify-between border-b bg-background px-4">
-            <div className="flex items-center gap-3">
+          <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-3 sm:px-4">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               <SidebarTrigger />
-              <span className="font-semibold">学分认证系统</span>
+              <span className="truncate font-semibold">学分认证系统</span>
             </div>
-            <div className="flex items-center gap-3 text-sm">
-              <span className="text-muted-foreground">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="hidden max-w-[40vw] truncate text-muted-foreground md:inline">
                 {user?.email} · {roles.join(", ") || "未分配"}
               </span>
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
-                <LogOut className="mr-1 h-4 w-4" /> 退出
+                <LogOut className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">退出</span>
               </Button>
             </div>
           </header>
-          <main className="flex-1 overflow-auto bg-muted/30 p-6">{children}</main>
+          <main className="flex-1 overflow-auto bg-muted/30 p-3 sm:p-6">{children}</main>
         </div>
       </div>
     </SidebarProvider>

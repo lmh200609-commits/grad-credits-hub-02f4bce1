@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
+import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 
 type Row = {
   id: string;
@@ -23,15 +25,18 @@ const MyApplications = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!user) return;
+    setLoading(true);
     const { data } = await supabase
       .from("applications")
       .select("id, description, status, ai_suggested_credit, final_credit, submitted_at, projects(name)")
       .eq("student_id", user.id)
       .order("submitted_at", { ascending: false });
     setRows((data as any[]) ?? []);
+    setLoading(false);
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
@@ -57,7 +62,11 @@ const MyApplications = () => {
                 <TableHead className="text-right">操作</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {loading ? (
+                  <TableSkeleton rows={4} cols={7} />
+                ) : rows.length === 0 ? (
+                  <TableRow><TableCell colSpan={7}><EmptyState title="还没有申请" description="去「可申请项目」选择项目并提交你的第一份申请" /></TableCell></TableRow>
+                ) : rows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>{r.projects?.name ?? "—"}</TableCell>
                     <TableCell className="max-w-xs truncate">{r.description}</TableCell>
@@ -70,7 +79,6 @@ const MyApplications = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {rows.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">暂无申请</TableCell></TableRow>}
               </TableBody>
             </Table>
           </CardContent>

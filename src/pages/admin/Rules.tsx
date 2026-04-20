@@ -12,6 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Pencil } from "lucide-react";
+import { ruleSchema } from "@/lib/schemas";
+import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 
 type Rule = {
   id: string;
@@ -27,13 +30,16 @@ const empty = { name: "", category: "", keywords: "", credit: 1, description: ""
 
 const RulesPage = () => {
   const [rules, setRules] = useState<Rule[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Rule | null>(null);
   const [form, setForm] = useState<typeof empty>(empty);
 
   const load = async () => {
+    setLoading(true);
     const { data } = await supabase.from("rules").select("*").order("created_at", { ascending: false });
     setRules((data as Rule[]) ?? []);
+    setLoading(false);
   };
   useEffect(() => { load(); }, []);
 
@@ -48,15 +54,19 @@ const RulesPage = () => {
   };
 
   const save = async () => {
+    const parsed = ruleSchema.safeParse(form);
+    if (!parsed.success) {
+      return toast({ title: parsed.error.issues[0]?.message ?? "请检查表单", variant: "destructive" });
+    }
+    const v = parsed.data;
     const payload = {
-      name: form.name.trim(),
-      category: form.category.trim() || null,
-      keywords: form.keywords.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean),
-      credit: Number(form.credit) || 0,
-      description: form.description.trim() || null,
-      active: form.active,
+      name: v.name,
+      category: v.category?.trim() || null,
+      keywords: (v.keywords ?? "").split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean),
+      credit: v.credit,
+      description: v.description?.trim() || null,
+      active: v.active,
     };
-    if (!payload.name) return toast({ title: "请填写规则名称", variant: "destructive" });
     const { error } = editing
       ? await supabase.from("rules").update(payload).eq("id", editing.id)
       : await supabase.from("rules").insert(payload);
@@ -116,7 +126,11 @@ const RulesPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rules.map((r) => (
+                {loading ? (
+                  <TableSkeleton rows={4} cols={6} />
+                ) : rules.length === 0 ? (
+                  <TableRow><TableCell colSpan={6}><EmptyState title="暂无规则" description="点击右上角新增第一条匹配规则" /></TableCell></TableRow>
+                ) : rules.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.name}</TableCell>
                     <TableCell>{r.category ?? "—"}</TableCell>
@@ -134,7 +148,6 @@ const RulesPage = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-                {rules.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">暂无规则</TableCell></TableRow>}
               </TableBody>
             </Table>
           </CardContent>
