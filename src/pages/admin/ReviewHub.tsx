@@ -23,11 +23,15 @@ const ReviewHub = () => {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("applications").select("status");
+      // Use server-side counts per status to avoid pulling thousands of rows
+      const statuses = ["pending_ai", "auto_approved", "pending_review", "rejected_by_ai", "approved", "rejected"] as const;
+      const results = await Promise.all(
+        statuses.map((s) =>
+          supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", s),
+        ),
+      );
       const c: Counts = {};
-      (data ?? []).forEach((r) => {
-        c[r.status] = (c[r.status] ?? 0) + 1;
-      });
+      statuses.forEach((s, i) => { c[s] = results[i].count ?? 0; });
       setCounts(c);
     })();
   }, []);

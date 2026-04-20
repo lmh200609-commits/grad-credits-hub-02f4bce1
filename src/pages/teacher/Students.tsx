@@ -11,6 +11,10 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { fetchAll } from "@/lib/fetchAll";
+import TablePagination from "@/components/TablePagination";
+
+const PAGE_SIZE = 50;
 
 type Profile = {
   user_id: string;
@@ -31,17 +35,18 @@ const Students = () => {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState<string>(ALL);
   const [major, setMajor] = useState<string>(ALL);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [{ data: roleRows }, { data: profileRows }] = await Promise.all([
-        supabase.from("user_roles").select("user_id").eq("role", "student"),
-        supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email"),
+      const [roleRows, profileRows] = await Promise.all([
+        fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", "student")),
+        fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email")),
       ]);
-      const ids = new Set((roleRows ?? []).map((r) => r.user_id));
+      const ids = new Set(roleRows.map((r) => r.user_id));
       setStudentIds(ids);
-      setRows((profileRows ?? []).filter((p) => ids.has(p.user_id)));
+      setRows(profileRows.filter((p) => ids.has(p.user_id)));
       setLoading(false);
     })();
   }, []);
@@ -66,6 +71,9 @@ const Students = () => {
         .some((v) => v!.toLowerCase().includes(q));
     });
   }, [rows, search, dept, major]);
+
+  useEffect(() => { setPage(0); }, [search, dept, major]);
+  const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   return (
     <AppLayout>
@@ -129,7 +137,7 @@ const Students = () => {
                 ) : filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">暂无符合条件的学生</TableCell></TableRow>
                 ) : (
-                  filtered.map((r) => (
+                  paged.map((r) => (
                     <TableRow key={r.user_id}>
                       <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
                       <TableCell>{r.student_no ?? "—"}</TableCell>
@@ -147,6 +155,9 @@ const Students = () => {
                 )}
               </TableBody>
             </Table>
+            {!loading && filtered.length > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            )}
           </CardContent>
         </Card>
       </div>

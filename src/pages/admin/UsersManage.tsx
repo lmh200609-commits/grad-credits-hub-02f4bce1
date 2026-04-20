@@ -16,6 +16,10 @@ import {
 import { resetPasswordSchema } from "@/lib/schemas";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
+import { fetchAll } from "@/lib/fetchAll";
+import TablePagination from "@/components/TablePagination";
+
+const PAGE_SIZE = 50;
 
 type Profile = {
   user_id: string;
@@ -46,20 +50,22 @@ const UsersManage = () => {
   const [newPassword, setNewPassword] = useState("");
   const [pwError, setPwError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [page, setPage] = useState(0);
 
   const load = async () => {
     setLoading(true);
-    const [{ data: roles }, { data: profiles }, appsRes] = await Promise.all([
-      supabase.from("user_roles").select("user_id").eq("role", role),
-      supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone"),
+    const [roles, profiles, apps] = await Promise.all([
+      fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", role)),
+      fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone")),
       role === "student"
-        ? supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit")
-        : Promise.resolve({ data: [] as any[] }),
+        ? fetchAll<{ student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }>(
+            supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit"))
+        : Promise.resolve([] as { student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }[]),
     ]);
-    const ids = new Set((roles ?? []).map((r) => r.user_id));
-    setRows((profiles ?? []).filter((p) => ids.has(p.user_id)));
+    const ids = new Set(roles.map((r) => r.user_id));
+    setRows(profiles.filter((p) => ids.has(p.user_id)));
     const m = new Map<string, { total: number; count: number }>();
-    ((appsRes as any).data ?? []).forEach((a: any) => {
+    apps.forEach((a) => {
       if (!["approved", "auto_approved"].includes(a.status)) return;
       const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
       const cur = m.get(a.student_id) ?? { total: 0, count: 0 };
@@ -80,6 +86,9 @@ const UsersManage = () => {
         .some((v) => v!.toLowerCase().includes(q)),
     );
   }, [rows, search]);
+
+  useEffect(() => { setPage(0); }, [search, role]);
+  const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const resetPassword = async () => {
     if (!resetTarget) return;
@@ -144,7 +153,7 @@ const UsersManage = () => {
                   <TableSkeleton rows={5} cols={role === "student" ? 9 : 6} />
                 ) : filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={role === "student" ? 9 : 6}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
-                ) : filtered.map((r) => {
+                ) : paged.map((r) => {
                   const c = credits.get(r.user_id);
                   return (
                   <TableRow key={r.user_id}>
@@ -178,6 +187,9 @@ const UsersManage = () => {
                 })}
               </TableBody>
             </Table>
+            {!loading && filtered.length > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            )}
           </CardContent>
         </Card>
       </div>

@@ -12,6 +12,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Download } from "lucide-react";
+import { fetchAll } from "@/lib/fetchAll";
+import TablePagination from "@/components/TablePagination";
+
+const PAGE_SIZE = 50;
 
 type Row = {
   user_id: string;
@@ -35,23 +39,25 @@ const Credits = () => {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState(ALL);
   const [passFilter, setPassFilter] = useState<PassFilter>("all");
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     (async () => {
-      const [{ data: roles }, { data: profiles }, { data: apps }] = await Promise.all([
-        supabase.from("user_roles").select("user_id").eq("role", "student"),
-        supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name"),
-        supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit"),
+      const [roles, profiles, apps] = await Promise.all([
+        fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", "student")),
+        fetchAll<Omit<Row, "total_credit" | "approved_count">>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name")),
+        fetchAll<{ student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }>(
+          supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit")),
       ]);
-      const ids = new Set((roles ?? []).map((r) => r.user_id));
+      const ids = new Set(roles.map((r) => r.user_id));
       const credit = new Map<string, { total: number; count: number }>();
-      (apps ?? []).forEach((a) => {
+      apps.forEach((a) => {
         if (!APPROVED.includes(a.status)) return;
         const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
         const cur = credit.get(a.student_id) ?? { total: 0, count: 0 };
         credit.set(a.student_id, { total: cur.total + c, count: cur.count + 1 });
       });
-      const list: Row[] = (profiles ?? [])
+      const list: Row[] = profiles
         .filter((p) => ids.has(p.user_id))
         .map((p) => {
           const c = credit.get(p.user_id) ?? { total: 0, count: 0 };
@@ -79,6 +85,9 @@ const Credits = () => {
         .some((v) => v!.toLowerCase().includes(q));
     });
   }, [rows, search, dept, passFilter]);
+
+  useEffect(() => { setPage(0); }, [search, dept, passFilter]);
+  const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const passStats = useMemo(() => ({
     pass: rows.filter((r) => r.total_credit >= PASS_THRESHOLD).length,
@@ -156,11 +165,12 @@ const Credits = () => {
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
-                ) : filtered.map((r, i) => {
+                ) : paged.map((r, i) => {
+                  const rank = page * PAGE_SIZE + i + 1;
                   const passed = r.total_credit >= PASS_THRESHOLD;
                   return (
                   <TableRow key={r.user_id}>
-                    <TableCell className="font-mono text-muted-foreground">#{i + 1}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">#{rank}</TableCell>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
                     <TableCell>{r.student_no ?? "—"}</TableCell>
                     <TableCell>{r.department ?? "—"}</TableCell>
@@ -183,6 +193,9 @@ const Credits = () => {
                 })}
               </TableBody>
             </Table>
+            {filtered.length > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            )}
           </CardContent>
         </Card>
       </div>
