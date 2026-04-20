@@ -135,39 +135,71 @@ const ImportUsers = () => {
     }
   };
 
+  const CHUNK_SIZE = 200; // send 200 users per request to avoid timeout
+
   const confirmImport = async () => {
     if (!pendingRows) return;
     setLoading(true);
     push({ kind: "user", text: "确认导入" });
 
-    const { data, error } = await supabase.functions.invoke("import-users", {
-      body: { rows: pendingRows },
-    });
-    setLoading(false);
-
-    if (error) {
-      const ctx: any = (error as any).context;
-      let detail = error.message;
-      let extras: string[] = [];
-      try {
-        const t = await ctx?.text?.();
-        if (t) {
-          const j = JSON.parse(t);
-          detail = j.error ?? detail;
-          if (j.errors) extras = j.errors.map((e: any) => `第 ${e.line} 行：${e.message}`);
-          if (j.conflicts) extras = j.conflicts.map((c: string) => `已存在：${c}`);
-        }
-      } catch {}
-      push({ kind: "result", ok: false, text: [detail, ...extras].join("\n") });
-      toast({ title: "导入失败", description: detail, variant: "destructive" });
-      return;
+    const totalRows = pendingRows;
+    const chunks = [];
+    for (let i = 0; i < totalRows.length; i += CHUNK_SIZE) {
+      chunks.push(totalRows.slice(i, i + CHUNK_SIZE));
     }
 
-    if (data?.success) {
-      push({ kind: "result", ok: true, text: `成功创建 ${data.created} 个账号，已绑定姓名 / 学号 / 专业 / 班级 / 院系 / 手机号。` });
-      toast({ title: "导入成功", description: `已新增 ${data.created} 个账号` });
+    let totalCreated = 0;
+    let failed = false;
+
+    for (let ci = 0; ci < chunks.length; ci++) {
+      push({
+        kind: "ai",
+        text: `正在导入第 ${ci + 1}/${chunks.length} 批（${chunks[ci].length} 个账号）…`,
+      });
+
+      const { data, error } = await supabase.functions.invoke("import-users", {
+        body: { rows: chunks[ci] },
+      });
+
+      if (error) {
+        const ctx: any = (error as any).context;
+        let detail = error.message;
+        let extras: string[] = [];
+        try {
+          const t = await ctx?.text?.();
+          if (t) {
+            const j = JSON.parse(t);
+            detail = j.error ?? detail;
+            if (j.errors) extras = j.errors.map((e: any) => `第 ${e.line} 行：${e.message}`);
+            if (j.conflicts) extras = j.conflicts.map((c: string) => `已存在：${c}`);
+          }
+        } catch {}
+        push({
+          kind: "result",
+          ok: false,
+          text: `第 ${ci + 1} 批失败：${[detail, ...extras].join("\n")}\n已成功导入前 ${totalCreated} 个账号。`,
+        });
+        toast({ title: "导入部分失败", description: detail, variant: "destructive" });
+        failed = true;
+        break;
+      }
+
+      if (data?.success) {
+        totalCreated += data.created;
+      }
+    }
+
+    if (!failed) {
+      push({
+        kind: "result",
+        ok: true,
+        text: `全部完成 🎉 成功创建 ${totalCreated} 个账号，已绑定姓名 / 学号 / 专业 / 班级 / 院系 / 手机号。`,
+      });
+      toast({ title: "导入成功", description: `已新增 ${totalCreated} 个账号` });
       setPendingRows(null);
     }
+
+    setLoading(false);
   };
 
   return (
