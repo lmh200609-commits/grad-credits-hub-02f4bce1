@@ -11,6 +11,10 @@ import Login from "./pages/Login.tsx";
 import ImportUsers from "./pages/admin/ImportUsers.tsx";
 import Rules from "./pages/admin/Rules.tsx";
 import Cases from "./pages/admin/Cases.tsx";
+import AdminDashboard from "./pages/admin/Dashboard.tsx";
+import ReviewHub from "./pages/admin/ReviewHub.tsx";
+import Credits from "./pages/admin/Credits.tsx";
+import UsersManage from "./pages/admin/UsersManage.tsx";
 import Projects from "./pages/Projects.tsx";
 import Reviews from "./pages/Reviews.tsx";
 import Apply from "./pages/student/Apply.tsx";
@@ -32,6 +36,11 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/admin" element={<RoleRoute role="admin"><AdminDashboard /></RoleRoute>} />
+            <Route path="/admin/dashboard" element={<RoleRoute role="admin"><AdminDashboard /></RoleRoute>} />
+            <Route path="/admin/review" element={<RoleRoute role="admin"><ReviewHub /></RoleRoute>} />
+            <Route path="/admin/credits" element={<RoleRoute role="admin"><Credits /></RoleRoute>} />
+            <Route path="/admin/users/:role" element={<RoleRoute role="admin"><UsersManage /></RoleRoute>} />
             <Route path="/admin/import" element={<RoleRoute role="admin"><ImportUsers /></RoleRoute>} />
             <Route path="/admin/rules" element={<RoleRoute role="admin"><Rules /></RoleRoute>} />
             <Route path="/admin/cases" element={<RoleRoute role="admin"><Cases /></RoleRoute>} />
