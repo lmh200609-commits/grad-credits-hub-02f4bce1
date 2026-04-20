@@ -113,7 +113,7 @@ const Credits = () => {
 
         <Card>
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
+          <CardContent className="grid gap-3 md:grid-cols-4">
             <Input placeholder="搜索姓名 / 学号 / 班级 / 专业" value={search} onChange={(e) => setSearch(e.target.value)} />
             <Select value={dept} onValueChange={setDept}>
               <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
@@ -122,8 +122,16 @@ const Credits = () => {
                 {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={passFilter} onValueChange={(v) => setPassFilter(v as PassFilter)}>
+              <SelectTrigger><SelectValue placeholder="是否合格" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="pass">合格（≥{PASS_THRESHOLD} 学分）</SelectItem>
+                <SelectItem value="fail">不合格（&lt;{PASS_THRESHOLD} 学分）</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="flex items-center text-sm text-muted-foreground">
-              共 {filtered.length} 名学生
+              共 {filtered.length} 名 · 合格 <span className="mx-1 font-semibold text-emerald-600">{passStats.pass}</span> / 不合格 <span className="mx-1 font-semibold text-rose-600">{passStats.fail}</span>
             </div>
           </CardContent>
         </Card>
@@ -141,13 +149,16 @@ const Credits = () => {
                   <TableHead>班级</TableHead>
                   <TableHead className="text-right">通过申请</TableHead>
                   <TableHead className="text-right">累计学分</TableHead>
+                  <TableHead className="text-center">是否合格</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
-                ) : filtered.map((r, i) => (
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
+                ) : filtered.map((r, i) => {
+                  const passed = r.total_credit >= PASS_THRESHOLD;
+                  return (
                   <TableRow key={r.user_id}>
                     <TableCell className="font-mono text-muted-foreground">#{i + 1}</TableCell>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
@@ -156,14 +167,20 @@ const Credits = () => {
                     <TableCell>{r.major ?? "—"}</TableCell>
                     <TableCell>{r.class_name ?? "—"}</TableCell>
                     <TableCell className="text-right">{r.approved_count}</TableCell>
-                    <TableCell className="text-right font-semibold text-primary">{r.total_credit.toFixed(1)}</TableCell>
+                    <TableCell className={`text-right font-semibold ${passed ? "text-emerald-600" : "text-rose-600"}`}>{r.total_credit.toFixed(1)}</TableCell>
+                    <TableCell className="text-center">
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${passed ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"}`}>
+                        {passed ? "合格" : "不合格"}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
                         <Link to={`/teacher/students/${r.user_id}`}>详情</Link>
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
