@@ -10,12 +10,12 @@ import {
 type Counts = Record<string, number>;
 
 const CARDS = [
-  { key: "auto_approved", label: "AI 通过", desc: "AI 高置信度自动通过", icon: Sparkles, color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30" },
-  { key: "rejected_by_ai", label: "AI 拒绝", desc: "AI 高置信度拒绝", icon: XCircle, color: "text-rose-600 bg-rose-50 dark:bg-rose-950/30" },
-  { key: "pending_review", label: "待复核", desc: "AI 不确定，待人工", icon: Clock, color: "text-amber-600 bg-amber-50 dark:bg-amber-950/30" },
-  { key: "approved", label: "人工通过", desc: "教师 / 管理员通过", icon: ShieldCheck, color: "text-emerald-700 bg-emerald-100 dark:bg-emerald-950/40" },
-  { key: "rejected", label: "人工拒绝", desc: "教师 / 管理员拒绝", icon: ShieldX, color: "text-rose-700 bg-rose-100 dark:bg-rose-950/40" },
-  { key: "pending_ai", label: "AI 评估中", desc: "刚提交，AI 处理中", icon: CheckCircle2, color: "text-slate-600 bg-slate-100 dark:bg-slate-900/40" },
+  { key: "pending_ai", label: "系统核验中", desc: "刚提交，系统正在自动核验", icon: CheckCircle2, color: "text-slate-700 bg-slate-100 dark:bg-slate-900/40" },
+  { key: "auto_approved", label: "系统初审通过", desc: "系统已通过，待教师复核", icon: Sparkles, color: "text-emerald-700 bg-emerald-100 dark:bg-emerald-950/30" },
+  { key: "rejected_by_ai", label: "系统未通过", desc: "系统判定材料有问题", icon: XCircle, color: "text-rose-700 bg-rose-100 dark:bg-rose-950/30" },
+  { key: "pending_review", label: "待教师复核", desc: "系统不确定，等待人工判定", icon: Clock, color: "text-amber-700 bg-amber-100 dark:bg-amber-950/30" },
+  { key: "approved", label: "人工已通过", desc: "教师 / 管理员审核通过", icon: ShieldCheck, color: "text-emerald-800 bg-emerald-200 dark:bg-emerald-950/40" },
+  { key: "rejected", label: "人工已驳回", desc: "教师 / 管理员驳回", icon: ShieldX, color: "text-rose-800 bg-rose-200 dark:bg-rose-950/40" },
 ];
 
 const ReviewHub = () => {
