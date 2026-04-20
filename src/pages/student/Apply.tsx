@@ -271,7 +271,10 @@ const ApplyPage = () => {
                     className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
                   >
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{r.achievement ?? r.name}</div>
+                      <div className="flex items-center gap-1 truncate font-medium">
+                        {r.achievement ?? r.name}
+                        {r.source === "case" && <Badge variant="outline" className="shrink-0 text-[10px]">案例</Badge>}
+                      </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {[r.project, r.level, r.identity].filter(Boolean).join(" · ")}
                       </div>
