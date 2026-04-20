@@ -200,11 +200,13 @@ const ApplicationDetail = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">
-                      {r.action === "ai_evaluation" ? "AI 评估" : r.action === "teacher_review" ? "教师复核" : "管理员复核"}
+                      {r.action === "ai_evaluation" ? "系统核验" : r.action === "teacher_review" ? "教师复核" : "管理员复核"}
                     </Badge>
                     <StatusBadge status={r.decision as any} />
                     {r.credit != null && <span className="text-muted-foreground">学分 {r.credit}</span>}
-                    {r.confidence != null && <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>}
+                    {isReviewer && r.confidence != null && (
+                      <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
                 </div>
