@@ -47,7 +47,7 @@ const ApplyPage = () => {
   const submit = async () => {
     const parsed = applySchema.safeParse({ description, selected_keywords: keywords });
     if (!parsed.success) {
-      const msg = parsed.error.errors[0]?.message ?? "请检查表单";
+      const msg = parsed.error.issues[0]?.message ?? "请检查表单";
       setDescError(msg);
       return toast({ title: msg, variant: "destructive" });
     }
