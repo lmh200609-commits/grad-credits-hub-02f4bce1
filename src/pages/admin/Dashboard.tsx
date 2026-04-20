@@ -92,7 +92,7 @@ const AdminDashboard = () => {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">数据看板</h1>
-          <p className="text-sm text-muted-foreground">全校学分认证申请、用户与项目概览</p>
+          <p className="text-sm text-muted-foreground">全校学分认证申请、用户与规则概览</p>
         </div>
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
