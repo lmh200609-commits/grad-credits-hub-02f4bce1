@@ -12,6 +12,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { fetchAll } from "@/lib/fetchAll";
+import TablePagination from "@/components/TablePagination";
+
+const PAGE_SIZE = 50;
 
 type Profile = {
   user_id: string;

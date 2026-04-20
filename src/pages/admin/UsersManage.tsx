@@ -17,6 +17,9 @@ import { resetPasswordSchema } from "@/lib/schemas";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { fetchAll } from "@/lib/fetchAll";
+import TablePagination from "@/components/TablePagination";
+
+const PAGE_SIZE = 50;
 
 type Profile = {
   user_id: string;

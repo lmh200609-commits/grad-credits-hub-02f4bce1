@@ -13,6 +13,9 @@ import {
 } from "@/components/ui/table";
 import { Download } from "lucide-react";
 import { fetchAll } from "@/lib/fetchAll";
+import TablePagination from "@/components/TablePagination";
+
+const PAGE_SIZE = 50;
 
 type Row = {
   user_id: string;
