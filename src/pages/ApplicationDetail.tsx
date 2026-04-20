@@ -109,23 +109,48 @@ const ApplicationDetail = () => {
       .eq("id", app.id);
     if (ue) return toast({ title: "更新失败", description: ue.message, variant: "destructive" });
 
-    // 系统驳回 + 自定义关键词 + 人工通过 → 沉淀到案例库供下次系统核验参考
-    if (decision === "approved" && wasRejectedByAi && hasCustom) {
+    // 人工通过时：检查该关键词组合是否已有完全匹配的规则或案例，没有则沉淀到案例库
+    if (decision === "approved") {
       const allKw = [...(app.selected_keywords ?? []), ...(app.custom_keywords ?? [])];
-      const title = (app.custom_keywords[0] ?? app.description).slice(0, 60);
-      const summary = `关键词：${allKw.join("、")}\n申请说明：${app.description.slice(0, 300)}`;
-      const { error: ce } = await supabase.from("cases").insert({
-        title,
-        summary,
-        rule_id: app.ai_matched_rule_id,
-        awarded_credit: credit,
-        notes: `由人工复核覆盖系统驳回沉淀。复核备注：${note.trim() || "（无）"}`,
-        created_by: user!.id,
+      const kwSet = allKw.filter(Boolean).sort().join("|");
+
+      // 检查是否已有规则完全匹配这组关键词
+      const { data: existingRules } = await supabase
+        .from("rules")
+        .select("id, project, achievement, level, identity")
+        .eq("active", true);
+      const ruleMatch = (existingRules ?? []).some((r) => {
+        const dims = [r.project, r.achievement, r.level, r.identity].filter(Boolean).sort().join("|");
+        return dims === kwSet;
       });
-      if (!ce) toast({ title: "已通过", description: "该案例已加入案例库，将影响后续系统核验" });
-      else toast({ title: "已通过" });
+
+      // 检查是否已有案例包含完全相同的关键词
+      const { data: existingCases } = await supabase
+        .from("cases")
+        .select("summary")
+        .limit(200);
+      const caseMatch = (existingCases ?? []).some((c) =>
+        allKw.every((kw) => kw && c.summary.includes(kw))
+      );
+
+      if (!ruleMatch && !caseMatch) {
+        const title = (app.custom_keywords?.[0] ?? allKw[0] ?? app.description).slice(0, 60);
+        const summary = `关键词：${allKw.join("、")}\n申请说明：${app.description.slice(0, 300)}`;
+        const { error: ce } = await supabase.from("cases").insert({
+          title,
+          summary,
+          rule_id: app.ai_matched_rule_id,
+          awarded_credit: credit,
+          notes: `人工复核通过沉淀。复核备注：${note.trim() || "（无）"}`,
+          created_by: user!.id,
+        });
+        if (!ce) toast({ title: "已通过", description: "新案例已加入案例库，学生端可搜索使用" });
+        else toast({ title: "已通过" });
+      } else {
+        toast({ title: "已通过" });
+      }
     } else {
-      toast({ title: decision === "approved" ? "已通过" : "已驳回" });
+      toast({ title: "已驳回" });
     }
     load();
   };
