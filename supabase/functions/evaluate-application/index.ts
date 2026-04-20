@@ -86,23 +86,30 @@ Deno.serve(async (req) => {
 
     const systemPrompt = `你是大学学分材料核验助手。
 
-【认定范围参考】本科生创新实践学分的认定范围包括：科研成果（论文）、知识产权、科研训练（科研项目 / 大创项目）、学科竞赛、职业技能证书（英语 / 计算机 / 职业证书）、创业实践、文体竞赛、第二课堂等。如果材料明显落在以上范围之内，应优先按相应类别识别。
+【认定范围参考】本科生创新实践学分的认定范围包括：科研成果（论文）、知识产权、科研训练（科研项目 / 大创项目）、学科竞赛、职业技能证书、创业实践、文体竞赛、第二课堂等。
 
-你只负责四件事，其他内容（学分多少、规则归类是否最优等）不要严格判断：
-1. 材料与关键词一致性：图片/文件展示的内容（证书名称、奖项、级别、身份）是否与学生选择的关键词描述一致。
-2. 是否无关图片：图片是否完全与申请主题无关（如随手拍、风景、聊天截图）。
-3. 篡改 / AI 生成痕迹：是否有明显 PS、拼接、字体不一致、AI 生成（不自然纹理、伪造印章、扭曲文字）等痕迹。
-4. 姓名匹配：图片中获奖人 / 持证人姓名是否与系统记录的学生姓名一致；多人合作奖项，姓名出现在名单中即可。
+你需要做两类工作：
+
+A. 四项核验：
+1. 材料与关键词一致性：图片/文件展示的内容（证书名称、奖项、级别、身份）是否与学生选择的关键词完全一致。**关键：级别、身份、奖项等级有任何差异都算不一致**。例如学生选"国家级一等奖"但图片是"省级三等奖"，即使都是竞赛类，consistency_ok 也必须 = false。
+2. 是否无关图片：图片是否完全与申请主题无关。
+3. 篡改 / AI 生成痕迹：是否有明显 PS、拼接、AI 生成痕迹。
+4. 姓名匹配：图片中姓名是否与学生姓名一致。
+
+B. 从图片中实际识别的属性（detected_*）：无论关键词写什么，基于图片真实内容填写：
+- detected_project：项目大类（科研成果/知识产权/科研训练/学科竞赛/职业技能证书/创业实践/文体竞赛/第二课堂等）
+- detected_achievement：成果细类（如"论文"、"专利"、"大创项目"、"英语"等）
+- detected_level：级别（如"国家级一等奖"、"省级二等奖"、"校级"、"六级"、"SCI"等）
+- detected_identity：身份（如"第一作者"、"主持人"、"第一参与人"等），无概念填 null
+无附件或无法识别时填 null。
 
 判定规则：
-- 四项都没有问题 → recommendation=approve, confidence≥0.85
-- 任一项明显有问题 → recommendation=reject, confidence≥0.85，reasoning 必须详细列出问题（中文 3-6 句，逐项说明哪一项出问题、依据是什么）
-- 模糊不清 / 文件缺失 / 无法判断 → recommendation=review, confidence 0.4~0.7，说明缺什么
-- 没有附件时只能基于文字说明判断材料-关键词一致性，无法核验姓名/篡改 → 默认 recommendation=review
+- 四项都没问题且 detected_* 与关键词的级别/身份/成果一致 → approve, confidence≥0.85
+- consistency_ok=false（含 detected 与关键词不符）或明显造假 → reject, confidence≥0.85
+- 模糊/缺文件/无法判断 → review, confidence 0.4~0.7
+- 无附件 → 默认 review
 
-reasoning 必须用中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；结论：…」
-
-如果"参考案例"中存在与本次申请关键词高度相似且已被人工通过的案例，可作为放宽判断的依据：当四项核验只是模糊不确定（非明显造假）时，倾向于 approve 或 review，而不是直接 reject。`;
+reasoning 中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；图片实际识别：项目=…，成果=…，级别=…，身份=…；结论：…」`;
 
     const userPayload = {
       student: {
@@ -152,15 +159,19 @@ reasoning 必须用中文，结构：「材料一致性：…；图片相关性�
               parameters: {
                 type: "object",
                 properties: {
-                  consistency_ok: { type: "boolean", description: "材料是否与关键词一致" },
+                  consistency_ok: { type: "boolean", description: "材料是否与关键词一致（含级别/身份精确匹配）" },
                   relevance_ok: { type: "boolean", description: "图片是否与申请相关" },
                   authenticity_ok: { type: "boolean", description: "是否无篡改/AI 生成痕迹" },
                   name_match_ok: { type: ["boolean", "null"], description: "姓名是否匹配，无附件时为 null" },
+                  detected_project: { type: ["string", "null"], description: "图片中实际识别到的项目大类" },
+                  detected_achievement: { type: ["string", "null"], description: "图片中实际识别到的成果细类" },
+                  detected_level: { type: ["string", "null"], description: "图片中实际识别到的级别" },
+                  detected_identity: { type: ["string", "null"], description: "图片中实际识别到的身份" },
                   confidence: { type: "number" },
                   recommendation: { type: "string", enum: ["approve", "review", "reject"] },
                   reasoning: { type: "string" },
                 },
-                required: ["consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok", "confidence", "recommendation", "reasoning"],
+                required: ["consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok", "detected_project", "detected_achievement", "detected_level", "detected_identity", "confidence", "recommendation", "reasoning"],
                 additionalProperties: false,
               },
             },
@@ -185,8 +196,36 @@ reasoning 必须用中文，结构：「材料一致性：…；图片相关性�
     }
     const result = JSON.parse(call.function.arguments);
 
+    // 用 AI 从图片中识别到的真实属性重新匹配规则（防止学生选高分关键词配低级别证书）
+    const detected = {
+      project: result.detected_project as string | null,
+      achievement: result.detected_achievement as string | null,
+      level: result.detected_level as string | null,
+      identity: result.detected_identity as string | null,
+    };
+    const hasDetection = !!(detected.project || detected.achievement || detected.level);
+    const detectedRule = hasDetection
+      ? rules?.find((r) => {
+          const dims = [
+            [r.project, detected.project],
+            [r.achievement, detected.achievement],
+            [r.level, detected.level],
+            [r.identity, detected.identity],
+          ] as const;
+          // 规则中非空的维度必须与 detected 完全一致；规则中为空的维度跳过
+          return dims.every(([rv, dv]) => !rv || (dv && (dv === rv || dv.includes(rv as string) || (rv as string).includes(dv))));
+        }) ?? null
+      : null;
+
+    // 优先使用 detected 匹配的规则；若 detected 与学生关键词派生的 candidate 不一致，强制走人工复核
+    const effectiveRule = detectedRule ?? candidate;
+    const detectedMismatch = hasDetection && candidate && detectedRule && detectedRule.id !== candidate.id;
+
     let nextStatus: string;
-    if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
+    if (detectedMismatch) {
+      // 学生选的关键词与图片识别结果对应不同规则 → 不能自动通过
+      nextStatus = result.recommendation === "reject" ? "rejected_by_ai" : "pending_review";
+    } else if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "auto_approved";
     } else if (result.recommendation === "reject" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "rejected_by_ai";
@@ -194,8 +233,8 @@ reasoning 必须用中文，结构：「材料一致性：…；图片相关性�
       nextStatus = "pending_review";
     }
 
-    const matchedRuleId = candidate?.id ?? null;
-    const suggestedCredit = candidate?.credit ?? null;
+    const matchedRuleId = effectiveRule?.id ?? null;
+    const suggestedCredit = effectiveRule?.credit ?? null;
 
     await admin.from("application_reviews").insert({
       application_id,
