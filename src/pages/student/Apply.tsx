@@ -1,29 +1,35 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
-import { Send, Sparkles } from "lucide-react";
+import { Send, Sparkles, X, Search, ChevronRight } from "lucide-react";
 import { applySchema } from "@/lib/schemas";
 
-type Project = { id: string; name: string; description: string | null; rule_ids: string[] };
-type Rule = { id: string; name: string; keywords: string[]; credit: number; description: string | null };
+type Rule = {
+  id: string;
+  name: string;
+  category: string | null;
+  keywords: string[];
+  credit: number;
+  description: string | null;
+};
 
 const ApplyPage = () => {
-  const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
   const [rules, setRules] = useState<Rule[]>([]);
-  const [keywords, setKeywords] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [picked, setPicked] = useState<string[]>([]); // 已选关键词路径
+  const [search, setSearch] = useState("");
+  const [selectedRule, setSelectedRule] = useState<Rule | null>(null);
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -33,19 +39,66 @@ const ApplyPage = () => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data: p } = await supabase.from("projects").select("*").eq("id", id).single();
-      if (!p) { setLoading(false); return; }
-      setProject(p as Project);
-      const { data: rs } = await supabase.from("rules").select("*").in("id", (p as Project).rule_ids);
-      setRules((rs as Rule[]) ?? []);
+      const { data } = await supabase
+        .from("rules")
+        .select("id, name, category, keywords, credit, description")
+        .eq("active", true);
+      setRules((data as Rule[]) ?? []);
       setLoading(false);
     })();
-  }, [id]);
+  }, []);
 
-  const allKeywords = Array.from(new Set(rules.flatMap((r) => r.keywords)));
+  // 根据已选关键词筛选规则（交集匹配）
+  const filteredRules = useMemo(() => {
+    if (picked.length === 0) return rules;
+    return rules.filter((r) => picked.every((k) => r.keywords.includes(k)));
+  }, [rules, picked]);
+
+  // 下一级可选关键词 = 候选规则中未被选过的关键词去重
+  const nextKeywords = useMemo(() => {
+    const set = new Set<string>();
+    filteredRules.forEach((r) => r.keywords.forEach((k) => {
+      if (!picked.includes(k)) set.add(k);
+    }));
+    return Array.from(set).sort();
+  }, [filteredRules, picked]);
+
+  // 搜索匹配
+  const searchMatches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return rules.filter((r) =>
+      r.name.toLowerCase().includes(q)
+      || (r.description ?? "").toLowerCase().includes(q)
+      || r.keywords.some((k) => k.toLowerCase().includes(q))
+    ).slice(0, 8);
+  }, [rules, search]);
+
+  const pickKeyword = (k: string) => setPicked([...picked, k]);
+  const popPicked = (k: string) => {
+    const idx = picked.indexOf(k);
+    if (idx >= 0) setPicked(picked.slice(0, idx));
+  };
+  const reset = () => {
+    setPicked([]); setSelectedRule(null); setSearch("");
+  };
+
+  // 选中规则：自动把规则的所有关键词作为已选路径
+  const chooseRule = (r: Rule) => {
+    setSelectedRule(r);
+    setPicked(r.keywords);
+    setSearch("");
+  };
 
   const submit = async () => {
-    const parsed = applySchema.safeParse({ description, selected_keywords: keywords });
+    if (!selectedRule) {
+      return toast({ title: "请先选择一条学分规则", variant: "destructive" });
+    }
+    const parsed = applySchema.safeParse({
+      description,
+      selected_keywords: picked,
+      rule_id: selectedRule.id,
+    });
     if (!parsed.success) {
       const msg = parsed.error.issues[0]?.message ?? "请检查表单";
       setDescError(msg);
@@ -70,7 +123,6 @@ const ApplyPage = () => {
       const { data: app, error } = await supabase
         .from("applications")
         .insert({
-          project_id: id!,
           student_id: user!.id,
           description: parsed.data.description,
           selected_keywords: parsed.data.selected_keywords,
@@ -101,92 +153,205 @@ const ApplyPage = () => {
     <AppLayout>
       <div className="mx-auto max-w-3xl space-y-4">
         <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-32 w-full" />
         <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-32 w-full" />
       </div>
     </AppLayout>
   );
-  if (!project) return <AppLayout><p className="text-muted-foreground">项目不存在</p></AppLayout>;
 
   return (
     <AppLayout>
       <div className="mx-auto max-w-3xl space-y-4">
         <div>
-          <h1 className="text-2xl font-bold">申请：{project.name}</h1>
-          <p className="text-sm text-muted-foreground">{project.description}</p>
+          <h1 className="text-2xl font-bold">申请学分</h1>
+          <p className="text-sm text-muted-foreground">通过关键词逐步缩小范围，或直接搜索匹配学分规则</p>
         </div>
 
+        {/* 搜索 */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4" /> 选择关联关键词（可选）
+              <Search className="h-4 w-4" /> 直接搜索
             </CardTitle>
-            <CardDescription>从规则库中挑选最贴合你材料的关键词，帮助 AI 更准确地匹配</CardDescription>
+            <CardDescription>输入活动名称或关键词，例如"挑战杯""志愿者"</CardDescription>
           </CardHeader>
-          <CardContent>
-            {allKeywords.length === 0 ? (
-              <p className="text-sm text-muted-foreground">该项目暂无可选关键词</p>
-            ) : (
-              <ScrollArea className="max-h-40">
-                <div className="flex flex-wrap gap-2">
-                  {allKeywords.map((k) => (
-                    <label key={k} className="flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-sm hover:bg-muted">
-                      <Checkbox
-                        checked={keywords.includes(k)}
-                        onCheckedChange={(v) => setKeywords(v ? [...keywords, k] : keywords.filter((x) => x !== k))}
-                      />
-                      {k}
-                    </label>
-                  ))}
-                </div>
-              </ScrollArea>
+          <CardContent className="space-y-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索规则名称或关键词…"
+            />
+            {searchMatches.length > 0 && (
+              <div className="space-y-1 rounded-md border">
+                {searchMatches.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => chooseRule(r)}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{r.name}</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {r.keywords.join(" · ")}
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="shrink-0">{r.credit} 学分</Badge>
+                  </button>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
 
+        {/* 关键词逐级筛选 */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">申请说明</CardTitle>
-            <CardDescription>请详细描述你的活动/成果，便于 AI 与教师判断（10-2000 字）</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="h-4 w-4" /> 关键词导航
+            </CardTitle>
+            <CardDescription>
+              逐级点击关键词，候选规则会越来越少
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Textarea
-              value={description}
-              onChange={(e) => { setDescription(e.target.value); if (descError) setDescError(null); }}
-              rows={6}
-              maxLength={2000}
-              placeholder="例如：参加 2024 年 ACM 区域赛获铜牌，参赛队员 3 人，比赛时长 5 小时…"
-              aria-invalid={!!descError}
-            />
-            <div className="mt-1 flex justify-between text-xs">
-              <span className="text-destructive">{descError ?? ""}</span>
-              <span className="text-muted-foreground">{description.length}/2000</span>
+          <CardContent className="space-y-3">
+            {/* 已选路径 */}
+            {picked.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                {picked.map((k, i) => (
+                  <span key={k} className="flex items-center gap-1">
+                    {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                    <Badge variant="default" className="cursor-pointer" onClick={() => popPicked(k)}>
+                      {k} <X className="ml-1 h-3 w-3" />
+                    </Badge>
+                  </span>
+                ))}
+                <Button variant="ghost" size="sm" onClick={reset} className="ml-2 h-6 px-2 text-xs">
+                  重置
+                </Button>
+              </div>
+            )}
+
+            {/* 下一级关键词 */}
+            {nextKeywords.length > 0 && !selectedRule && (
+              <div>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {picked.length === 0 ? "请选择一个关键词开始" : "继续缩小范围（可选）"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {nextKeywords.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => pickKeyword(k)}
+                      className="rounded-md border px-2 py-1 text-sm hover:border-primary hover:bg-muted"
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 候选规则 */}
+            {picked.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  匹配到 {filteredRules.length} 条规则{filteredRules.length > 0 ? "，点击选择：" : ""}
+                </p>
+                {filteredRules.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => chooseRule(r)}
+                    className={`flex w-full items-start justify-between gap-2 rounded-md border p-3 text-left text-sm transition hover:border-primary hover:bg-muted ${
+                      selectedRule?.id === r.id ? "border-primary bg-primary/5" : ""
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium">{r.name}</div>
+                      {r.description && (
+                        <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{r.description}</div>
+                      )}
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {r.keywords.map((k) => (
+                          <Badge key={k} variant="outline" className="text-xs">{k}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="shrink-0">{r.credit} 学分</Badge>
+                  </button>
+                ))}
+                {filteredRules.length === 0 && (
+                  <p className="text-sm text-muted-foreground">没有匹配的规则，请减少关键词</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 选中规则确认 + 申请说明 */}
+        {selectedRule && (
+          <>
+            <Card className="border-primary">
+              <CardHeader>
+                <CardTitle className="text-base">已选规则</CardTitle>
+                <CardDescription>
+                  {selectedRule.name} · {selectedRule.credit} 学分
+                </CardDescription>
+              </CardHeader>
+              {selectedRule.description && (
+                <CardContent className="text-sm text-muted-foreground">
+                  {selectedRule.description}
+                </CardContent>
+              )}
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">申请说明</CardTitle>
+                <CardDescription>详细描述你的活动 / 成果，便于 AI 与教师判断（10-2000 字）</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={description}
+                  onChange={(e) => { setDescription(e.target.value); if (descError) setDescError(null); }}
+                  rows={6}
+                  maxLength={2000}
+                  placeholder="例如：参加 2024 年 ACM 区域赛获铜牌，参赛队员 3 人，比赛时长 5 小时…"
+                  aria-invalid={!!descError}
+                />
+                <div className="mt-1 flex justify-between text-xs">
+                  <span className="text-destructive">{descError ?? ""}</span>
+                  <span className="text-muted-foreground">{description.length}/2000</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">证明材料（PDF / 图片，可选，≤10MB）</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/pdf,image/*"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
+                />
+                {file && <p className="mt-2 text-xs text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>}
+              </CardContent>
+            </Card>
+
+            <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
+              <Button variant="outline" onClick={reset}>重新选择</Button>
+              <Button onClick={submit} disabled={submitting}>
+                <Send className="mr-1 h-4 w-4" /> {submitting ? "提交中…" : "提交申请"}
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">证明材料（PDF / 图片，可选，≤10MB）</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/pdf,image/*"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-            />
-            {file && <p className="mt-2 text-xs text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>}
-          </CardContent>
-        </Card>
-
-        <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
-          <Button variant="outline" onClick={() => navigate(-1)}>取消</Button>
-          <Button onClick={submit} disabled={submitting}>
-            <Send className="mr-1 h-4 w-4" /> {submitting ? "提交中…" : "提交申请"}
-          </Button>
-        </div>
+          </>
+        )}
       </div>
     </AppLayout>
   );

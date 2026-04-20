@@ -1,7 +1,13 @@
 import { z } from "zod";
 
+// 账号 = 纯数字（学号/工号/手机号），前端拼接 @admin.local 交给 Supabase
 export const loginSchema = z.object({
-  email: z.string().trim().email("邮箱格式不正确").max(255),
+  account: z
+    .string()
+    .trim()
+    .min(3, "账号至少 3 位")
+    .max(20, "账号不超过 20 位")
+    .regex(/^\d+$/, "账号只能是数字"),
   password: z.string().min(6, "密码至少 6 位").max(128),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -13,6 +19,7 @@ export const applySchema = z.object({
     .min(10, "请填写至少 10 字的申请说明")
     .max(2000, "说明不超过 2000 字"),
   selected_keywords: z.array(z.string()).default([]),
+  rule_id: z.string().uuid("请先匹配到一条学分规则"),
 });
 export type ApplyInput = z.infer<typeof applySchema>;
 
@@ -34,15 +41,6 @@ export const caseSchema = z.object({
   notes: z.string().trim().max(1000).optional().or(z.literal("")),
 });
 export type CaseInput = z.infer<typeof caseSchema>;
-
-export const projectSchema = z.object({
-  name: z.string().trim().min(1, "项目名称必填").max(150),
-  description: z.string().trim().max(2000).optional().or(z.literal("")),
-  rule_ids: z.array(z.string()).default([]),
-  ends_at: z.string().optional().or(z.literal("")),
-  active: z.boolean().default(true),
-});
-export type ProjectInput = z.infer<typeof projectSchema>;
 
 export const resetPasswordSchema = z.object({
   password: z

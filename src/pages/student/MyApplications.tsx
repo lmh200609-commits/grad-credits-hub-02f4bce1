@@ -18,7 +18,7 @@ type Row = {
   ai_suggested_credit: number | null;
   final_credit: number | null;
   submitted_at: string;
-  projects: { name: string } | null;
+  rules: { name: string } | null;
 };
 
 const MyApplications = () => {
@@ -32,7 +32,7 @@ const MyApplications = () => {
     setLoading(true);
     const { data } = await supabase
       .from("applications")
-      .select("id, description, status, ai_suggested_credit, final_credit, submitted_at, projects(name)")
+      .select("id, description, status, ai_suggested_credit, final_credit, submitted_at, rules:ai_matched_rule_id(name)")
       .eq("student_id", user.id)
       .order("submitted_at", { ascending: false });
     setRows((data as any[]) ?? []);
@@ -50,13 +50,16 @@ const MyApplications = () => {
   return (
     <AppLayout>
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">我的申请</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">我的申请</h1>
+          <Button size="sm" onClick={() => navigate("/apply")}>新申请</Button>
+        </div>
         <Card>
           <CardHeader><CardTitle className="text-base">共 {rows.length} 条</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow>
-                <TableHead>项目</TableHead><TableHead>说明</TableHead>
+                <TableHead>匹配规则</TableHead><TableHead>说明</TableHead>
                 <TableHead>状态</TableHead><TableHead>建议学分</TableHead>
                 <TableHead>最终学分</TableHead><TableHead>提交时间</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -65,10 +68,10 @@ const MyApplications = () => {
                 {loading ? (
                   <TableSkeleton rows={4} cols={7} />
                 ) : rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={7}><EmptyState title="还没有申请" description="去「可申请项目」选择项目并提交你的第一份申请" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7}><EmptyState title="还没有申请" description="点击右上角「新申请」开始提交" /></TableCell></TableRow>
                 ) : rows.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell>{r.projects?.name ?? "—"}</TableCell>
+                    <TableCell>{r.rules?.name ?? "—"}</TableCell>
                     <TableCell className="max-w-xs truncate">{r.description}</TableCell>
                     <TableCell><StatusBadge status={r.status} /></TableCell>
                     <TableCell>{r.ai_suggested_credit ?? "—"}</TableCell>

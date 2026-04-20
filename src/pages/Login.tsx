@@ -10,14 +10,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { toast } from "@/hooks/use-toast";
 import { loginSchema, type LoginInput } from "@/lib/schemas";
 
-const QUICK_ACCOUNTS: { label: string; email: string; role: string }[] = [
-  { label: "白雪（学生）", email: "2024001@admin.local", role: "student" },
-  { label: "李明（学生）", email: "2024002@admin.local", role: "student" },
-  { label: "王芳（学生）", email: "2024003@admin.local", role: "student" },
-  { label: "张老师（教师）", email: "T001@admin.local", role: "teacher" },
-  { label: "测试管理员", email: "A001@admin.local", role: "admin" },
+const QUICK_ACCOUNTS: { label: string; account: string }[] = [
+  { label: "白雪（学生）", account: "2024001" },
+  { label: "李明（学生）", account: "2024002" },
+  { label: "王芳（学生）", account: "2024003" },
+  { label: "张老师（教师）", account: "T001" },
+  { label: "测试管理员", account: "A001" },
 ];
 const QUICK_PASSWORD = "Test1234";
+
+const accountToEmail = (account: string) => `${account}@admin.local`;
 
 const Login = () => {
   const { signIn, user, loading } = useAuth();
@@ -31,7 +33,7 @@ const Login = () => {
     formState: { errors },
   } = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { account: "", password: "" },
   });
 
   useEffect(() => {
@@ -40,12 +42,12 @@ const Login = () => {
 
   const onSubmit = async (values: LoginInput) => {
     setSubmitting(true);
-    const { error } = await signIn(values.email, values.password);
+    const { error } = await signIn(accountToEmail(values.account), values.password);
     setSubmitting(false);
     if (error) {
       toast({
         title: "登录失败",
-        description: "邮箱或密码错误，或该账号未被管理员导入。",
+        description: "账号或密码错误，或该账号未被管理员导入。",
         variant: "destructive",
       });
       return;
@@ -54,9 +56,9 @@ const Login = () => {
     navigate("/", { replace: true });
   };
 
-  const quickLogin = async (email: string) => {
-    setQuickBusy(email);
-    const { error } = await signIn(email, QUICK_PASSWORD);
+  const quickLogin = async (account: string) => {
+    setQuickBusy(account);
+    const { error } = await signIn(accountToEmail(account), QUICK_PASSWORD);
     setQuickBusy(null);
     if (error) {
       toast({ title: "快捷登录失败", description: "请稍后再试或联系管理员", variant: "destructive" });
@@ -75,13 +77,27 @@ const Login = () => {
         <CardContent className="space-y-4">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <div className="space-y-2">
-              <Label htmlFor="email">邮箱</Label>
-              <Input id="email" type="email" autoComplete="email" {...register("email")} aria-invalid={!!errors.email} />
-              {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+              <Label htmlFor="account">账号</Label>
+              <Input
+                id="account"
+                type="text"
+                inputMode="numeric"
+                autoComplete="username"
+                placeholder="学号 / 工号 / 手机号"
+                {...register("account")}
+                aria-invalid={!!errors.account}
+              />
+              {errors.account && <p className="text-xs text-destructive">{errors.account.message}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">密码</Label>
-              <Input id="password" type="password" autoComplete="current-password" {...register("password")} aria-invalid={!!errors.password} />
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                {...register("password")}
+                aria-invalid={!!errors.password}
+              />
               {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
             </div>
             <Button type="submit" className="w-full" disabled={submitting}>
@@ -99,15 +115,15 @@ const Login = () => {
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {QUICK_ACCOUNTS.map((a) => (
                 <Button
-                  key={a.email}
+                  key={a.account}
                   type="button"
                   variant="outline"
                   size="sm"
                   className="justify-start"
                   disabled={!!quickBusy}
-                  onClick={() => quickLogin(a.email)}
+                  onClick={() => quickLogin(a.account)}
                 >
-                  {quickBusy === a.email ? "登录中…" : a.label}
+                  {quickBusy === a.account ? "登录中…" : a.label}
                 </Button>
               ))}
             </div>
