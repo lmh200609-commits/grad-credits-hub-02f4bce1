@@ -7,8 +7,8 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard, Upload, BookOpen, FolderKanban, ClipboardCheck, FileText, Library, LogOut,
-  Users, BarChart3, Trophy, UserCog, Inbox,
+  LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
+  Users, BarChart3, Trophy, UserCog, Inbox, Send,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -18,7 +18,6 @@ const adminItems: Item[] = [
   { title: "复核中心", url: "/admin/review", icon: Inbox },
   { title: "全部审核", url: "/reviews", icon: ClipboardCheck },
   { title: "学分排名", url: "/admin/credits", icon: Trophy },
-  { title: "项目管理", url: "/projects", icon: FolderKanban },
   { title: "规则库", url: "/admin/rules", icon: BookOpen },
   { title: "案例库", url: "/admin/cases", icon: Library },
   { title: "学生管理", url: "/admin/users/students", icon: Users },
@@ -28,14 +27,13 @@ const adminItems: Item[] = [
 
 const teacherItems: Item[] = [
   { title: "工作台", url: "/", icon: LayoutDashboard },
-  { title: "我的项目", url: "/projects", icon: FolderKanban },
   { title: "待审核", url: "/reviews", icon: ClipboardCheck },
   { title: "学生管理", url: "/teacher/students", icon: Users },
 ];
 
 const studentItems: Item[] = [
   { title: "工作台", url: "/", icon: LayoutDashboard },
-  { title: "可申请项目", url: "/projects", icon: FolderKanban },
+  { title: "申请学分", url: "/apply", icon: Send },
   { title: "我的申请", url: "/my-applications", icon: FileText },
 ];
 
@@ -83,6 +81,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     await signOut();
     navigate("/login", { replace: true });
   };
+  const account = user?.email?.split("@")[0] ?? "";
 
   return (
     <SidebarProvider>
@@ -96,7 +95,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
             </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="hidden max-w-[40vw] truncate text-muted-foreground md:inline">
-                {user?.email} · {roles.join(", ") || "未分配"}
+                {account} · {roles.join(", ") || "未分配"}
               </span>
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
                 <LogOut className="h-4 w-4 sm:mr-1" />

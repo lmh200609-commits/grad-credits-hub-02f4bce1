@@ -17,7 +17,6 @@ import { ArrowLeft, Check, X, FileDown } from "lucide-react";
 
 type App = {
   id: string;
-  project_id: string;
   student_id: string;
   description: string;
   selected_keywords: string[];
@@ -41,14 +40,12 @@ const ApplicationDetail = () => {
   const navigate = useNavigate();
   const { user, hasRole } = useAuth();
   const [app, setApp] = useState<App | null>(null);
-  const [project, setProject] = useState<{ name: string; created_by: string } | null>(null);
   const [student, setStudent] = useState<{ full_name: string | null; student_no: string | null; email: string | null } | null>(null);
   const [matchedRule, setMatchedRule] = useState<{ name: string; credit: number } | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [credit, setCredit] = useState<number>(0);
   const [note, setNote] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [collabIds, setCollabIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -56,20 +53,16 @@ const ApplicationDetail = () => {
     if (!a) return;
     setApp(a as App);
     setCredit(Number((a as App).ai_suggested_credit ?? (a as App).final_credit ?? 0));
-    const [p, s, r, rv, cl] = await Promise.all([
-      supabase.from("projects").select("name, created_by").eq("id", (a as App).project_id).single(),
+    const [s, r, rv] = await Promise.all([
       supabase.from("profiles").select("full_name, student_no, email").eq("user_id", (a as App).student_id).single(),
       (a as App).ai_matched_rule_id
         ? supabase.from("rules").select("name, credit").eq("id", (a as App).ai_matched_rule_id).single()
         : Promise.resolve({ data: null }),
       supabase.from("application_reviews").select("*").eq("application_id", id).order("created_at"),
-      supabase.from("project_collaborators").select("user_id").eq("project_id", (a as App).project_id),
     ]);
-    setProject(p.data as any);
     setStudent(s.data as any);
     setMatchedRule(r.data as any);
     setReviews((rv.data as Review[]) ?? []);
-    setCollabIds(((cl.data as any[]) ?? []).map((x) => x.user_id));
 
     if ((a as App).file_path) {
       const { data: signed } = await supabase.storage
@@ -82,18 +75,14 @@ const ApplicationDetail = () => {
   useRealtimeTable("applications", load, { filter: id ? `id=eq.${id}` : undefined });
   useRealtimeTable("application_reviews", load, { filter: id ? `application_id=eq.${id}` : undefined });
 
-  const isReviewer = !!app && (
-    hasRole("admin")
-    || project?.created_by === user?.id
-    || collabIds.includes(user?.id ?? "")
-  );
+  const isReviewer = !!app && (hasRole("admin") || hasRole("teacher"));
 
   const decide = async (decision: "approved" | "rejected") => {
     if (!app) return;
     if (decision === "approved" && (!credit || credit <= 0)) {
       return toast({ title: "请填写最终学分", variant: "destructive" });
     }
-    const action = hasRole("admin") && project?.created_by !== user?.id ? "admin_review" : "teacher_review";
+    const action = hasRole("admin") ? "admin_review" : "teacher_review";
     const { error: re } = await supabase.from("application_reviews").insert({
       application_id: app.id,
       reviewer_id: user!.id,
@@ -133,7 +122,7 @@ const ApplicationDetail = () => {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">基本信息</CardTitle>
-            <CardDescription>{project?.name}</CardDescription>
+            {matchedRule && <CardDescription>匹配规则：{matchedRule.name}</CardDescription>}
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div><span className="text-muted-foreground">学生：</span>{student?.full_name} · {student?.student_no} · {student?.email}</div>

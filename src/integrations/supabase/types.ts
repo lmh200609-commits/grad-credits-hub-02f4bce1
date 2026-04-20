@@ -81,7 +81,6 @@ export type Database = {
           final_review_note: string | null
           final_reviewer_id: string | null
           id: string
-          project_id: string
           reviewed_at: string | null
           selected_keywords: string[]
           status: Database["public"]["Enums"]["application_status"]
@@ -101,7 +100,6 @@ export type Database = {
           final_review_note?: string | null
           final_reviewer_id?: string | null
           id?: string
-          project_id: string
           reviewed_at?: string | null
           selected_keywords?: string[]
           status?: Database["public"]["Enums"]["application_status"]
@@ -121,7 +119,6 @@ export type Database = {
           final_review_note?: string | null
           final_reviewer_id?: string | null
           id?: string
-          project_id?: string
           reviewed_at?: string | null
           selected_keywords?: string[]
           status?: Database["public"]["Enums"]["application_status"]
@@ -135,13 +132,6 @@ export type Database = {
             columns: ["ai_matched_rule_id"]
             isOneToOne: false
             referencedRelation: "rules"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "applications_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -232,74 +222,6 @@ export type Database = {
         }
         Relationships: []
       }
-      project_collaborators: {
-        Row: {
-          created_at: string
-          id: string
-          project_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          project_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          project_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_collaborators_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      projects: {
-        Row: {
-          active: boolean
-          created_at: string
-          created_by: string
-          description: string | null
-          ends_at: string | null
-          id: string
-          name: string
-          rule_ids: string[]
-          starts_at: string | null
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          created_by: string
-          description?: string | null
-          ends_at?: string | null
-          id?: string
-          name: string
-          rule_ids?: string[]
-          starts_at?: string | null
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          created_by?: string
-          description?: string | null
-          ends_at?: string | null
-          id?: string
-          name?: string
-          rule_ids?: string[]
-          starts_at?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       rules: {
         Row: {
           active: boolean
@@ -370,10 +292,6 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
-        Returns: boolean
-      }
-      is_project_reviewer: {
-        Args: { _project_id: string; _user_id: string }
         Returns: boolean
       }
     }
