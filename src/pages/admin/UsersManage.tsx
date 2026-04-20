@@ -50,6 +50,7 @@ const UsersManage = () => {
   const [newPassword, setNewPassword] = useState("");
   const [pwError, setPwError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [page, setPage] = useState(0);
 
   const load = async () => {
     setLoading(true);
@@ -85,6 +86,9 @@ const UsersManage = () => {
         .some((v) => v!.toLowerCase().includes(q)),
     );
   }, [rows, search]);
+
+  useEffect(() => { setPage(0); }, [search, role]);
+  const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const resetPassword = async () => {
     if (!resetTarget) return;
