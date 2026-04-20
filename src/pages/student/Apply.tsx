@@ -22,6 +22,7 @@ type Rule = {
   identity: string | null;
   credit: number;
   description: string | null;
+  source?: "rule" | "case"; // 标记来源，案例库的条目展示"案例"徽章
 };
 
 const DIMS = ["project", "achievement", "level", "identity"] as const;
@@ -33,6 +34,19 @@ const DIM_LABELS: Record<typeof DIMS[number], string> = {
 };
 
 type Picked = Partial<Record<typeof DIMS[number], string>>;
+
+// 解析案例摘要中形如 "项目=xxx；成果=yyy；级别=zzz；身份=aaa" 的关键词
+const parseCaseKeywords = (text: string): Picked => {
+  const out: Picked = {};
+  const map: Record<string, typeof DIMS[number]> = {
+    项目: "project", 成果: "achievement", 级别: "level", 身份: "identity",
+  };
+  text.split(/[、；;\n]/).forEach((seg) => {
+    const m = seg.match(/^\s*(项目|成果|级别|身份)\s*[=:：]\s*(.+?)\s*$/);
+    if (m) out[map[m[1]]] = m[2];
+  });
+  return out;
+};
 
 const ApplyPage = () => {
   const navigate = useNavigate();
@@ -53,11 +67,34 @@ const ApplyPage = () => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data } = await supabase
-        .from("rules")
-        .select("id, name, project, achievement, level, identity, credit, description")
-        .eq("active", true);
-      setRules((data as Rule[]) ?? []);
+      const [rulesRes, casesRes] = await Promise.all([
+        supabase
+          .from("rules")
+          .select("id, name, project, achievement, level, identity, credit, description")
+          .eq("active", true),
+        supabase
+          .from("cases")
+          .select("id, title, summary, awarded_credit"),
+      ]);
+      const baseRules: Rule[] = ((rulesRes.data as any[]) ?? []).map((r) => ({ ...r, source: "rule" as const }));
+
+      // 把案例库条目"伪装"成 rule，让学生可在导航/搜索中选到
+      const caseRules: Rule[] = ((casesRes.data as any[]) ?? []).map((c) => {
+        const kw = parseCaseKeywords(c.summary ?? "");
+        return {
+          id: `case:${c.id}`,
+          name: c.title,
+          project: kw.project ?? null,
+          achievement: kw.achievement ?? c.title,
+          level: kw.level ?? null,
+          identity: kw.identity ?? null,
+          credit: Number(c.awarded_credit ?? 0),
+          description: "来自案例库（教师人工通过沉淀）",
+          source: "case" as const,
+        };
+      });
+
+      setRules([...baseRules, ...caseRules]);
       setLoading(false);
     })();
   }, []);
@@ -234,7 +271,10 @@ const ApplyPage = () => {
                     className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
                   >
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{r.achievement ?? r.name}</div>
+                      <div className="flex items-center gap-1 truncate font-medium">
+                        {r.achievement ?? r.name}
+                        {r.source === "case" && <Badge variant="outline" className="shrink-0 text-[10px]">案例</Badge>}
+                      </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {[r.project, r.level, r.identity].filter(Boolean).join(" · ")}
                       </div>
@@ -314,7 +354,10 @@ const ApplyPage = () => {
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="font-medium">{r.achievement ?? r.name}</div>
+                      <div className="flex items-center gap-1 font-medium">
+                        {r.achievement ?? r.name}
+                        {r.source === "case" && <Badge variant="outline" className="text-[10px]">案例</Badge>}
+                      </div>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {[r.project, r.level, r.identity].filter(Boolean).map((k) => (
                           <Badge key={k as string} variant="outline" className="text-xs">{k}</Badge>
