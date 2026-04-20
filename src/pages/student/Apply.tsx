@@ -354,7 +354,10 @@ const ApplyPage = () => {
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="font-medium">{r.achievement ?? r.name}</div>
+                      <div className="flex items-center gap-1 font-medium">
+                        {r.achievement ?? r.name}
+                        {r.source === "case" && <Badge variant="outline" className="text-[10px]">案例</Badge>}
+                      </div>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {[r.project, r.level, r.identity].filter(Boolean).map((k) => (
                           <Badge key={k as string} variant="outline" className="text-xs">{k}</Badge>
