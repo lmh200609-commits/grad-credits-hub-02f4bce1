@@ -11,3 +11,6 @@ verify_jwt = true
 
 [functions.reset-password]
 verify_jwt = true
+
+[functions.dev-seed]
+verify_jwt = false
