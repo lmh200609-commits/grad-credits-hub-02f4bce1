@@ -151,15 +151,23 @@ const ApplicationDetail = () => {
         </Card>
 
         {app.ai_reasoning && (
-          <Card>
+          <Card className={app.status === "rejected_by_ai" ? "border-destructive" : ""}>
             <CardHeader>
-              <CardTitle className="text-base">AI 评估</CardTitle>
+              <CardTitle className="text-base">系统核验结果</CardTitle>
               <CardDescription>
-                匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}
+                {isReviewer ? (
+                  <>建议匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}</>
+                ) : (
+                  <>建议匹配规则：{matchedRule?.name ?? "未匹配"}</>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm">{app.ai_reasoning}</p>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
+              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">{app.ai_reasoning}</p>
+              {app.status === "rejected_by_ai" && !isReviewer && (
+                <p className="mt-3 text-xs text-muted-foreground">如对结果有异议，可联系教师复核或重新提交申请。</p>
+              )}
             </CardContent>
           </Card>
         )}
