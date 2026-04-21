@@ -182,9 +182,14 @@ const Students = () => {
                       <TableCell>{r.class_name ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{r.email ?? "—"}</TableCell>
                       <TableCell className="text-right">
-                        <Button asChild variant="outline" size="sm">
-                          <Link to={`/teacher/students/${r.user_id}`}>查看详情</Link>
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button asChild variant="outline" size="sm">
+                            <Link to={`/teacher/students/${r.user_id}`}>查看详情</Link>
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openReset(r)}>
+                            重置密码
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -197,6 +202,36 @@ const Students = () => {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>重置学生密码</DialogTitle>
+            <DialogDescription>
+              为 <span className="font-medium">{resetTarget?.full_name ?? "学生"}</span>
+              （{resetTarget?.student_no ?? "—"}）设置新密码。请通过线下渠道告知学生。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="new-pw">新密码</Label>
+            <Input
+              id="new-pw"
+              type="text"
+              value={newPassword}
+              onChange={(e) => { setNewPassword(e.target.value); setPwError(null); }}
+              placeholder="至少 8 位，含字母和数字"
+              autoComplete="new-password"
+            />
+            {pwError && <p className="text-sm text-destructive">{pwError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetTarget(null)} disabled={resetting}>取消</Button>
+            <Button onClick={submitReset} disabled={resetting}>
+              {resetting ? "重置中…" : "确认重置"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
