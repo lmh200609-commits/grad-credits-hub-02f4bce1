@@ -15,6 +15,7 @@ import { Plus, Trash2, Pencil } from "lucide-react";
 import { ruleSchema } from "@/lib/schemas";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
+import { writeAuditLog } from "@/lib/audit";
 
 type Rule = {
   id: string;
@@ -67,10 +68,29 @@ const RulesPage = () => {
       description: v.description?.trim() || null,
       active: v.active,
     };
-    const { error } = editing
-      ? await supabase.from("rules").update(payload).eq("id", editing.id)
-      : await supabase.from("rules").insert(payload);
-    if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+    if (editing) {
+      const { error } = await supabase.from("rules").update(payload).eq("id", editing.id);
+      if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+      writeAuditLog({
+        action: "rule_update",
+        target_ids: [editing.id],
+        target_labels: [payload.name],
+        affected_count: 1,
+        success_count: 1,
+        metadata: { before: { name: editing.name, credit: editing.credit, active: editing.active }, after: payload },
+      });
+    } else {
+      const { data, error } = await supabase.from("rules").insert(payload).select("id").single();
+      if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+      writeAuditLog({
+        action: "rule_create",
+        target_ids: data?.id ? [data.id] : [],
+        target_labels: [payload.name],
+        affected_count: 1,
+        success_count: 1,
+        metadata: { payload },
+      });
+    }
     toast({ title: editing ? "已更新" : "已新增" });
     setOpen(false);
     load();
@@ -78,8 +98,17 @@ const RulesPage = () => {
 
   const remove = async (id: string) => {
     if (!confirm("确认删除该规则？")) return;
+    const target = rules.find((r) => r.id === id);
     const { error } = await supabase.from("rules").delete().eq("id", id);
     if (error) return toast({ title: "删除失败", description: error.message, variant: "destructive" });
+    writeAuditLog({
+      action: "rule_delete",
+      target_ids: [id],
+      target_labels: target ? [target.name] : [],
+      affected_count: 1,
+      success_count: 1,
+      metadata: target ? { name: target.name, credit: target.credit, category: target.category } : {},
+    });
     toast({ title: "已删除" });
     load();
   };

@@ -15,6 +15,7 @@ import AdminDashboard from "./pages/admin/Dashboard.tsx";
 import ReviewHub from "./pages/admin/ReviewHub.tsx";
 import Credits from "./pages/admin/Credits.tsx";
 import UsersManage from "./pages/admin/UsersManage.tsx";
+import AuditLogs from "./pages/admin/AuditLogs.tsx";
 import Reviews from "./pages/Reviews.tsx";
 import Apply from "./pages/student/Apply.tsx";
 import MyApplications from "./pages/student/MyApplications.tsx";
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/admin/import" element={<RoleRoute role="admin"><ImportUsers /></RoleRoute>} />
             <Route path="/admin/rules" element={<RoleRoute role="admin"><Rules /></RoleRoute>} />
             <Route path="/admin/cases" element={<RoleRoute role="admin"><Cases /></RoleRoute>} />
+            <Route path="/admin/audit-logs" element={<RoleRoute role="admin"><AuditLogs /></RoleRoute>} />
             <Route path="/apply" element={<RoleRoute role="student"><Apply /></RoleRoute>} />
             <Route path="/reviews" element={<ProtectedRoute><Reviews /></ProtectedRoute>} />
             <Route path="/my-applications" element={<RoleRoute role="student"><MyApplications /></RoleRoute>} />
