@@ -142,13 +142,13 @@ const StaffAiAssistant = () => {
         </Button>
       </header>
 
-      <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col overflow-hidden">
-        <TabsList className="mx-3 mt-2 grid grid-cols-2">
+      <Tabs value={tab} onValueChange={setTab} className="flex flex-1 min-h-0 flex-col overflow-hidden">
+        <TabsList className="mx-3 mt-2 grid shrink-0 grid-cols-2">
           <TabsTrigger value="chat" className="gap-1.5"><MessageSquare className="h-3.5 w-3.5" />智能问答</TabsTrigger>
           <TabsTrigger value="quick" className="gap-1.5"><Zap className="h-3.5 w-3.5" />快捷指令</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chat" className="flex flex-1 flex-col overflow-hidden m-0">
+        <TabsContent value="chat" className="flex flex-1 min-h-0 flex-col overflow-hidden mt-2 mx-0 mb-0">
           <ScrollArea className="flex-1">
             <div ref={scrollRef} className="flex flex-col gap-3 p-4">
               {messages.map((m, i) => (
