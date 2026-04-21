@@ -165,19 +165,46 @@ const ImportUsers = () => {
         const ctx: any = (error as any).context;
         let detail = error.message;
         let extras: string[] = [];
+        let aiErrors: { line: number; message: string }[] = [];
+        let aiConflicts: string[] = [];
         try {
           const t = await ctx?.text?.();
           if (t) {
             const j = JSON.parse(t);
             detail = j.error ?? detail;
-            if (j.errors) extras = j.errors.map((e: any) => `第 ${e.line} 行：${e.message}`);
-            if (j.conflicts) extras = j.conflicts.map((c: string) => `已存在：${c}`);
+            if (j.errors) {
+              aiErrors = j.errors;
+              extras = j.errors.map((e: any) => `第 ${e.line} 行：${e.message}`);
+            }
+            if (j.conflicts) {
+              aiConflicts = j.conflicts;
+              extras = j.conflicts.map((c: string) => `已存在：${c}`);
+            }
           }
         } catch {}
+
+        // Ask AI for a human-readable explanation (structured errors only — never the raw Excel).
+        let aiHint = "";
+        if (aiErrors.length || aiConflicts.length) {
+          try {
+            const { data: ex } = await supabase.functions.invoke("ai-explain-import", {
+              body: {
+                errors: aiErrors,
+                conflicts: aiConflicts,
+                total: chunks[ci].length,
+              },
+            });
+            if (ex?.summary) {
+              aiHint = `\n\n💡 AI 诊断：${ex.summary}` +
+                (ex.suggestions?.length ? `\n建议：\n• ${ex.suggestions.join("\n• ")}` : "");
+            }
+          } catch { /* ignore */ }
+        }
+
         push({
           kind: "result",
           ok: false,
-          text: `第 ${ci + 1} 批失败：${[detail, ...extras].join("\n")}\n已成功导入前 ${totalCreated} 个账号。`,
+          text: `第 ${ci + 1} 批失败：${[detail, ...extras].join("\n")}\n已成功导入前 ${totalCreated} 个账号。${aiHint}`,
         });
         toast({ title: "导入部分失败", description: detail, variant: "destructive" });
         failed = true;
