@@ -83,8 +83,26 @@ const AiAssistant = () => {
   };
 
   const insertChip = (label: string) => {
-    setInput((prev) => (prev ? `${prev} ${label}：` : `${label}：`));
-    textareaRef.current?.focus();
+    const ta = textareaRef.current;
+    const snippet = `${label}：`;
+    if (!ta) {
+      setInput((prev) => (prev ? `${prev} ${snippet}` : snippet));
+      return;
+    }
+    const start = ta.selectionStart ?? input.length;
+    const end = ta.selectionEnd ?? input.length;
+    const before = input.slice(0, start);
+    const after = input.slice(end);
+    const needsSpace = before.length > 0 && !/\s$/.test(before);
+    const insertion = (needsSpace ? " " : "") + snippet;
+    const next = before + insertion + after;
+    setInput(next);
+    const caret = (before + insertion).length;
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(caret, caret);
+      ta.scrollTop = ta.scrollHeight;
+    });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
