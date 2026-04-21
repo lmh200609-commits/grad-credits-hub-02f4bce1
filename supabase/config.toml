@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.ask-credit-assistant]
 verify_jwt = false
+
+[functions.ai-explain-import]
+verify_jwt = false

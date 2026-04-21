@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
 
     if (!resp.ok) {
       const t = await resp.text();
-      console.error("DeepSeek error:", resp.status, t);
+      console.error(`AI provider (${provider}) error:`, resp.status, t);
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: "请求过于频繁，请稍后再试" }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
