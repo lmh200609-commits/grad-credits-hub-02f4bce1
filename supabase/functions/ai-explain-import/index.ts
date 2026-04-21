@@ -1,7 +1,7 @@
 // AI-powered import-failure explainer (Qwen-turbo).
 // Input: structured error summary only (NEVER the raw Excel).
 // Output: { summary, suggestions[] } in Chinese.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
