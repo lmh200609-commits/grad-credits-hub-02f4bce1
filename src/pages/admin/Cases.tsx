@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,12 +97,11 @@ const CasesPage = () => {
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">案例库</h1>
-            <p className="text-sm text-muted-foreground">历史通过的认证案例，AI 评估时作为相似度参考</p>
-          </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+        <PageHeader
+          title="案例库"
+          description="历史通过的认证案例，AI 评估时作为相似度参考"
+          actions={
+            <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />新增案例</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>{editing ? "编辑案例" : "新增案例"}</DialogTitle></DialogHeader>
@@ -124,7 +124,8 @@ const CasesPage = () => {
               <DialogFooter><Button onClick={save}>保存</Button></DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
+          }
+        />
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">

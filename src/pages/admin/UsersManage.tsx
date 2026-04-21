@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,11 +42,13 @@ const UsersManage = () => {
   const { role: roleParam } = useParams<{ role: string }>();
   const role = roleParam === "teachers" ? "teacher" : "student";
   const meta = TITLES[roleParam ?? "students"] ?? TITLES.students;
+  const [sp] = useSearchParams();
+  const initialSearch = sp.get("search") ?? "";
 
   const [rows, setRows] = useState<Profile[]>([]);
   const [credits, setCredits] = useState<Map<string, { total: number; count: number }>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [resetTarget, setResetTarget] = useState<Profile | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [pwError, setPwError] = useState<string | null>(null);
@@ -76,6 +79,7 @@ const UsersManage = () => {
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [role]);
+  useEffect(() => { setSearch(sp.get("search") ?? ""); }, [sp]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -117,12 +121,9 @@ const UsersManage = () => {
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">{meta.title}</h1>
-          <p className="text-sm text-muted-foreground">{meta.desc}</p>
-        </div>
+        <PageHeader title={meta.title} description={meta.desc} />
 
-        <Card>
+        <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             <Input placeholder="搜索姓名 / 学号 / 邮箱 / 班级 / 院系" value={search} onChange={(e) => setSearch(e.target.value)} />

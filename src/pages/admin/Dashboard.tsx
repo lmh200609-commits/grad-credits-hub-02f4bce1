@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
 } from "recharts";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
 import { fetchAll } from "@/lib/fetchAll";
+import { Inbox, Sparkles } from "lucide-react";
 
 type App = Pick<
   Database["public"]["Tables"]["applications"]["Row"],
@@ -24,6 +27,7 @@ const COLORS = ["#10b981", "#ef4444", "#f59e0b", "#3b82f6", "#a855f7", "#06b6d4"
 const DEPT_COLORS = ["#6366f1", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#0ea5e9", "#84cc16", "#f43f5e"];
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
   const [apps, setApps] = useState<App[]>([]);
   const [studentCount, setStudentCount] = useState(0);
   const [teacherCount, setTeacherCount] = useState(0);
@@ -94,10 +98,24 @@ const AdminDashboard = () => {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">数据看板</h1>
-          <p className="text-sm text-muted-foreground">全校学分认证申请、用户与规则概览</p>
-        </div>
+        <PageHeader
+          title="数据看板"
+          description="全校学分认证申请、用户与规则概览"
+          actions={
+            <Button onClick={() => navigate("/admin/review")} className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground shadow-card">
+              <Inbox className="mr-2 h-4 w-4" /> 打开复核中心
+            </Button>
+          }
+        />
+
+        <Card className="border-primary/30 bg-primary/5 shadow-card">
+          <CardContent className="flex items-center gap-3 p-4 text-sm">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span className="text-muted-foreground">
+              试试右下角的「工作助手」：用自然语言说「查看不合格学生」或「调出张三档案」即可一键跳转。
+            </span>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
           <StatCard label="申请总数" value={stats.total} accent="text-indigo-600" />

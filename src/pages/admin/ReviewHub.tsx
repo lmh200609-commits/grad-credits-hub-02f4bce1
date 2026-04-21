@@ -1,24 +1,27 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
-  CheckCircle2, XCircle, Clock, ShieldCheck, ShieldX, Sparkles,
+  CheckCircle2, XCircle, Clock, ShieldCheck, ShieldX, Sparkles, ArrowRight,
 } from "lucide-react";
 
 type Counts = Record<string, number>;
 
 const CARDS = [
-  { key: "pending_ai", label: "系统核验中", desc: "刚提交，系统正在自动核验", icon: CheckCircle2, color: "text-slate-700 bg-slate-100 dark:bg-slate-900/40" },
-  { key: "auto_approved", label: "系统初审通过", desc: "系统已通过，待教师复核", icon: Sparkles, color: "text-emerald-700 bg-emerald-100 dark:bg-emerald-950/30" },
-  { key: "rejected_by_ai", label: "系统未通过", desc: "系统判定材料有问题", icon: XCircle, color: "text-rose-700 bg-rose-100 dark:bg-rose-950/30" },
-  { key: "pending_review", label: "待教师复核", desc: "系统不确定，等待人工判定", icon: Clock, color: "text-amber-700 bg-amber-100 dark:bg-amber-950/30" },
-  { key: "approved", label: "人工已通过", desc: "教师 / 管理员审核通过", icon: ShieldCheck, color: "text-emerald-800 bg-emerald-200 dark:bg-emerald-950/40" },
-  { key: "rejected", label: "人工已驳回", desc: "教师 / 管理员驳回", icon: ShieldX, color: "text-rose-800 bg-rose-200 dark:bg-rose-950/40" },
+  { key: "pending_ai", label: "系统核验中", desc: "刚提交，系统正在自动核验", icon: CheckCircle2, color: "text-muted-foreground bg-muted" },
+  { key: "auto_approved", label: "系统初审通过", desc: "系统已通过，待教师复核", icon: Sparkles, color: "text-success bg-success/15" },
+  { key: "rejected_by_ai", label: "系统未通过", desc: "系统判定材料有问题", icon: XCircle, color: "text-danger bg-danger/15" },
+  { key: "pending_review", label: "待教师复核", desc: "系统不确定，等待人工判定", icon: Clock, color: "text-warning bg-warning/15" },
+  { key: "approved", label: "人工已通过", desc: "教师 / 管理员审核通过", icon: ShieldCheck, color: "text-success bg-success/20" },
+  { key: "rejected", label: "人工已驳回", desc: "教师 / 管理员驳回", icon: ShieldX, color: "text-danger bg-danger/20" },
 ];
 
 const ReviewHub = () => {
+  const navigate = useNavigate();
   const [counts, setCounts] = useState<Counts>({});
 
   useEffect(() => {
@@ -38,17 +41,32 @@ const ReviewHub = () => {
 
   return (
     <AppLayout>
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">复核中心</h1>
-          <p className="text-sm text-muted-foreground">点击卡片进入对应状态的申请列表，可推翻教师决定</p>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          title="复核中心"
+          description="点击卡片进入对应状态的申请列表，可推翻教师决定"
+          actions={
+            <Button variant="outline" size="sm" onClick={() => navigate("/reviews?status=pending_review")}>
+              <Clock className="mr-2 h-4 w-4" /> 待复核
+            </Button>
+          }
+        />
+
+        <Card className="border-primary/30 bg-primary/5 shadow-card">
+          <CardContent className="flex items-center gap-3 p-4 text-sm">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span className="text-muted-foreground">
+              提示：右下角的「工作助手」可用自然语言一键跳转，例如说「打开待复核」或「查看不合格学生」。
+            </span>
+          </CardContent>
+        </Card>
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {CARDS.map((c) => {
             const Icon = c.icon;
             return (
               <Link key={c.key} to={`/reviews?status=${c.key}`}>
-                <Card className="transition hover:border-primary hover:shadow-sm">
+                <Card className="group h-full shadow-card transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-cardHover">
                   <CardContent className="flex items-start gap-4 p-5">
                     <div className={`rounded-lg p-3 ${c.color}`}>
                       <Icon className="h-5 w-5" />
@@ -56,9 +74,12 @@ const ReviewHub = () => {
                     <div className="flex-1">
                       <div className="flex items-baseline justify-between">
                         <div className="font-medium">{c.label}</div>
-                        <div className="text-2xl font-bold">{counts[c.key] ?? 0}</div>
+                        <div className="text-2xl font-bold tracking-tight">{counts[c.key] ?? 0}</div>
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">{c.desc}</div>
+                      <div className="mt-2 inline-flex items-center text-[11px] text-primary opacity-0 transition group-hover:opacity-100">
+                        查看 <ArrowRight className="ml-0.5 h-3 w-3" />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

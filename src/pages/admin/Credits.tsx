@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
+import StatCard from "@/components/StatCard";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +13,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Download } from "lucide-react";
+import { Download, Trophy, Users, CheckCircle2, AlertTriangle } from "lucide-react";
 import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
 
@@ -35,11 +37,26 @@ const PASS_THRESHOLD = 4;
 type PassFilter = "all" | "pass" | "fail";
 
 const Credits = () => {
+  const [sp, setSp] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState("");
-  const [dept, setDept] = useState(ALL);
-  const [passFilter, setPassFilter] = useState<PassFilter>("all");
+  const [dept, setDept] = useState(sp.get("dept") ?? ALL);
+  const [passFilter, setPassFilter] = useState<PassFilter>((sp.get("passFilter") as PassFilter) ?? "all");
   const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    const f = sp.get("passFilter") as PassFilter | null;
+    if (f && ["all", "pass", "fail"].includes(f)) setPassFilter(f);
+    const d = sp.get("dept");
+    if (d) setDept(d);
+  }, [sp]);
+
+  const updateFilter = (key: "passFilter" | "dept", value: string) => {
+    const next = new URLSearchParams(sp);
+    if (!value || value === ALL || value === "all") next.delete(key);
+    else next.set(key, value);
+    setSp(next, { replace: true });
+  };
 
   useEffect(() => {
     (async () => {
@@ -94,6 +111,12 @@ const Credits = () => {
     fail: rows.filter((r) => r.total_credit < PASS_THRESHOLD).length,
   }), [rows]);
 
+  const avgCredit = useMemo(() => {
+    if (!rows.length) return 0;
+    return rows.reduce((s, r) => s + r.total_credit, 0) / rows.length;
+  }, [rows]);
+  const maxCredit = useMemo(() => rows.reduce((m, r) => Math.max(m, r.total_credit), 0), [rows]);
+
   const exportCsv = () => {
     const header = ["排名", "姓名", "学号", "院系", "专业", "班级", "通过申请数", "累计学分"];
     const lines = filtered.map((r, i) => [
@@ -110,28 +133,35 @@ const Credits = () => {
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">学生学分排名</h1>
-            <p className="text-sm text-muted-foreground">基于已通过的申请累计计算</p>
-          </div>
-          <Button onClick={exportCsv} variant="outline" size="sm">
-            <Download className="mr-2 h-4 w-4" /> 导出 CSV
-          </Button>
+        <PageHeader
+          title="学生学分排名"
+          description="基于已通过的申请累计计算"
+          actions={
+            <Button onClick={exportCsv} variant="outline" size="sm">
+              <Download className="mr-2 h-4 w-4" /> 导出 CSV
+            </Button>
+          }
+        />
+
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <StatCard label="学生总数" value={rows.length} icon={Users} tone="primary" />
+          <StatCard label="合格人数" value={passStats.pass} icon={CheckCircle2} tone="success" hint={`≥${PASS_THRESHOLD} 学分`} onClick={() => { setPassFilter("pass"); updateFilter("passFilter", "pass"); }} />
+          <StatCard label="不合格人数" value={passStats.fail} icon={AlertTriangle} tone="danger" hint={`<${PASS_THRESHOLD} 学分`} onClick={() => { setPassFilter("fail"); updateFilter("passFilter", "fail"); }} />
+          <StatCard label="平均 / 最高" value={`${avgCredit.toFixed(1)} / ${maxCredit.toFixed(1)}`} icon={Trophy} tone="info" />
         </div>
 
-        <Card>
+        <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-4">
             <Input placeholder="搜索姓名 / 学号 / 班级 / 专业" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <Select value={dept} onValueChange={setDept}>
+            <Select value={dept} onValueChange={(v) => { setDept(v); updateFilter("dept", v); }}>
               <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>全部院系</SelectItem>
                 {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={passFilter} onValueChange={(v) => setPassFilter(v as PassFilter)}>
+            <Select value={passFilter} onValueChange={(v) => { setPassFilter(v as PassFilter); updateFilter("passFilter", v); }}>
               <SelectTrigger><SelectValue placeholder="是否合格" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部</SelectItem>
@@ -140,12 +170,12 @@ const Credits = () => {
               </SelectContent>
             </Select>
             <div className="flex items-center text-sm text-muted-foreground">
-              共 {filtered.length} 名 · 合格 <span className="mx-1 font-semibold text-emerald-600">{passStats.pass}</span> / 不合格 <span className="mx-1 font-semibold text-rose-600">{passStats.fail}</span>
+              共 {filtered.length} 名 · 合格 <span className="mx-1 font-semibold text-success">{passStats.pass}</span> / 不合格 <span className="mx-1 font-semibold text-danger">{passStats.fail}</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-card">
           <CardContent className="p-0">
             <Table>
               <TableHeader>
@@ -169,7 +199,7 @@ const Credits = () => {
                   const rank = page * PAGE_SIZE + i + 1;
                   const passed = r.total_credit >= PASS_THRESHOLD;
                   return (
-                  <TableRow key={r.user_id}>
+                  <TableRow key={r.user_id} className={!passed ? "bg-danger/5 hover:bg-danger/10" : "hover:bg-muted/40"}>
                     <TableCell className="font-mono text-muted-foreground">#{rank}</TableCell>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
                     <TableCell>{r.student_no ?? "—"}</TableCell>
@@ -177,9 +207,9 @@ const Credits = () => {
                     <TableCell>{r.major ?? "—"}</TableCell>
                     <TableCell>{r.class_name ?? "—"}</TableCell>
                     <TableCell className="text-right">{r.approved_count}</TableCell>
-                    <TableCell className={`text-right font-semibold ${passed ? "text-emerald-600" : "text-rose-600"}`}>{r.total_credit.toFixed(1)}</TableCell>
+                    <TableCell className={`text-right font-semibold ${passed ? "text-success" : "text-danger"}`}>{r.total_credit.toFixed(1)}</TableCell>
                     <TableCell className="text-center">
-                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${passed ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"}`}>
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${passed ? "bg-success/15 text-success" : "bg-danger/15 text-danger"}`}>
                         {passed ? "合格" : "不合格"}
                       </span>
                     </TableCell>
