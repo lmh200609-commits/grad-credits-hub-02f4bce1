@@ -32,6 +32,7 @@ const ROLE_LABEL: Record<string, string> = { admin: "管理员", teacher: "教�
 
 const ImportUsers = () => {
   const fileRef = useRef<HTMLInputElement>(null);
+  const lastFileNameRef = useRef<string | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([
     {
       kind: "ai",
@@ -98,6 +99,7 @@ const ImportUsers = () => {
       }
 
       push({ kind: "file", name: file.name, rowCount: rawRows.length });
+      lastFileNameRef.current = file.name;
       push({ kind: "ai", text: `已读取 ${rawRows.length} 行原始数据，正在让 AI 识别字段并规范化…` });
 
       const { data, error } = await supabase.functions.invoke("ai-parse-roster", {
@@ -158,7 +160,7 @@ const ImportUsers = () => {
       });
 
       const { data, error } = await supabase.functions.invoke("import-users", {
-        body: { rows: chunks[ci] },
+        body: { rows: chunks[ci], file_name: lastFileNameRef.current },
       });
 
       if (error) {
