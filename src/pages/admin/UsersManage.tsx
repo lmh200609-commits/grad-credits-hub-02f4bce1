@@ -126,7 +126,7 @@ const UsersManage = () => {
         <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
-            <Input placeholder="搜索姓名 / 学号 / 邮箱 / 班级 / 院系" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input placeholder="搜索姓名 / 学号或工号 / 手机号 / 班级 / 院系" value={search} onChange={(e) => setSearch(e.target.value)} />
             <div className="flex items-center text-sm text-muted-foreground">
               共 {filtered.length} / {rows.length}
             </div>
@@ -143,17 +143,16 @@ const UsersManage = () => {
                   <TableHead>院系</TableHead>
                   {role === "student" && <TableHead>专业</TableHead>}
                   {role === "student" && <TableHead>班级</TableHead>}
-                  <TableHead>邮箱</TableHead>
-                  <TableHead>电话</TableHead>
+                  <TableHead>手机号</TableHead>
                   {role === "student" && <TableHead className="text-right">累计学分</TableHead>}
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableSkeleton rows={5} cols={role === "student" ? 9 : 6} />
+                  <TableSkeleton rows={5} cols={role === "student" ? 8 : 5} />
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={role === "student" ? 9 : 6}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={role === "student" ? 8 : 5}><EmptyState title="暂无数据" description="请先在「批量导入账号」中导入账号" /></TableCell></TableRow>
                 ) : paged.map((r) => {
                   const c = credits.get(r.user_id);
                   return (
@@ -163,7 +162,6 @@ const UsersManage = () => {
                     <TableCell>{r.department ?? "—"}</TableCell>
                     {role === "student" && <TableCell>{r.major ?? "—"}</TableCell>}
                     {role === "student" && <TableCell>{r.class_name ?? "—"}</TableCell>}
-                    <TableCell className="text-muted-foreground">{r.email ?? "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{r.phone ?? "—"}</TableCell>
                     {role === "student" && (
                       <TableCell className="text-right">
@@ -198,7 +196,7 @@ const UsersManage = () => {
       <Dialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>重置密码 — {resetTarget?.full_name ?? resetTarget?.email}</DialogTitle>
+            <DialogTitle>重置密码 — {resetTarget?.full_name ?? resetTarget?.student_no ?? "用户"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="np">新密码（至少 8 位，包含字母和数字）</Label>

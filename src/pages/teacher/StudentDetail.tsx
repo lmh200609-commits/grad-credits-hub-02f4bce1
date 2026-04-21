@@ -60,8 +60,7 @@ const StudentDetail = () => {
             <Field label="院系" value={profile?.department} />
             <Field label="专业" value={profile?.major} />
             <Field label="班级" value={profile?.class_name} />
-            <Field label="邮箱" value={profile?.email} />
-            <Field label="电话" value={profile?.phone} />
+            <Field label="手机号" value={profile?.phone} />
           </CardContent>
         </Card>
 
