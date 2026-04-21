@@ -1,52 +1,60 @@
 
+## 优化学生端 AI 助手的提问引导
 
-## 教师端学生管理：补充重置密码功能 + 排查显示
+让学生在向 AI 助手提问时，按"自定义关键词"的结构化方式提供信息，从而提升 RAG 检索准确度和回答质量。
 
 ### 改动范围
+仅修改一个文件：`src/components/AiAssistant.tsx`（前端引导层），后端 `ask-credit-assistant` 无需改动。
 
-**1. 在教师端 `Students.tsx` 增加「重置密码」操作**
-- 复用管理员端 `UsersManage.tsx` 已有的密码重置弹窗 UI 模式（输入新密码 → 校验 → 调用 edge function）
-- 表格「操作」列在「查看详情」右侧增加「重置密码」按钮
-- 复用 `resetPasswordSchema`（≥8 位、含字母+数字）
-- 不加删除功能（按你的选择，删除保留为管理员专属）
+### 具体改动
 
-**2. 后端 edge function `reset-password` 放开教师权限**
-- 当前函数硬编码 `admin only`，教师调用会 403
-- 改为「admin 或 teacher」均可重置学生密码
-- 增加一道安全校验：teacher 仅可重置 `student` 角色的账号（不能重置其他教师/管理员的密码），防止越权
-- admin 不受此限制
+**1. 升级欢迎语 — 明确"关键词式提问"模板**
 
-**3. 关于「看不到测试账号」**
-- 上一轮已清理 2000 个 `__perftest__` 测试账号（确认）
-- 当前数据库实际仅 5 个真实账号、1 条申请；session replay 显示真实学生「白雪 2024001」可正常显示，列表功能本身无 bug
-- 「暂无符合条件的学生」是因为筛选/搜索条件命中为 0，清空筛选即可
-- 本次不重新造测试账号；如需手动体验功能，登录 admin 在「批量导入账号」造 5-10 个真实可登录账号即可
+将现有 `WELCOME` 消息替换为带模板示例的引导语：
 
-### 技术细节
+```
+您好，我是学分认定规则助手。
 
-**`supabase/functions/reset-password/index.ts`**
-```ts
-// 校验调用者角色
-const { data: isAdmin } = await admin.rpc("has_role", { _user_id: callerId, _role: "admin" });
-const { data: isTeacher } = await admin.rpc("has_role", { _user_id: callerId, _role: "teacher" });
-if (!isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
+为帮您准确匹配规则，请按【关键词】方式描述，例如：
+• 成果类型：竞赛 / 证书 / 论文 / 专利 / 创新创业…
+• 名称全称：如「全国大学生英语竞赛」
+• 级别：国家级 / 省级 / 校级 / 国际级
+• 等级/角色:一等奖 / 三等奖 / 第一作者 / 团队成员
+• 其他补充：举办单位、年份等
 
-// teacher 仅能重置 student 账号
-if (!isAdmin) {
-  const { data: targetIsStudent } = await admin.rpc("has_role", { _user_id: user_id, _role: "student" });
-  if (!targetIsStudent) return json({ error: "教师仅可重置学生密码" }, 403);
-}
+示例：竞赛 + 全国大学生数学建模竞赛 + 国家级 + 二等奖 + 团队成员
 ```
 
-**`src/pages/teacher/Students.tsx`**
-- 引入 `Dialog`、`Label`、`resetPasswordSchema`、`toast`
-- 新增 state：`resetTarget` / `newPassword` / `pwError` / `resetting`
-- 新增 `resetPassword()` 处理函数，调用 `supabase.functions.invoke("reset-password", ...)`
-- 表格「操作」单元格改为两个按钮并排：详情 + 重置密码
-- 在 `AppLayout` 外层之后加 `<Dialog>` 弹窗（与 `UsersManage.tsx` 结构一致）
+**2. 输入框 placeholder 同步改为关键词示例**
 
-### 用户视角
+将 `Textarea` 的 `placeholder` 从一句长问句改为关键词样式：
+```
+竞赛 + 全国大学生英语竞赛 + 国家级 + 三等奖 + 个人参赛
+```
 
-- 教师进入「学生管理」→ 在任一学生行点击「重置密码」→ 弹窗输入新密码（如 `Abc12345`）→ 确认 → toast 成功提示 → 通过线下渠道告知学生新密码
-- 教师无法通过此入口重置其他教师或管理员的密码
-- 删除账号仍需联系管理员，避免误操作丢失学生历史申请数据
+**3. 首次输入时给出"关键词芯片"快捷插入（轻量增强）**
+
+在输入框上方仅在「未输入任何字符」时显示一行快捷标签（chip），点击即可把该关键词类别前缀追加到输入框，降低使用门槛：
+
+`[成果类型]` `[名称]` `[级别]` `[等级/角色]` `[补充信息]`
+
+点击逻辑：把对应中文标签 + `：` 追加到当前 `input` 末尾并自动聚焦，例如点击 `[级别]` → 输入框出现 `级别：`。
+
+**4. 用户提问后的智能补全提示（轻量）**
+
+当用户发送的消息长度 < 10 字 或 不包含任何关键字段提示词（如"级别/等级/获奖/作者/参赛"），在调用接口的同时，先在本地插入一条助手提示：
+
+> 信息可能不足，建议补充【级别】【获奖等级/参与角色】【成果全称】，例如：竞赛 + XX 比赛 + 省级 + 一等奖 + 第一作者。
+
+随后再展示 AI 的真实回答。这样既不阻塞用户，也能潜移默化引导其养成关键词习惯。
+
+### 不改动的部分
+- 后端 Edge Function `ask-credit-assistant`：现有打分函数 `scoreRule` 已基于关键词匹配，前端引导用户输入更多关键词后，后端检索质量会自动提升，无需改动。
+- 不引入新依赖、不修改样式系统、不增加路由。
+
+### 技术细节
+- 文件：`src/components/AiAssistant.tsx`
+- 新增本地常量：`KEYWORD_CHIPS`（5 个分类标签数组）、`HINT_KEYWORDS`（用于检测用户输入是否结构化的正则/字符串列表）
+- 新增辅助函数：`needsHint(text: string): boolean`
+- 复用现有 `Button`/`Badge`（如未引入 Badge 则用现有 `Button variant="outline" size="sm"` 渲染 chip，避免新增组件）
+- 不破坏现有 `messages` 类型与 `send()` 流程
