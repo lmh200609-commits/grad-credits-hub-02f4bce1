@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import AiAssistant from "@/components/AiAssistant";
+import StaffAiAssistant from "@/components/StaffAiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
   Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText,
@@ -112,6 +113,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           <main className="flex-1 overflow-auto bg-muted/30 p-3 sm:p-6">{children}</main>
         </div>
         {hasRole("student") && <AiAssistant />}
+        {(hasRole("admin") || hasRole("teacher")) && <StaffAiAssistant />}
       </div>
     </SidebarProvider>
   );
