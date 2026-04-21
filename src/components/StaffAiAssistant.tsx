@@ -221,7 +221,7 @@ const StaffAiAssistant = () => {
           </div>
         </TabsContent>
 
-        <TabsContent value="quick" className="flex-1 overflow-auto m-0 p-3">
+        <TabsContent value="quick" className="flex-1 overflow-auto m-0 mt-2 p-3 pt-0">
           <p className="mb-2 text-xs text-muted-foreground">点击下方卡片即可一键执行</p>
           <div className="grid grid-cols-1 gap-2">
             {QUICK_ACTIONS.map((q) => (
