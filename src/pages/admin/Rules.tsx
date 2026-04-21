@@ -142,7 +142,8 @@ const RulesPage = () => {
               <DialogFooter><Button onClick={save}>保存</Button></DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
+          }
+        />
         <Card>
           <CardHeader><CardTitle className="text-base">规则列表（{rules.length}）</CardTitle></CardHeader>
           <CardContent>
