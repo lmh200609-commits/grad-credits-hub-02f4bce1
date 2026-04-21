@@ -142,7 +142,7 @@ const AiAssistant = () => {
       </ScrollArea>
 
       <div className="border-t p-3">
-        {!input && !loading && (
+        {!loading && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {KEYWORD_CHIPS.map((c) => (
               <Button
