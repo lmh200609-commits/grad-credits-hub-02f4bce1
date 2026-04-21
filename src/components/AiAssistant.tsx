@@ -12,7 +12,25 @@ type Msg = { role: "user" | "assistant"; content: string };
 const WELCOME: Msg = {
   role: "assistant",
   content:
-    "您好，我是学分规则助手。可以问我「XX 证书/比赛能认定多少学分」等问题。\n我只依据规则库与案例库做解释，不做最终审批。",
+    "您好，我是学分认定规则助手。\n\n为帮您准确匹配规则，请按【关键词】方式描述，例如：\n• 成果类型：竞赛 / 证书 / 论文 / 专利 / 创新创业…\n• 名称全称：如「全国大学生英语竞赛」\n• 级别：国家级 / 省级 / 校级 / 国际级\n• 等级/角色：一等奖 / 三等奖 / 第一作者 / 团队成员\n• 其他补充：举办单位、年份等\n\n示例：竞赛 + 全国大学生数学建模竞赛 + 国家级 + 二等奖 + 团队成员\n\n我只依据规则库与案例库做解释，不做最终审批。",
+};
+
+const KEYWORD_CHIPS = ["成果类型", "名称", "级别", "等级/角色", "补充信息"];
+const HINT_KEYWORDS = [
+  "级别", "等级", "获奖", "作者", "参赛", "国家级", "省级", "校级", "国际级",
+  "一等奖", "二等奖", "三等奖", "竞赛", "证书", "论文", "专利",
+];
+
+const needsHint = (text: string): boolean => {
+  const t = text.trim();
+  if (t.length < 10) return true;
+  return !HINT_KEYWORDS.some((kw) => t.includes(kw));
+};
+
+const HINT_MSG: Msg = {
+  role: "assistant",
+  content:
+    "💡 信息可能不足，建议补充【级别】【获奖等级/参与角色】【成果全称】，例如：\n竞赛 + XX 比赛 + 省级 + 一等奖 + 第一作者。",
 };
 
 const AiAssistant = () => {
@@ -21,6 +39,7 @@ const AiAssistant = () => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -38,6 +57,10 @@ const AiAssistant = () => {
     try {
       // strip welcome message before sending; cap to last 20
       const history = next.filter((m) => m !== WELCOME).slice(-20);
+      const hint = needsHint(text);
+      if (hint) {
+        setMessages((prev) => [...prev, HINT_MSG]);
+      }
       const { data, error } = await supabase.functions.invoke("ask-credit-assistant", {
         body: { messages: history },
       });
@@ -57,6 +80,11 @@ const AiAssistant = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const insertChip = (label: string) => {
+    setInput((prev) => (prev ? `${prev} ${label}：` : `${label}：`));
+    textareaRef.current?.focus();
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -114,12 +142,29 @@ const AiAssistant = () => {
       </ScrollArea>
 
       <div className="border-t p-3">
+        {!input && !loading && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {KEYWORD_CHIPS.map((c) => (
+              <Button
+                key={c}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => insertChip(c)}
+              >
+                {c}
+              </Button>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <Textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="例如：全国大学生英语竞赛三等奖能认定几个学分？"
+            placeholder="竞赛 + 全国大学生英语竞赛 + 国家级 + 三等奖 + 个人参赛"
             rows={2}
             className="min-h-[44px] resize-none text-sm"
             disabled={loading}
