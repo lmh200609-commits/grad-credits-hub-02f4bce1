@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.ai-parse-roster]
 verify_jwt = false
+
+[functions.ask-credit-assistant]
+verify_jwt = false
