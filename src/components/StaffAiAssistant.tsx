@@ -122,7 +122,7 @@ const StaffAiAssistant = () => {
       <button
         onClick={() => setOpen(true)}
         aria-label="打开工作助手"
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-lg shadow-violet-600/30 transition-transform hover:scale-105"
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-105"
       >
         <Sparkles className="h-6 w-6" />
       </button>
@@ -131,13 +131,13 @@ const StaffAiAssistant = () => {
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex h-[620px] w-[calc(100vw-2rem)] max-w-[420px] flex-col rounded-xl border bg-background shadow-2xl sm:w-[420px]">
-      <header className="flex items-center justify-between border-b bg-gradient-to-r from-violet-600 to-fuchsia-500 px-4 py-3 text-white rounded-t-xl">
+      <header className="flex items-center justify-between border-b bg-gradient-to-r from-primary to-primary-glow px-4 py-3 text-primary-foreground rounded-t-xl">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4" />
           <span className="text-sm font-semibold">工作助手</span>
           <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{role === "admin" ? "管理员" : "教师"}</span>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setOpen(false)}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setOpen(false)}>
           <X className="h-4 w-4" />
         </Button>
       </header>
