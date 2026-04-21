@@ -169,8 +169,7 @@ const StudentWorkbench = () => {
               <EmptyState
                 title="还没有申请"
                 description="提交你的第一份学分认证吧。"
-                actionLabel="去申请"
-                onAction={() => navigate("/apply")}
+                action={<Button size="sm" onClick={() => navigate("/apply")}>去申请</Button>}
               />
             ) : (
               <ul className="divide-y">
