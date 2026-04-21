@@ -57,6 +57,10 @@ const AiAssistant = () => {
     try {
       // strip welcome message before sending; cap to last 20
       const history = next.filter((m) => m !== WELCOME).slice(-20);
+      const hint = needsHint(text);
+      if (hint) {
+        setMessages((prev) => [...prev, HINT_MSG]);
+      }
       const { data, error } = await supabase.functions.invoke("ask-credit-assistant", {
         body: { messages: history },
       });
@@ -76,6 +80,11 @@ const AiAssistant = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const insertChip = (label: string) => {
+    setInput((prev) => (prev ? `${prev} ${label}：` : `${label}：`));
+    textareaRef.current?.focus();
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -133,12 +142,29 @@ const AiAssistant = () => {
       </ScrollArea>
 
       <div className="border-t p-3">
+        {!input && !loading && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {KEYWORD_CHIPS.map((c) => (
+              <Button
+                key={c}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => insertChip(c)}
+              >
+                {c}
+              </Button>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <Textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="例如：全国大学生英语竞赛三等奖能认定几个学分？"
+            placeholder="竞赛 + 全国大学生英语竞赛 + 国家级 + 三等奖 + 个人参赛"
             rows={2}
             className="min-h-[44px] resize-none text-sm"
             disabled={loading}
