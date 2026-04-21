@@ -139,6 +139,51 @@ export type Database = {
           },
         ]
       }
+      audit_logs: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_id: string | null
+          affected_count: number
+          created_at: string
+          duration_ms: number | null
+          failure_count: number
+          id: string
+          metadata: Json
+          success_count: number
+          target_ids: string[]
+          target_labels: string[]
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_id?: string | null
+          affected_count?: number
+          created_at?: string
+          duration_ms?: number | null
+          failure_count?: number
+          id?: string
+          metadata?: Json
+          success_count?: number
+          target_ids?: string[]
+          target_labels?: string[]
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_id?: string | null
+          affected_count?: number
+          created_at?: string
+          duration_ms?: number | null
+          failure_count?: number
+          id?: string
+          metadata?: Json
+          success_count?: number
+          target_ids?: string[]
+          target_labels?: string[]
+        }
+        Relationships: []
+      }
       cases: {
         Row: {
           awarded_credit: number | null
