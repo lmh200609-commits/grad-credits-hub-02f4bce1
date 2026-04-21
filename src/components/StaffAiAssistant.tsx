@@ -185,6 +185,11 @@ const StaffAiAssistant = () => {
                   )}
                 </div>
               ))}
+              {loading && (
+                <div className="self-start flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> 思考中…
+                </div>
+              )}
             </div>
           </ScrollArea>
 
@@ -197,8 +202,9 @@ const StaffAiAssistant = () => {
                 placeholder="例如：调出张三的档案 / 查看不合格学生"
                 rows={2}
                 className="min-h-[44px] resize-none text-sm"
+                disabled={loading}
               />
-              <Button size="icon" onClick={() => sendMessage(input)} disabled={!input.trim()}>
+              <Button size="icon" onClick={() => sendMessage(input)} disabled={loading || !input.trim()}>
                 <Send className="h-4 w-4" />
               </Button>
             </div>
@@ -213,7 +219,8 @@ const StaffAiAssistant = () => {
               <button
                 key={q.label}
                 onClick={() => sendMessage(q.prompt)}
-                className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm"
+                disabled={loading}
+                className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm disabled:opacity-50"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                   <Zap className="h-4 w-4" />
