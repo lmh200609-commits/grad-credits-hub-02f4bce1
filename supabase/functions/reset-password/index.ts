@@ -32,11 +32,24 @@ Deno.serve(async (req) => {
       _user_id: callerId,
       _role: "admin",
     });
-    if (!isAdmin) return json({ error: "Forbidden: admin only" }, 403);
+    const { data: isTeacher } = await admin.rpc("has_role", {
+      _user_id: callerId,
+      _role: "teacher",
+    });
+    if (!isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
 
     const { user_id, new_password } = await req.json();
     if (!user_id || typeof new_password !== "string" || new_password.length < 6) {
       return json({ error: "user_id 和 new_password (≥6 位) 必填" }, 400);
+    }
+
+    // 教师仅可重置 student 角色账号
+    if (!isAdmin) {
+      const { data: targetIsStudent } = await admin.rpc("has_role", {
+        _user_id: user_id,
+        _role: "student",
+      });
+      if (!targetIsStudent) return json({ error: "教师仅可重置学生密码" }, 403);
     }
 
     const { error } = await admin.auth.admin.updateUserById(user_id, { password: new_password });
