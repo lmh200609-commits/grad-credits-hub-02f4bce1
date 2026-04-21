@@ -14,6 +14,23 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // ---- AuthN: verify caller JWT ----
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+    const userClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } },
+    );
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
+    if (claimsErr || !claimsData?.claims) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+    const callerId = claimsData.claims.sub as string;
+
     const { application_id } = await req.json();
     if (!application_id) return json({ error: "application_id required" }, 400);
 
@@ -28,6 +45,17 @@ Deno.serve(async (req) => {
       .eq("id", application_id)
       .single();
     if (appErr || !app) return json({ error: "Application not found" }, 404);
+
+    // ---- AuthZ: caller must own the application OR be teacher/admin ----
+    if (app.student_id !== callerId) {
+      const [{ data: isTeacher }, { data: isAdmin }] = await Promise.all([
+        admin.rpc("has_role", { _user_id: callerId, _role: "teacher" }),
+        admin.rpc("has_role", { _user_id: callerId, _role: "admin" }),
+      ]);
+      if (!isTeacher && !isAdmin) {
+        return json({ error: "Forbidden" }, 403);
+      }
+    }
 
     const { data: studentProfile } = await admin
       .from("profiles")
