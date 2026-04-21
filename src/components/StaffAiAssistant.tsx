@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles, X, Send, Loader2, Zap, MessageSquare, ArrowRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ const StaffAiAssistant = () => {
   const navigate = useNavigate();
   const { open, tab, messages, input } = useStaffAssistantStore();
   const { setOpen, setTab, setMessages, setInput, clearMessages } = staffAssistantActions;
-  const loadingRef = useRef(false);
+  const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,8 +43,8 @@ const StaffAiAssistant = () => {
 
   const sendMessage = async (text: string) => {
     const t = text.trim();
-    if (!t || loadingRef.current) return;
-    loadingRef.current = true;
+    if (!t || loading) return;
+    setLoading(true);
     setTab("chat");
     const next: Msg[] = [...messages, { role: "user", content: t }];
     setMessages(next);
@@ -81,7 +81,7 @@ const StaffAiAssistant = () => {
         { role: "assistant", content: "抱歉，服务暂时不可用，请稍后再试。" },
       ]);
     } finally {
-      loadingRef.current = false;
+      setLoading(false);
     }
   };
 
