@@ -1,98 +1,98 @@
 
 
-# 学分认证系统 — 工作台 & 设计体系重构
+# 申请学分页面 — 内容丰富化改造
 
-围绕「数据感、流程感、操作效率」对学生/教师/管理员三种工作台进行统一重构，并落地一套可复用的 B 端设计令牌。
+当前 `/apply` 页面信息密度低、缺少引导和反馈。在不改变核心交互（搜索 / 关键词导航 / 自定义关键词 / 说明 / 上传 / 提交）的前提下，把页面从"表单堆叠"升级为"任务工作台"。
 
-## 1. 设计体系（基础层，所有页面受益）
+## 一、新增顶部 PageHeader + 进度条
 
-**色彩令牌（src/index.css，HSL）**
-- `--primary`: 222 76% 38%（深靛蓝，科技感主色）+ `--primary-glow` 渐变副值
-- 状态语义色（新增）：`--success` 152 60% 40%、`--warning` 32 95% 50%、`--danger` 0 78% 56%、`--info` 210 90% 50%；并配 `*/15` 软底变体用于 Badge
-- `--background`: 220 20% 98%（浅灰冷调，去纯白刺眼）、`--surface`: 0 0% 100%（卡片）
-- `--sidebar-active`: 主色 + 左侧 3px 色条
-- 暗色模式同步更新
+替换裸标题，使用统一 `PageHeader`：
 
-**Tailwind 扩展（tailwind.config.ts）**
-- `colors.success / warning / danger / info`（含 `.foreground` 与 `.soft`）
-- `boxShadow.card`（轻）、`boxShadow.cardHover`（提升）
-- `backgroundImage.gradient-primary`、`gradient-surface`
-- `keyframes`：`fade-in-up`、`pulse-soft`；`animation` 同步注册
+- 标题「申请学分」+ 副标题「四步完成认定申请，AI 将在 1 分钟内完成预审」
+- 右侧 actions：返回「我的申请」+ 主按钮「提交申请」（与底部联动）
+- 下方加一行 `ProcessSteps`（横向 4 步）：① 选择规则 → ② 填写说明 → ③ 上传材料 → ④ 提交审核；根据当前状态自动高亮（已选规则=步2、说明≥10字=步3、有附件=步4）
 
-**通用组件（新增）**
-- `src/components/StatCard.tsx`：图标 + 数值 + 标签 + 趋势/小字描述，支持 `tone: primary|success|warning|danger`，hover `-translate-y-0.5 shadow-cardHover`
-- `src/components/ProcessSteps.tsx`：横向步骤条（提交→AI 审核→教师复核→结果），支持 `currentStep` 与 `skipReview`
-- `src/components/PageHeader.tsx`：标题 + 副标题 + 右侧 actions 槽位
-- `StatusBadge.tsx`：改用新语义色 token（绿/黄/红/灰）
+## 二、左右双栏布局（lg 及以上）
 
-## 2. 学生工作台（src/pages/Index.tsx，学生分支）
-
-**布局**
 ```text
-┌──────────── PageHeader（问候 + 「申请学分」主按钮）────────────┐
-├── StatCard × 4：已提交 / 审核中 / 已通过 / 已拒绝 ─────────────┤
-├── ProcessSteps（当前进度高亮，根据最近一条申请推断）─────────────┤
-├──────── 60% 快捷操作 ────────┬──── 40% 最近申请 ────┐
-│ 申请学分（主按钮卡，渐变）   │ 表格：项目/状态Badge/  │
-│ 我的申请                     │ 时间/查看              │
-│ 上传材料 (跳转 /apply)       │ 空态 → 引导按钮        │
-└──────────────────────────────┴────────────────────────┘
+┌─────────── 左 2/3 主流程 ───────────┬───── 右 1/3 侧边辅助 ─────┐
+│ ① 智能匹配（Tabs：搜索 / 关键词导航）│ A. 我的草稿摘要卡         │
+│ ② 已选规则提示卡（保留增强）         │ B. 学分小贴士（折叠 FAQ） │
+│ ③ 自定义关键词                      │ C. 最近通过的同类案例     │
+│ ④ 申请说明（增强：模板插入按钮）     │ D. 联系教师 / 政策链接    │
+│ ⑤ 上传材料（增强：拖拽 + 预览）      │                           │
+│ ⑥ 底部操作区（吸底）                │                           │
+└─────────────────────────────────────┴───────────────────────────┘
 ```
-- 数据：聚合查询 `applications` 按 `status` 分组计数（取代当前 mine 单值）
-- 最近申请：`limit(5)` 按 `submitted_at desc`，复用 StatusBadge
-- Loading：StatCard 骨架；空态用 `EmptyState` 提示「立即提交第一份申请」
 
-## 3. 教师 & 管理员工作台
+移动端：右栏折叠为顶部 Accordion。
 
-**教师工作台**（同 Index 路由，按角色切换）
-- StatCard：待我审核 / 今日已审 / 本周通过率 / 学生总数
-- 中部：左 = 「去审核」主按钮卡 + 学生管理快捷入口；右 = 待审核队列前 5 条
-- ProcessSteps 改为「教师审核工作流」说明
+## 三、各模块内容增强
 
-**管理员**：保留独立 `/admin/dashboard`（已存在），但根路径 `/` 统一重定向到 `/admin/dashboard`，避免空白工作台。
+**① 智能匹配 — 改为 Tabs**
+- Tab「直接搜索」：保留现有逻辑，搜索框增加最近搜索词 chips（localStorage 存最近 5 条）+ 热门关键词 chips（取规则库 top achievement）
+- Tab「关键词导航」：当前的 4 级导航；步骤上方加 breadcrumb 视觉化（项目 › 成果 › 级别 › 身份），未选维度灰显
+- 匹配结果 hover 显示「查看规则详情」浮层（描述、credit、来源）
 
-## 4. 导航优化（AppLayout.tsx）
+**② 已选规则卡（增强）**
+- 大数字展示「+{credit} 学分」+ 渐变背景
+- 显示规则全路径 Badge 链
+- 「换一个」按钮 → 回到匹配区
 
-- NavLink active：`bg-primary/10 text-primary font-medium` + `before:` 左侧 3px 色条
-- 图标统一 `h-4 w-4 stroke-[1.75]`
-- Header 增加面包屑占位 + 用户头像下拉（退出移入）
-- 折叠按钮保留；折叠时图标居中、tooltip 显示标题
+**③ 自定义关键词（增强）**
+- 在示例下方加「快速插入」按钮：自动填入 4 个维度模板供编辑
+- 已添加标签按维度颜色区分（项目=蓝 / 成果=紫 / 级别=橙 / 身份=绿）
 
-## 5. 交互与微动效
+**④ 申请说明（增强）**
+- 顶部加 3 个模板按钮：「竞赛获奖」「证书考取」「论文/专利」，点击插入对应骨架文本
+- 字数计数升级为 progress 条：<10 红、10–50 黄、>50 绿
+- 实时小提示：缺少哪些关键词（复用 `HINT_KEYWORDS` 检测）
 
-- 所有 Card：`transition-all hover:-translate-y-0.5 hover:shadow-cardHover`
-- 主按钮使用渐变 + `active:scale-[0.98]`
-- 列表行 hover 高亮（已具备）；StatCard 数字使用 `animate-fade-in-up`
-- Loading 用现有 `TableSkeleton` + 新 `StatCardSkeleton`
-- Toast 统一走 sonner（成功/错误已就绪）
+**⑤ 证明材料（增强）**
+- 拖拽上传区（虚线边框 + 图标 + "拖拽或点击"）
+- 已选文件显示文件类型图标 + 名称 + 大小 + 删除按钮
+- 图片即时缩略图预览
+- 文件大小红/绿状态提示
 
-## 6. 响应式
+**⑥ 底部操作区**
+- 改为吸底栏（sticky bottom），左侧显示完成度「3/4 步已就绪」+ 预计学分
+- 右侧：重置 + 提交，提交按钮使用渐变主色 + loading 状态
 
-- StatCard：`grid-cols-2 lg:grid-cols-4`
-- 中部双栏：`grid-cols-1 lg:grid-cols-5`（3 + 2）
-- ProcessSteps：移动端转为竖向
+## 四、右侧栏内容（新增）
 
-## 7. 文件改动清单
+**A. 草稿摘要卡**：实时反映当前选择（规则 / 关键词 / 字数 / 文件）的"准备清单"，未完成项用 ○、已完成用 ✓
 
-**新增**
-- `src/components/StatCard.tsx`
-- `src/components/ProcessSteps.tsx`
-- `src/components/PageHeader.tsx`
+**B. 学分小贴士**：Accordion，3-5 条 FAQ
+- 「AI 多久出结果？」「为什么需要教师复核？」「材料要求」「修改/撤回方法」「常见拒绝原因」
+
+**C. 最近同类通过案例**：当用户选定规则后，从 `cases` 表按关键词查 top 3 通过案例标题 + 学分 + 时间，作为参考；未选规则时显示「先选规则后查看相似案例」占位
+
+**D. 帮助卡**：图标 + 「不确定？」+ 跳转 AI 助手按钮（触发现有 AiAssistant 打开）+ 「查看完整规则手册」外链占位
+
+## 五、视觉/交互细节
+
+- 所有 Card 升级 `shadow-card hover:shadow-cardHover`
+- 主流程区每个 Card 左侧加序号圆形徽章（① ② …）
+- 模块间用 `border-l-2 border-primary/20` 时间线连接（可选）
+- `animate-fade-in-up` 应用于结果列表项
+- Loading skeleton 改为更贴近最终布局的双栏骨架
+
+## 六、文件改动清单
 
 **修改**
-- `src/index.css`（设计令牌、状态色、阴影、渐变）
-- `tailwind.config.ts`（颜色/阴影/动画扩展）
-- `src/pages/Index.tsx`（按角色三种工作台布局，聚合查询）
-- `src/components/AppLayout.tsx`（active 样式、折叠 tooltip、header 调整）
-- `src/components/StatusBadge.tsx`（迁移到新语义色 token）
+- `src/pages/student/Apply.tsx`：整体重写布局（双栏 / Tabs / sticky 操作栏 / 各模块增强），新增 localStorage 最近搜索、模板按钮、拖拽上传、完成度计算、案例查询
+
+**复用（不改）**
+- `PageHeader`、`ProcessSteps`、`StatusBadge`、`EmptyState`、`AiAssistant`、`Card`、`Tabs`、`Accordion`、`Badge`、`Progress` 等已有组件
 
 **不动**
-- 路由结构、数据库 schema、Edge Functions、其他业务页（后续可按同套令牌渐进升级）
+- 提交逻辑、`applySchema`、Edge Function、表结构
 
-## 8. 验收要点
+## 七、验收
 
-- 进入 `/`，0.5 秒内能看到本人当前学分申请总览与「下一步该做什么」
-- 状态全部以语义色 Badge 呈现，无裸文字状态
-- 主按钮与次按钮视觉层级清晰；空数据有引导，不再留白
-- 侧边栏当前项有色条 + 背景高亮；折叠后仍可用
+- 首屏看到清晰的 4 步进度，知道自己处在哪一步
+- 右栏始终提供"接下来该做什么"的提示
+- 提交按钮始终可见（吸底），不需要滚到底
+- 移动端单栏纵向，所有功能可达
+- 内容密度提升 50%+，不再有"空旷感"
 
