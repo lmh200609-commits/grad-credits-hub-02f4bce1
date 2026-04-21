@@ -86,7 +86,6 @@ const StaffAiAssistant = () => {
       if (d?.action?.type === "navigate" && !d?.candidates?.length && d?.action?.payload?.path) {
         setTimeout(() => {
           navigate(d.action.payload.path);
-          setOpen(false);
         }, 400);
       }
     } catch (e: any) {
@@ -114,7 +113,6 @@ const StaffAiAssistant = () => {
   const goCandidate = (c: Candidate) => {
     const path = role === "admin" ? `/admin/users/students?search=${encodeURIComponent(c.student_no || c.full_name || "")}` : `/teacher/students/${c.user_id}`;
     navigate(path);
-    setOpen(false);
   };
 
   if (!open) {
@@ -188,7 +186,7 @@ const StaffAiAssistant = () => {
                   )}
 
                   {m.action?.type === "navigate" && m.action.payload?.path && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { navigate(m.action!.payload.path); setOpen(false); }}>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { navigate(m.action!.payload.path); }}>
                       跳转 {m.action.payload.path} <ArrowRight className="h-3 w-3" />
                     </Button>
                   )}
