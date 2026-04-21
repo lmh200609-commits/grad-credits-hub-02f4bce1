@@ -97,6 +97,8 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const rows = body.rows as Row[];
+    const fileName = (body.file_name as string) ?? null;
+    const startedAt = Date.now();
     if (!Array.isArray(rows) || rows.length === 0) {
       return json({ error: "rows must be a non-empty array" }, 400);
     }
@@ -175,8 +177,41 @@ Deno.serve(async (req) => {
           ),
         );
       }
+      await admin.from("audit_logs").insert({
+        action: "import_users",
+        actor_id: callerId,
+        actor_email: claims.claims.email ?? null,
+        target_ids: [],
+        target_labels: [],
+        affected_count: rows.length,
+        success_count: 0,
+        failure_count: rows.length,
+        duration_ms: Date.now() - startedAt,
+        metadata: {
+          file_name: fileName,
+          rolled_back: created.length,
+          error: (e as Error).message,
+        },
+      }).then(() => {}, () => {});
       return json({ error: (e as Error).message, rolled_back: created.length }, 500);
     }
+
+    await admin.from("audit_logs").insert({
+      action: "import_users",
+      actor_id: callerId,
+      actor_email: claims.claims.email ?? null,
+      target_ids: created.map((c) => c.user_id),
+      target_labels: created.map((c) => c.student_no),
+      affected_count: rows.length,
+      success_count: created.length,
+      failure_count: failures.length,
+      duration_ms: Date.now() - startedAt,
+      metadata: {
+        file_name: fileName,
+        partial,
+        failures: failures.slice(0, 50),
+      },
+    }).then(() => {}, () => {});
 
     return json({
       success: true,
