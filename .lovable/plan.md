@@ -1,19 +1,52 @@
 
-# 导出复刻方案为可下载文档
 
-将上一条完整复刻规划（Step 0 ~ Step 8 + 风险对策 + 时间预估）原文导出为 Markdown 文件，放到 `/mnt/documents/`，便于你下载留存或转给团队。
+## 教师端学生管理：补充重置密码功能 + 排查显示
 
-## 交付物
+### 改动范围
 
-- 文件：`学分认证系统-复刻方案.md`
-- 路径：`/mnt/documents/学分认证系统-复刻方案.md`
-- 内容：上一条 `<lov-plan>` 中全部 8 个 Step 的中文规划，原样保留标题、表格、代码块
-- 同时提供下载链接（presentation-artifact 标签）
+**1. 在教师端 `Students.tsx` 增加「重置密码」操作**
+- 复用管理员端 `UsersManage.tsx` 已有的密码重置弹窗 UI 模式（输入新密码 → 校验 → 调用 edge function）
+- 表格「操作」列在「查看详情」右侧增加「重置密码」按钮
+- 复用 `resetPasswordSchema`（≥8 位、含字母+数字）
+- 不加删除功能（按你的选择，删除保留为管理员专属）
 
-## 备选
+**2. 后端 edge function `reset-password` 放开教师权限**
+- 当前函数硬编码 `admin only`，教师调用会 403
+- 改为「admin 或 teacher」均可重置学生密码
+- 增加一道安全校验：teacher 仅可重置 `student` 角色的账号（不能重置其他教师/管理员的密码），防止越权
+- admin 不受此限制
 
-如果你希望同时拿到 PDF 或 Word 版本，请在批准后告诉我（pandoc 转换即可，不影响 Markdown 主交付）。
+**3. 关于「看不到测试账号」**
+- 上一轮已清理 2000 个 `__perftest__` 测试账号（确认）
+- 当前数据库实际仅 5 个真实账号、1 条申请；session replay 显示真实学生「白雪 2024001」可正常显示，列表功能本身无 bug
+- 「暂无符合条件的学生」是因为筛选/搜索条件命中为 0，清空筛选即可
+- 本次不重新造测试账号；如需手动体验功能，登录 admin 在「批量导入账号」造 5-10 个真实可登录账号即可
 
-## 下一步
+### 技术细节
 
-确认后切到默认模式，我用一次脚本写文件并附下载链接，不会改动任何项目代码。
+**`supabase/functions/reset-password/index.ts`**
+```ts
+// 校验调用者角色
+const { data: isAdmin } = await admin.rpc("has_role", { _user_id: callerId, _role: "admin" });
+const { data: isTeacher } = await admin.rpc("has_role", { _user_id: callerId, _role: "teacher" });
+if (!isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
+
+// teacher 仅能重置 student 账号
+if (!isAdmin) {
+  const { data: targetIsStudent } = await admin.rpc("has_role", { _user_id: user_id, _role: "student" });
+  if (!targetIsStudent) return json({ error: "教师仅可重置学生密码" }, 403);
+}
+```
+
+**`src/pages/teacher/Students.tsx`**
+- 引入 `Dialog`、`Label`、`resetPasswordSchema`、`toast`
+- 新增 state：`resetTarget` / `newPassword` / `pwError` / `resetting`
+- 新增 `resetPassword()` 处理函数，调用 `supabase.functions.invoke("reset-password", ...)`
+- 表格「操作」单元格改为两个按钮并排：详情 + 重置密码
+- 在 `AppLayout` 外层之后加 `<Dialog>` 弹窗（与 `UsersManage.tsx` 结构一致）
+
+### 用户视角
+
+- 教师进入「学生管理」→ 在任一学生行点击「重置密码」→ 弹窗输入新密码（如 `Abc12345`）→ 确认 → toast 成功提示 → 通过线下渠道告知学生新密码
+- 教师无法通过此入口重置其他教师或管理员的密码
+- 删除账号仍需联系管理员，避免误操作丢失学生历史申请数据
