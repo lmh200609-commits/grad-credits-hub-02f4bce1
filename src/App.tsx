@@ -47,8 +47,8 @@ const App = () => (
             <Route path="/reviews" element={<ProtectedRoute><Reviews /></ProtectedRoute>} />
             <Route path="/my-applications" element={<RoleRoute role="student"><MyApplications /></RoleRoute>} />
             <Route path="/applications/:id" element={<ProtectedRoute><ApplicationDetail /></ProtectedRoute>} />
-            <Route path="/teacher/students" element={<ProtectedRoute><Students /></ProtectedRoute>} />
-            <Route path="/teacher/students/:id" element={<ProtectedRoute><StudentDetail /></ProtectedRoute>} />
+            <Route path="/teacher/students" element={<RoleRoute role="teacher"><Students /></RoleRoute>} />
+            <Route path="/teacher/students/:id" element={<RoleRoute role="teacher"><StudentDetail /></RoleRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
