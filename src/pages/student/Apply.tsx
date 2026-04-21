@@ -94,7 +94,7 @@ const STEPS = [
   { label: "选择规则", description: "搜索或导航匹配" },
   { label: "填写说明", description: "描述成果详情" },
   { label: "上传材料", description: "证书 / 截图（可选）" },
-  { label: "提交审核", description: "AI 预审 + 教师复核" },
+  { label: "提交审核", description: "进入审核流程" },
 ];
 
 const ApplyPage = () => {
@@ -325,12 +325,11 @@ const ApplyPage = () => {
         })
         .select().single();
       if (error) throw error;
-      toast({ title: "已提交，系统正在核验材料…" });
-      const { data: aiRes, error: aiErr } = await supabase.functions.invoke("evaluate-application", {
+      toast({ title: "提交成功", description: "正在等待审核" });
+      // 后台静默触发审核流程，不向学生暴露
+      supabase.functions.invoke("evaluate-application", {
         body: { application_id: (app as any).id },
-      });
-      if (aiErr) toast({ title: "系统核验失败，已转人工复核", description: aiErr.message, variant: "destructive" });
-      else if (aiRes?.status) toast({ title: "系统核验完成" });
+      }).catch(() => { /* 静默失败，转人工 */ });
       navigate("/my-applications");
     } catch (e: any) {
       toast({ title: "提交失败", description: e.message, variant: "destructive" });
@@ -372,7 +371,7 @@ const ApplyPage = () => {
       <div className="space-y-6 pb-28">
         <PageHeader
           title="申请学分"
-          description="四步完成认定申请，AI 将在 1 分钟内完成预审，无需等待教师在线"
+          description="四步完成认定申请，提交后将进入审核流程"
           actions={
             <>
               <Button variant="outline" asChild>
@@ -813,15 +812,15 @@ const ApplyPage = () => {
               <CardContent>
                 <Accordion type="single" collapsible className="text-sm">
                   <AccordionItem value="1">
-                    <AccordionTrigger className="py-2 text-sm">AI 多久出结果？</AccordionTrigger>
+                    <AccordionTrigger className="py-2 text-sm">审核通常需要多久？</AccordionTrigger>
                     <AccordionContent className="text-xs text-muted-foreground">
-                      通常 30 秒 - 1 分钟。系统会自动识别关键词、匹配规则并给出建议学分。
+                      一般在 1-3 个工作日内出结果，可在「我的申请」中随时查看进度。
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="2">
-                    <AccordionTrigger className="py-2 text-sm">为什么需要教师复核？</AccordionTrigger>
+                    <AccordionTrigger className="py-2 text-sm">由谁来审核？</AccordionTrigger>
                     <AccordionContent className="text-xs text-muted-foreground">
-                      AI 置信度较低、或材料含图片证书时，会转入人工复核以确保严谨。
+                      由学院审核老师对你的申请材料进行审核，确保学分认定的严谨性。
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="3">
@@ -833,7 +832,7 @@ const ApplyPage = () => {
                   <AccordionItem value="4">
                     <AccordionTrigger className="py-2 text-sm">提交后还能修改吗？</AccordionTrigger>
                     <AccordionContent className="text-xs text-muted-foreground">
-                      在 AI 预审 / 待复核 / AI 拒绝 状态下可在「我的申请」中修改重提；已通过的不可修改。
+                      在「审核中」状态下可在「我的申请」中查看进度；已出结果的申请不可修改，如有异议请联系老师。
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="5">
@@ -853,7 +852,7 @@ const ApplyPage = () => {
                 <div className="text-sm">
                   <p className="font-medium">不确定怎么填？</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    点击右下角的 AI 助手，输入活动关键词，将为你解释最贴近的规则。
+                    点击右下角的「学分助手」，输入活动关键词，将为你解释最贴近的规则。
                   </p>
                 </div>
               </CardContent>

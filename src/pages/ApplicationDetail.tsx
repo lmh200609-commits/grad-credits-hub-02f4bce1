@@ -174,13 +174,13 @@ const ApplicationDetail = () => {
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft /></Button>
           <h1 className="text-2xl font-bold">申请详情</h1>
-          <StatusBadge status={app.status} />
+          <StatusBadge status={app.status} audience={isReviewer ? "staff" : "student"} />
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle className="text-base">基本信息</CardTitle>
-            {matchedRule && <CardDescription>匹配规则：{matchedRule.name}</CardDescription>}
+            {matchedRule && isReviewer && <CardDescription>匹配规则：{matchedRule.name}</CardDescription>}
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div><span className="text-muted-foreground">学生：</span>{student?.full_name} · {student?.student_no} · {student?.email}</div>
@@ -208,34 +208,17 @@ const ApplicationDetail = () => {
           </CardContent>
         </Card>
 
-        {app.ai_reasoning && (
+        {app.ai_reasoning && isReviewer && (
           <Card className={app.status === "rejected_by_ai" ? "border-destructive" : ""}>
             <CardHeader>
               <CardTitle className="text-base">系统核验结果</CardTitle>
               <CardDescription>
-                {isReviewer ? (
-                  <>建议匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}</>
-                ) : (
-                  <>建议匹配规则：{matchedRule?.name ?? "未匹配"}</>
-                )}
+                建议匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
               <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">{app.ai_reasoning}</p>
-              {app.status === "rejected_by_ai" && !isReviewer && app.student_id === user?.id && (
-                <div className="mt-3 flex flex-col gap-2 rounded-md border border-dashed border-destructive/40 bg-destructive/5 p-3">
-                  <p className="text-xs text-muted-foreground">
-                    如果你对系统判定有异议，可申请教师人工复核。教师将根据你的材料和自定义关键词重新评估。
-                  </p>
-                  <Button size="sm" variant="outline" onClick={requestManualReview} className="self-start">
-                    申请人工复核
-                  </Button>
-                </div>
-              )}
-              {app.status === "pending_review" && !isReviewer && app.student_id === user?.id && (
-                <p className="mt-3 text-xs text-muted-foreground">已转人工复核，请耐心等待教师处理。</p>
-              )}
             </CardContent>
           </Card>
         )}
@@ -276,14 +259,14 @@ const ApplicationDetail = () => {
         <Card>
           <CardHeader><CardTitle className="text-base">审核记录</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {reviews.map((r) => (
+            {(isReviewer ? reviews : reviews.filter((r) => r.action !== "ai_evaluation")).map((r) => (
               <div key={r.id} className="rounded border p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">
                       {r.action === "ai_evaluation" ? "系统核验" : r.action === "teacher_review" ? "教师复核" : "管理员复核"}
                     </Badge>
-                    <StatusBadge status={r.decision as any} />
+                    <StatusBadge status={r.decision as any} audience={isReviewer ? "staff" : "student"} />
                     {r.credit != null && <span className="text-muted-foreground">学分 {r.credit}</span>}
                     {isReviewer && r.confidence != null && (
                       <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>
@@ -294,7 +277,9 @@ const ApplicationDetail = () => {
                 {r.note && <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{r.note}</p>}
               </div>
             ))}
-            {reviews.length === 0 && <p className="text-sm text-muted-foreground">暂无审核记录</p>}
+            {(isReviewer ? reviews : reviews.filter((r) => r.action !== "ai_evaluation")).length === 0 && (
+              <p className="text-sm text-muted-foreground">暂无审核记录</p>
+            )}
           </CardContent>
         </Card>
       </div>
