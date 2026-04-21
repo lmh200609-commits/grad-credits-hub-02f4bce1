@@ -1,6 +1,6 @@
 // Admin batch import: validates rows, creates auth users + profiles + roles.
 // Supports large batches (2000+) via parallel processing.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
