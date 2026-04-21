@@ -45,12 +45,14 @@ Deno.serve(async (req) => {
       return json({ error: "rows 不能为空" }, 400);
     }
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!apiKey) return json({ error: "LOVABLE_API_KEY 未配置" }, 500);
+    const apiKey = Deno.env.get("DASHSCOPE_API_KEY");
+    if (!apiKey) return json({ error: "DASHSCOPE_API_KEY 未配置（通义千问）" }, 500);
 
     // Send only a small sample to AI to get the COLUMN MAPPING (not parsed rows)
+    // Hard cap sample at 8KB to prevent prompt injection / over-billing.
     const sampleSize = Math.min(rawRows.length, 5);
-    const sample = JSON.stringify(rawRows.slice(0, sampleSize));
+    let sample = JSON.stringify(rawRows.slice(0, sampleSize));
+    if (sample.length > 8192) sample = sample.slice(0, 8192) + "...[truncated]";
     const allKeys = Object.keys(rawRows[0] ?? {});
 
     const sysPrompt = `你是一个名册解析助手。用户会传入一张 Excel/CSV 表的前几行样本数据。
@@ -89,26 +91,46 @@ Deno.serve(async (req) => {
 2. 找不到对应列的填 null。
 3. student_no 和 full_name 必须找到，否则报错。`;
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: sysPrompt },
-          { role: "user", content: `共 ${rawRows.length} 行，样本：\n${sample}` },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
+    // Call Qwen (DashScope OpenAI-compatible endpoint) with retry/backoff.
+    let aiResp: Response | null = null;
+    let lastErr = "";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        aiResp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "qwen-plus",
+            messages: [
+              { role: "system", content: sysPrompt },
+              { role: "user", content: `共 ${rawRows.length} 行，样本：\n${sample}` },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.1,
+          }),
+        });
+        if (aiResp.ok) break;
+        if (aiResp.status === 429 || aiResp.status >= 500) {
+          lastErr = `HTTP ${aiResp.status}`;
+          await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+          continue;
+        }
+        break;
+      } catch (e) {
+        lastErr = (e as Error).message;
+        await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+      }
+    }
+    if (!aiResp) return json({ error: `AI 调用失败: ${lastErr}` }, 502);
 
     if (!aiResp.ok) {
       const t = await aiResp.text();
       if (aiResp.status === 429) return json({ error: "AI 调用过于频繁，请稍后重试" }, 429);
-      if (aiResp.status === 402) return json({ error: "AI 额度不足，请在工作区设置中充值" }, 402);
+      if (aiResp.status === 402) return json({ error: "AI 额度不足，请联系管理员充值通义千问账号" }, 402);
+      if (aiResp.status === 401) return json({ error: "DASHSCOPE_API_KEY 无效，请联系管理员" }, 401);
       return json({ error: `AI 调用失败: ${t}` }, 500);
     }
 
