@@ -1,63 +1,112 @@
 
 
-# 隐藏 AI 审核环节 — 学生侧文案与状态脱敏
+# 教师/管理员 AI 工作助手 + 后台 UI 重构（使用国产大模型）
 
-学生不应感知"AI 预审"的存在。所有面向学生的文案、状态、流程图都统一改为"已提交 / 审核中 / 已通过 / 已拒绝"，把 AI 与教师复核合并成一个"审核中"黑盒。
+在原计划基础上，将 AI 提供方从 Lovable AI Gateway 切换为**国产大模型**（DeepSeek 或 通义千问），与现有 `ask-credit-assistant` 保持一致的技术栈。
 
-## 一、文案改动
+## 一、模型选型
 
-**1. `src/pages/student/Apply.tsx`**
-- 顶部副标题：去掉「AI 将在 1 分钟内完成预审」→ 改为「四步完成认定申请，提交后将进入审核流程」
-- 提交成功 toast：由当前的「已提交，AI 正在评估…」改为「提交成功，正在等待审核」
-- 提交后不再显示 AI 评估结果对话框 / 进度条；如有"立即查看 AI 结论"等按钮一并移除
-- 模板说明、FAQ、提示文案中所有"AI / 智能预审 / 系统核验"等字样，统一替换为「审核」「审核老师」
+**默认使用 DeepSeek**（`deepseek-chat`），与现有 `ask-credit-assistant/index.ts` 一致：
+- 已有 `DEEPSEEK_API_KEY` secret，无需新增配置
+- 国内访问稳定、低成本、支持 function calling
+- 备选 `qwen-plus`（通义千问），通过 `provider` 参数切换，复用 `DASHSCOPE_API_KEY`
 
-**2. `src/pages/student/MyApplications.tsx`**
-- 表格列若有「AI 置信度 / AI 建议学分 / AI 理由」列 → 学生视图隐藏
-- 状态列做映射（见下）
+端点：
+- DeepSeek：`https://api.deepseek.com/chat/completions`
+- 千问：`https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`
 
-**3. `src/pages/ApplicationDetail.tsx`（学生角色访问时）**
-- 隐藏区块：AI 推理 `ai_reasoning`、AI 置信度、匹配规则来源、`application_reviews` 中 `action = ai_evaluation` 的记录
-- 仅展示：申请信息、附件、最终状态、教师批注（如有）
-- 教师 / 管理员访问该页时保持原样（按 `useAuth().hasRole` 分支渲染）
+两者均兼容 OpenAI Chat Completions 格式 + tool calling，前端无需差异化处理。
 
-**4. `src/components/StatusBadge.tsx`**
-- 学生侧状态显示映射（新增 `audience?: "student" | "staff"` prop，默认 staff 不变）：
-  - `auto_approved` → 「已通过」（绿）
-  - `rejected_by_ai` → 「已拒绝」（红）
-  - `pending_review` → 「审核中」（黄）
-  - `approved` → 「已通过」、`rejected` → 「已拒绝」、`submitted` → 「已提交」
-- 学生看到的所有 Badge 走 `audience="student"`
+## 二、StaffAiAssistant 全局助手（新增）
 
-**5. `src/components/ProcessSteps.tsx` 调用处（学生工作台 & Apply 页）**
-- 学生侧步骤由「提交 → AI 审核 → 教师复核 → 结果」改为 **「提交材料 → 审核中 → 审核完成」** 三步
-- 教师工作台保持原步骤不变
+`src/components/StaffAiAssistant.tsx`：
+- 右下角紫色渐变悬浮按钮（区别学生端蓝色），仅 `admin` / `teacher` 可见
+- 420×620 面板，Tab：「智能问答」/「快捷指令」
+- 快捷指令 6 项：待我审核 / 不合格学生 / 数据看板 / 查学生档案 / 导出排名 / 本周新提交
+- 自然语言指令示例：
+  - "调出张三的学分档案" → 跳 `/teacher/students/{id}`
+  - "查看不合格学生" → 跳 `/admin/credits?passFilter=fail`
+  - "打开复核中心" → 跳 `/admin/review`
+  - "本月被拒申请数" → 直接给数字 + 跳转按钮
 
-**6. `src/pages/Index.tsx`（学生工作台）**
-- StatCard / 最近申请 / ProcessSteps 全部使用脱敏后的状态文案
-- 移除任何"AI 已自动通过 X 件"等表述
+## 三、Edge Function — `staff-ai-assistant`（新增）
 
-**7. `src/components/AiAssistant.tsx`**
-- 组件名对外不暴露；学生入口处的标题 / 提示从「AI 助手」改为「智能问答」「学分助手」（保留功能，仅去掉"AI"字样以保持一致体感）—— 若用户希望保留"AI 助手"名称仅用于咨询场景，可不改，待确认
+`supabase/functions/staff-ai-assistant/index.ts`：
+- 入参：`{ messages, role, provider? }`，`provider` 默认 `deepseek`，可选 `qwen`
+- 调用 DeepSeek/千问 chat completions API + **function calling**
+- 暴露工具：
+  - `navigate_to(path, query?)`
+  - `find_student(query)` — 后端 ilike 查 profiles
+  - `query_stats(metric, filters?)` — 聚合 applications/credits
+  - `list_failing_students(threshold?)`
+- 系统提示词约束：仅服务教师/管理员业务、只能调用预定义工具、多匹配让用户选择
+- 兼容学生侧 `ask-credit-assistant` 的错误处理（429 / 401 / 402）
+- 返回：`{ answer, action?: { type, payload }, candidates? }`
 
-## 二、不改动
+## 四、前端响应处理
 
-- 数据库枚举值、`evaluate-application` Edge Function、`application_reviews` 写入逻辑、教师 / 管理员后台展示 — 后台仍能看到 AI 评估明细
-- 提交流程依旧调用 AI 预审，只是前端不告知学生
+- `action.type === "navigate"` → `useNavigate().navigate(payload.path)`
+- `action.type === "candidates"` → 在气泡内渲染候选学生卡片，点击跳转
+- `action.type === "stats"` → 渲染数字 + 跳转按钮
+- 复用 `supabase.functions.invoke("staff-ai-assistant", ...)`
 
-## 三、文件清单
+## 五、AppLayout 集成
+
+```tsx
+{hasRole("student") && <AiAssistant />}
+{(hasRole("admin") || hasRole("teacher")) && <StaffAiAssistant />}
+```
+
+## 六、教师端 UI 重构（对齐学生端风格）
+
+- `src/pages/Index.tsx` 教师工作台：`PageHeader` + `StatCard×4`（待我审核 / 今日已审 / 本周通过率 / 我管理学生）+「AI 快速操作」chip 横条 + 待审核 Top5 + 学生关注榜
+- `src/pages/teacher/Students.tsx`：`PageHeader` + 紧凑筛选卡 + 学分进度条列 + 状态 Badge
+- `src/pages/teacher/StudentDetail.tsx`：`PageHeader` + 学生信息卡 + StatCard×4 + Card 包裹申请列表
+
+## 七、管理员端 UI 重构
+
+- `src/pages/admin/Dashboard.tsx`：`PageHeader`（带「打开复核中心」主按钮）+ 统一 `StatCard×6` + 图表 Card 阴影 + 4 列快捷入口
+- `src/pages/admin/ReviewHub.tsx`：`PageHeader` + 渐变状态卡 + AI 提示条
+- `src/pages/admin/Credits.tsx`：`PageHeader` + StatCard×4 + 不达标行 `bg-danger/5` + URL 参数 `?passFilter=fail|pass|all`
+- `UsersManage / Cases / Rules / AuditLogs / ImportUsers`：统一 `PageHeader` + `shadow-card`
+- `src/pages/Reviews.tsx`：`PageHeader` + 胶囊 Tabs + 行 hover + Badge
+
+## 八、URL 参数协议（供 AI 直接跳转）
+
+- `/admin/credits?passFilter=fail|pass|all&dept=xxx`
+- `/reviews?status=pending_review`
+- `/teacher/students/{id}`
+- `/admin/users/students?search=张三`
+
+## 九、Secret 需求
+
+- ✅ `DEEPSEEK_API_KEY`（已存在，主用）
+- ⚪ `DASHSCOPE_API_KEY`（已存在，备用千问）
+- 无需新增任何 secret
+
+## 十、文件清单
+
+**新增**
+- `src/components/StaffAiAssistant.tsx`
+- `supabase/functions/staff-ai-assistant/index.ts`
+- `supabase/config.toml` 注册新函数（`verify_jwt = true`）
 
 **修改**
-- `src/pages/student/Apply.tsx`
-- `src/pages/student/MyApplications.tsx`
-- `src/pages/ApplicationDetail.tsx`
-- `src/pages/Index.tsx`
-- `src/components/StatusBadge.tsx`
-- `src/components/ProcessSteps.tsx`（如内置默认步骤含 AI 字样）
+- `src/components/AppLayout.tsx`（按角色挂载助手）
+- `src/pages/Index.tsx`（教师工作台增强 + AI chip 横条）
+- `src/pages/teacher/Students.tsx`、`teacher/StudentDetail.tsx`
+- `src/pages/admin/Dashboard.tsx`、`ReviewHub.tsx`、`Credits.tsx`、`UsersManage.tsx`、`Cases.tsx`、`Rules.tsx`、`AuditLogs.tsx`、`ImportUsers.tsx`
+- `src/pages/Reviews.tsx`
+- 新增页面 URL 参数解析逻辑
 
-## 四、验收
+**不动**
+- 数据库 schema、RLS、`AiAssistant.tsx`（学生侧仍用 DeepSeek）、其他 Edge Function
 
-- 学生端任何页面、toast、状态、流程图均搜索不到「AI / 智能预审 / 系统核验 / 置信度」字样
-- 提交后只看到「提交成功，正在等待审核」，详情页只看到最终状态与教师批注
-- 教师 / 管理员后台功能与可见信息完全不变
+## 十一、验收
+
+- 教师/管理员每页右下角看到紫色 AI 按钮
+- "查看不合格学生" → 自动跳 `/admin/credits?passFilter=fail` 并筛选
+- "调出张三档案" → 唯一匹配直跳，多匹配出选择卡
+- "打开复核中心" → 跳 `/admin/review`
+- 所有教师/管理员页面具备统一 PageHeader、StatCard、shadow-card、语义色 Badge
 
