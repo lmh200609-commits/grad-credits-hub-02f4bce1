@@ -55,18 +55,17 @@ const StudentWorkbench = () => {
   const stepInfo = useMemo(() => {
     const steps = [
       { label: "提交材料", description: "填写并上传" },
-      { label: "AI 审核", description: "智能初筛" },
-      { label: "教师复核", description: "人工把关" },
-      { label: "结果出炉", description: "查看学分" },
+      { label: "审核中", description: "等待审核结果" },
+      { label: "审核完成", description: "查看学分" },
     ];
     if (!latest) return { steps, current: 0, failed: false };
     const map: Record<AppRow["status"], { current: number; failed: boolean }> = {
       pending_ai: { current: 1, failed: false },
-      auto_approved: { current: 2, failed: false },
-      pending_review: { current: 2, failed: false },
-      rejected_by_ai: { current: 1, failed: true },
-      approved: { current: 3, failed: false },
-      rejected: { current: 3, failed: true },
+      auto_approved: { current: 1, failed: false },
+      pending_review: { current: 1, failed: false },
+      rejected_by_ai: { current: 1, failed: false },
+      approved: { current: 2, failed: false },
+      rejected: { current: 2, failed: true },
     };
     return { steps, ...map[latest.status] };
   }, [latest]);
@@ -85,7 +84,7 @@ const StudentWorkbench = () => {
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <StatCard label="已提交申请" value={counts.total} icon={FileText} tone="primary" loading={loading} onClick={() => navigate("/my-applications")} />
-        <StatCard label="审核中" value={counts.reviewing} icon={Clock} tone="warning" loading={loading} hint="包含 AI 与教师复核" />
+        <StatCard label="审核中" value={counts.reviewing} icon={Clock} tone="warning" loading={loading} hint="等待审核结果" />
         <StatCard label="已通过" value={counts.approved} icon={CheckCircle2} tone="success" loading={loading} />
         <StatCard label="已拒绝" value={counts.rejected} icon={XCircle} tone="danger" loading={loading} />
       </div>
@@ -114,7 +113,7 @@ const StudentWorkbench = () => {
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold">申请学分</h3>
-                <p className="mt-1 text-sm opacity-90">通过关键词匹配规则，AI 智能预审，提交快人一步。</p>
+                <p className="mt-1 text-sm opacity-90">通过关键词匹配规则，一键提交进入审核流程。</p>
               </div>
               <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
             </div>
@@ -185,7 +184,7 @@ const StudentWorkbench = () => {
                         {new Date(r.submitted_at).toLocaleDateString()}
                       </p>
                     </div>
-                    <StatusBadge status={r.status} />
+                    <StatusBadge status={r.status} audience="student" />
                   </li>
                 ))}
               </ul>
