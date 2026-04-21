@@ -94,7 +94,7 @@ const STEPS = [
   { label: "选择规则", description: "搜索或导航匹配" },
   { label: "填写说明", description: "描述成果详情" },
   { label: "上传材料", description: "证书 / 截图（可选）" },
-  { label: "提交审核", description: "AI 预审 + 教师复核" },
+  { label: "提交审核", description: "进入审核流程" },
 ];
 
 const ApplyPage = () => {
@@ -325,12 +325,11 @@ const ApplyPage = () => {
         })
         .select().single();
       if (error) throw error;
-      toast({ title: "已提交，系统正在核验材料…" });
-      const { data: aiRes, error: aiErr } = await supabase.functions.invoke("evaluate-application", {
+      toast({ title: "提交成功", description: "正在等待审核" });
+      // 后台静默触发审核流程，不向学生暴露
+      supabase.functions.invoke("evaluate-application", {
         body: { application_id: (app as any).id },
-      });
-      if (aiErr) toast({ title: "系统核验失败，已转人工复核", description: aiErr.message, variant: "destructive" });
-      else if (aiRes?.status) toast({ title: "系统核验完成" });
+      }).catch(() => { /* 静默失败，转人工 */ });
       navigate("/my-applications");
     } catch (e: any) {
       toast({ title: "提交失败", description: e.message, variant: "destructive" });
@@ -372,7 +371,7 @@ const ApplyPage = () => {
       <div className="space-y-6 pb-28">
         <PageHeader
           title="申请学分"
-          description="四步完成认定申请，AI 将在 1 分钟内完成预审，无需等待教师在线"
+          description="四步完成认定申请，提交后将进入审核流程"
           actions={
             <>
               <Button variant="outline" asChild>
