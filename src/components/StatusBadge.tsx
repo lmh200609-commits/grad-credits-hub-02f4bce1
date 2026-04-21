@@ -9,12 +9,12 @@ type Status =
   | "rejected";
 
 const MAP: Record<Status, { label: string; className: string }> = {
-  pending_ai: { label: "系统核验中", className: "bg-muted text-foreground" },
-  auto_approved: { label: "系统初审通过", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
-  pending_review: { label: "待教师复核", className: "bg-amber-500/15 text-amber-700 dark:text-amber-300" },
-  rejected_by_ai: { label: "系统未通过", className: "bg-rose-500/10 text-rose-700 dark:text-rose-300" },
-  approved: { label: "已通过", className: "bg-emerald-600 text-white" },
-  rejected: { label: "已驳回", className: "bg-rose-600 text-white" },
+  pending_ai: { label: "系统核验中", className: "bg-muted text-muted-foreground border-transparent" },
+  auto_approved: { label: "系统初审通过", className: "bg-success/15 text-success border-transparent" },
+  pending_review: { label: "待教师复核", className: "bg-warning/15 text-warning border-transparent" },
+  rejected_by_ai: { label: "系统未通过", className: "bg-danger/10 text-danger border-transparent" },
+  approved: { label: "已通过", className: "bg-success text-success-foreground border-transparent" },
+  rejected: { label: "已驳回", className: "bg-danger text-danger-foreground border-transparent" },
 };
 
 export const StatusBadge = ({ status }: { status: Status }) => {
