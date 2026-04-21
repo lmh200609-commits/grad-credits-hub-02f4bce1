@@ -53,10 +53,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
-    if (!DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY 未配置");
+    const body = (await req.json()) as { messages: Msg[]; provider?: "deepseek" | "qwen" };
+    const messages = body.messages;
+    const provider = body.provider ?? "deepseek"; // default DeepSeek (low-cost / high-concurrency)
 
-    const { messages } = (await req.json()) as { messages: Msg[] };
+    const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
+    const DASHSCOPE_API_KEY = Deno.env.get("DASHSCOPE_API_KEY");
+    if (provider === "deepseek" && !DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY 未配置");
+    if (provider === "qwen" && !DASHSCOPE_API_KEY) throw new Error("DASHSCOPE_API_KEY 未配置");
+
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "messages 不能为空" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -115,14 +120,20 @@ Deno.serve(async (req) => {
       ...messages.slice(-20),
     ];
 
-    const resp = await fetch("https://api.deepseek.com/chat/completions", {
+    const endpoint = provider === "qwen"
+      ? "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+      : "https://api.deepseek.com/chat/completions";
+    const apiKey = provider === "qwen" ? DASHSCOPE_API_KEY! : DEEPSEEK_API_KEY!;
+    const model = provider === "qwen" ? "qwen-plus" : "deepseek-chat";
+
+    const resp = await fetch(endpoint, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model,
         messages: fullMessages,
         temperature: 0.2,
         stream: false,
@@ -131,7 +142,7 @@ Deno.serve(async (req) => {
 
     if (!resp.ok) {
       const t = await resp.text();
-      console.error("DeepSeek error:", resp.status, t);
+      console.error(`AI provider (${provider}) error:`, resp.status, t);
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: "请求过于频繁，请稍后再试" }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
