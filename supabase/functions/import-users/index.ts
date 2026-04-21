@@ -7,7 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const CONCURRENCY = 10; // parallel user creation
+const CONCURRENCY = 10; // parallel user creation within a batch
+const BATCH_SIZE = 200; // chunk size to avoid Auth API burst limits
 
 type Row = {
   student_no: string;
@@ -135,15 +136,34 @@ Deno.serve(async (req) => {
       }, 409);
     }
 
-    // Create users in parallel batches
+    // Create users: chunk into BATCH_SIZE groups (sequential), each chunk runs CONCURRENCY in parallel.
+    const partial = body.partial === true;
     const created: { user_id: string; student_no: string }[] = [];
+    const failures: { line: number; message: string; student_no?: string }[] = [];
     try {
-      for (let i = 0; i < rows.length; i += CONCURRENCY) {
-        const batch = rows.slice(i, i + CONCURRENCY);
-        const results = await Promise.all(
-          batch.map((r, j) => createOneUser(admin, r, i + j)),
-        );
-        created.push(...results);
+      for (let cStart = 0; cStart < rows.length; cStart += BATCH_SIZE) {
+        const chunk = rows.slice(cStart, cStart + BATCH_SIZE);
+        console.log(`[import-users] chunk ${cStart}-${cStart + chunk.length} / ${rows.length}`);
+        for (let i = 0; i < chunk.length; i += CONCURRENCY) {
+          const batch = chunk.slice(i, i + CONCURRENCY);
+          const results = await Promise.allSettled(
+            batch.map((r, j) => createOneUser(admin, r, cStart + i + j)),
+          );
+          results.forEach((res, j) => {
+            const absIdx = cStart + i + j;
+            if (res.status === "fulfilled") {
+              created.push(res.value);
+            } else {
+              const msg = (res.reason as Error)?.message ?? "未知错误";
+              failures.push({
+                line: absIdx + 2,
+                message: msg,
+                student_no: batch[j].student_no,
+              });
+              if (!partial) throw res.reason;
+            }
+          });
+        }
       }
     } catch (e) {
       // Rollback all created users in parallel
@@ -158,7 +178,12 @@ Deno.serve(async (req) => {
       return json({ error: (e as Error).message, rolled_back: created.length }, 500);
     }
 
-    return json({ success: true, created: created.length });
+    return json({
+      success: true,
+      created: created.length,
+      failed: failures.length,
+      failures: failures.slice(0, 100),
+    });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
