@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, X, Send, Loader2, Zap, MessageSquare, ArrowRight } from "lucide-react";
+import { Sparkles, X, Send, Loader2, Zap, MessageSquare, ArrowRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,30 +9,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import {
+  useStaffAssistantStore,
+  staffAssistantActions,
+  WELCOME,
+  type Candidate,
+  type Msg,
+} from "@/hooks/useStaffAssistantStore";
 
-type Candidate = {
-  user_id: string;
-  full_name: string | null;
-  student_no: string | null;
-  department: string | null;
-  class_name: string | null;
-};
-
-type Msg = {
-  role: "user" | "assistant";
-  content: string;
-  candidates?: Candidate[] | null;
-  stats?: any;
-  action?: { type: string; payload: any } | null;
-};
-
-const WELCOME: Msg = {
-  role: "assistant",
-  content:
-    "你好，我是工作助手。可以用自然语言告诉我要做什么，例如：\n• 「查看不合格学生」\n• 「调出张三的档案」\n• 「打开复核中心」\n• 「本周通过了多少申请」",
-};
-
-const QUICK_ACTIONS: { label: string; prompt: string; icon?: any }[] = [
+const QUICK_ACTIONS: { label: string; prompt: string }[] = [
   { label: "待我审核", prompt: "打开复核中心，列出待复核的申请" },
   { label: "不合格学生", prompt: "列出累计学分不合格的学生" },
   { label: "数据看板", prompt: "打开数据看板" },
@@ -45,29 +30,27 @@ const StaffAiAssistant = () => {
   const { hasRole } = useAuth();
   const role = hasRole("admin") ? "admin" : "teacher";
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("quick");
-  const [messages, setMessages] = useState<Msg[]>([WELCOME]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { open, tab, messages, input } = useStaffAssistantStore();
+  const { setOpen, setTab, setMessages, setInput, clearMessages } = staffAssistantActions;
+  const loadingRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, loading]);
+  }, [messages]);
 
   const sendMessage = async (text: string) => {
     const t = text.trim();
-    if (!t || loading) return;
+    if (!t || loadingRef.current) return;
+    loadingRef.current = true;
     setTab("chat");
     const next: Msg[] = [...messages, { role: "user", content: t }];
     setMessages(next);
     setInput("");
-    setLoading(true);
     try {
-      const history = next.filter((m) => m !== WELCOME).map((m) => ({ role: m.role, content: m.content }));
+      const history = next.filter((m) => m.content !== WELCOME.content).map((m) => ({ role: m.role, content: m.content }));
       const { data, error } = await supabase.functions.invoke("staff-ai-assistant", {
         body: { messages: history, role },
       });
@@ -82,7 +65,6 @@ const StaffAiAssistant = () => {
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      // Auto-navigate when there's a navigate action and no candidates to disambiguate
       if (d?.action?.type === "navigate" && !d?.candidates?.length && d?.action?.payload?.path) {
         setTimeout(() => {
           navigate(d.action.payload.path);
@@ -99,7 +81,7 @@ const StaffAiAssistant = () => {
         { role: "assistant", content: "抱歉，服务暂时不可用，请稍后再试。" },
       ]);
     } finally {
-      setLoading(false);
+      loadingRef.current = false;
     }
   };
 
@@ -135,9 +117,20 @@ const StaffAiAssistant = () => {
           <span className="text-sm font-semibold">工作助手</span>
           <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{role === "admin" ? "管理员" : "教师"}</span>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setOpen(false)}>
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+            onClick={clearMessages}
+            title="清空对话"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setOpen(false)} title="关闭">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
 
       <Tabs value={tab} onValueChange={setTab} className="flex flex-1 min-h-0 flex-col overflow-hidden">
@@ -192,11 +185,6 @@ const StaffAiAssistant = () => {
                   )}
                 </div>
               ))}
-              {loading && (
-                <div className="self-start flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> 思考中…
-                </div>
-              )}
             </div>
           </ScrollArea>
 
@@ -209,9 +197,8 @@ const StaffAiAssistant = () => {
                 placeholder="例如：调出张三的档案 / 查看不合格学生"
                 rows={2}
                 className="min-h-[44px] resize-none text-sm"
-                disabled={loading}
               />
-              <Button size="icon" onClick={() => sendMessage(input)} disabled={loading || !input.trim()}>
+              <Button size="icon" onClick={() => sendMessage(input)} disabled={!input.trim()}>
                 <Send className="h-4 w-4" />
               </Button>
             </div>
@@ -226,8 +213,7 @@ const StaffAiAssistant = () => {
               <button
                 key={q.label}
                 onClick={() => sendMessage(q.prompt)}
-                disabled={loading}
-                className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm disabled:opacity-50"
+                className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                   <Zap className="h-4 w-4" />
