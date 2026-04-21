@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -89,10 +90,7 @@ const AuditLogs = () => {
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">审计日志</h1>
-          <p className="text-sm text-muted-foreground">追踪批量导入、删除、角色变更与规则操作</p>
-        </div>
+        <PageHeader title="审计日志" description="追踪批量导入、删除、角色变更与规则操作" />
 
         <Card>
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -116,12 +117,11 @@ const RulesPage = () => {
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">规则库</h1>
-            <p className="text-sm text-muted-foreground">学分认证匹配规则，由 AI 在评估时参考</p>
-          </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+        <PageHeader
+          title="规则库"
+          description="学分认证匹配规则，由 AI 在评估时参考"
+          actions={
+            <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />新增规则</Button></DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle>{editing ? "编辑规则" : "新增规则"}</DialogTitle></DialogHeader>
