@@ -142,7 +142,7 @@ const AuditLogs = () => {
                       <TableCell className="text-sm">{l.actor_email ?? "—"}</TableCell>
                       <TableCell className="text-right">{l.affected_count}</TableCell>
                       <TableCell className="text-right text-sm">
-                        <span className="text-emerald-600">{l.success_count}</span>
+                        <span className="text-success">{l.success_count}</span>
                         {" / "}
                         <span className={l.failure_count > 0 ? "text-destructive" : "text-muted-foreground"}>{l.failure_count}</span>
                       </TableCell>
