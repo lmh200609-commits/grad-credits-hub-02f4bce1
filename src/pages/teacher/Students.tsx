@@ -13,6 +13,12 @@ import {
 } from "@/components/ui/select";
 import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { resetPasswordSchema } from "@/lib/schemas";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 50;
 
@@ -36,6 +42,10 @@ const Students = () => {
   const [dept, setDept] = useState<string>(ALL);
   const [major, setMajor] = useState<string>(ALL);
   const [page, setPage] = useState(0);
+  const [resetTarget, setResetTarget] = useState<Profile | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -74,6 +84,32 @@ const Students = () => {
 
   useEffect(() => { setPage(0); }, [search, dept, major]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
+
+  const openReset = (p: Profile) => {
+    setResetTarget(p);
+    setNewPassword("");
+    setPwError(null);
+  };
+
+  const submitReset = async () => {
+    if (!resetTarget) return;
+    const parsed = resetPasswordSchema.safeParse({ password: newPassword });
+    if (!parsed.success) {
+      setPwError(parsed.error.issues[0]?.message ?? "密码不合规");
+      return;
+    }
+    setResetting(true);
+    const { data, error } = await supabase.functions.invoke("reset-password", {
+      body: { user_id: resetTarget.user_id, new_password: newPassword },
+    });
+    setResetting(false);
+    if (error || (data as { error?: string })?.error) {
+      toast.error("重置失败", { description: (data as { error?: string })?.error ?? error?.message });
+      return;
+    }
+    toast.success(`已重置 ${resetTarget.full_name ?? "学生"} 的密码`);
+    setResetTarget(null);
+  };
 
   return (
     <AppLayout>
