@@ -6,6 +6,7 @@ import {
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import AiAssistant from "@/components/AiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
   Users, BarChart3, Trophy, UserCog, Inbox, Send,
@@ -105,6 +106,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           </header>
           <main className="flex-1 overflow-auto bg-muted/30 p-3 sm:p-6">{children}</main>
         </div>
+        {hasRole("student") && <AiAssistant />}
       </div>
     </SidebarProvider>
   );
