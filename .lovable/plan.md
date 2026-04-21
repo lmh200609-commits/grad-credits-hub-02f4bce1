@@ -1,60 +1,90 @@
 
-## 优化学生端 AI 助手的提问引导
+## 替换 AI 模型为通义千问 + 架构优化
 
-让学生在向 AI 助手提问时，按"自定义关键词"的结构化方式提供信息，从而提升 RAG 检索准确度和回答质量。
+将系统默认 AI 模型从 Gemini 替换为通义千问（DashScope），DeepSeek 作为可选补充。同时严格分离"Excel 解析/入库（纯后端逻辑）"与"AI 语义辅助"两个职责。
 
-### 改动范围
-仅修改一个文件：`src/components/AiAssistant.tsx`（前端引导层），后端 `ask-credit-assistant` 无需改动。
+### 现状盘点
 
-### 具体改动
+| 调用点 | 当前模型 | 用途 |
+|---|---|---|
+| `ai-parse-roster` | Lovable Gateway → `google/gemini-2.5-flash` | 名册列名映射 |
+| `evaluate-application` | DashScope → `qwen3-vl-32b-thinking` | 申请审核（已是 Qwen，保留） |
+| `ask-credit-assistant` | DeepSeek → `deepseek-chat` | 学生问答（保留为 DeepSeek 补充） |
+| `import-users` | 无 AI | 批量建账号（已是纯后端，需优化失败解释） |
 
-**1. 升级欢迎语 — 明确"关键词式提问"模板**
+已具备 `DASHSCOPE_API_KEY` 与 `DEEPSEEK_API_KEY`，无需新增 secret。
 
-将现有 `WELCOME` 消息替换为带模板示例的引导语：
+---
 
-```
-您好，我是学分认定规则助手。
+### 改动总览
 
-为帮您准确匹配规则，请按【关键词】方式描述，例如：
-• 成果类型：竞赛 / 证书 / 论文 / 专利 / 创新创业…
-• 名称全称：如「全国大学生英语竞赛」
-• 级别：国家级 / 省级 / 校级 / 国际级
-• 等级/角色:一等奖 / 三等奖 / 第一作者 / 团队成员
-• 其他补充：举办单位、年份等
+#### 1. 新建公共 AI 调用层（Edge Function 内）
+新文件：`supabase/functions/_shared/ai-client.ts`
+- 封装 `callQwen(messages, opts)` → DashScope `qwen-plus`（默认）/ `qwen-turbo`（高并发轻量）
+- 封装 `callDeepseek(messages, opts)` → `deepseek-chat`（可选补充）
+- 统一 `callAI(messages, { provider: "qwen" | "deepseek", jsonMode, tools })`，默认 `qwen`
+- 统一处理：429 / 402 / 超时 / JSON 修复 / 重试（指数退避，最多 2 次）
+- 注：Edge Function 不支持跨函数 import 子目录，因此该文件以"模板"方式分别复制到每个函数目录中（`ai-parse-roster/_ai.ts`、`ai-explain-import/_ai.ts`），保持逻辑一致即可。
 
-示例：竞赛 + 全国大学生数学建模竞赛 + 国家级 + 二等奖 + 团队成员
-```
+#### 2. 改造 `ai-parse-roster`（语义识别 → 通义千问）
+- 模型：`google/gemini-2.5-flash` → **`qwen-plus`**（DashScope OpenAI 兼容端点 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`）
+- **强化"只送样本，不送全量"的契约**：
+  - 仅取前 5 行 + 全部列名 → 让 AI 输出 `mapping` JSON
+  - AI 调用使用 `response_format: { type: "json_object" }`
+  - 全量行数据在 Deno 端用 mapping 本地映射（已有逻辑，保留）
+- 增加保护：单次请求 sample 字符串 > 8KB 时截断，防止 prompt 注入与超额计费
+- 错误码透传：429/402 → 中文友好提示
 
-**2. 输入框 placeholder 同步改为关键词示例**
+#### 3. 新建 `ai-explain-import`（导入失败原因解释，可选）
+新 Edge Function：`supabase/functions/ai-explain-import/index.ts`
+- 入参：`{ errors: [{line, message, row?}], total }` —— 仅传**结构化错误摘要**，不传整份 Excel
+- 调用 `qwen-turbo`（轻量、便宜、并发友好）生成自然语言中文解释与修复建议
+- 输出：`{ summary, suggestions: string[] }`
+- 在 `import-users` 失败返回时，由前端 `ImportUsers.tsx` 触发该函数获得人类可读的错误说明
 
-将 `Textarea` 的 `placeholder` 从一句长问句改为关键词样式：
-```
-竞赛 + 全国大学生英语竞赛 + 国家级 + 三等奖 + 个人参赛
-```
+#### 4. 优化 `import-users` 并发与批处理
+现状已有 `CONCURRENCY = 10` 并行创建。改进：
+- **分片入队**：将 `rows` 切为 `BATCH_SIZE = 200` 的 chunk，逐 chunk 串行、chunk 内并行 → 避免 Auth API burst 触发上游限流
+- **冲突预检批量化**：当前 `in("student_no", chunk)` 已 500/批，保留
+- **失败收敛**：失败时不再"全量回滚"，改为"已成功的保留 + 返回失败行清单 + 调用 `ai-explain-import` 给出说明"。前端展示成功/失败两栏，允许用户下载失败行 CSV 重导。
+  - （此为破坏性行为变更，列入计划征求确认 → 默认保留旧"全量回滚"，新增 `partial: true` 入参开启部分提交模式）
+- 增加每 chunk 完成的进度日志，便于在 Edge Function logs 排查 2000+ 行的卡点
 
-**3. 首次输入时给出"关键词芯片"快捷插入（轻量增强）**
+#### 5. 学生端问答 `ask-credit-assistant`
+- 保留 DeepSeek 作为"高并发/低成本补充"（符合需求）
+- 增加 `provider` 入参（默认 `deepseek`，可切 `qwen`），方便后台 A/B
+- 仍只把"已检索到的相关规则文本片段"喂给模型，不送全库（现状已如此，确认保留）
 
-在输入框上方仅在「未输入任何字符」时显示一行快捷标签（chip），点击即可把该关键词类别前缀追加到输入框，降低使用门槛：
+#### 6. 申请审核 `evaluate-application`
+- 已使用 `qwen3-vl-32b-thinking`（多模态），符合要求 → **不改模型**
+- 复核：仅传单条申请的结构化字段 + 附件 URL，不传跨用户数据 → 当前实现合规
 
-`[成果类型]` `[名称]` `[级别]` `[等级/角色]` `[补充信息]`
+#### 7. 前端微调
+- `src/pages/admin/ImportUsers.tsx`：
+  - 导入失败时调用 `ai-explain-import`，在错误面板顶部展示 AI 给出的"原因摘要 + 建议"
+  - 增加"下载失败行 CSV"按钮（仅在开启 `partial` 模式时）
+- 不改其他页面 UI
 
-点击逻辑：把对应中文标签 + `：` 追加到当前 `input` 末尾并自动聚焦，例如点击 `[级别]` → 输入框出现 `级别：`。
+---
 
-**4. 用户提问后的智能补全提示（轻量）**
+### 架构合规性核对（对照需求）
 
-当用户发送的消息长度 < 10 字 或 不包含任何关键字段提示词（如"级别/等级/获奖/作者/参赛"），在调用接口的同时，先在本地插入一条助手提示：
+| 需求 | 落地方式 |
+|---|---|
+| 主模型 = 通义千问 | `ai-parse-roster` / `ai-explain-import` 默认 `qwen-plus`/`qwen-turbo` |
+| DeepSeek 作为补充 | `ask-credit-assistant` 保留 DeepSeek，统一 client 支持切换 |
+| Excel 解析/入库纯后端 | `import-users` 不调 AI；`ai-parse-roster` 仅做"列名映射"，行数据由 Deno 本地处理 |
+| AI 仅用于字段语义识别 | `ai-parse-roster` 输出仅是 `mapping` JSON |
+| AI 用于失败原因解释 | 新 `ai-explain-import` 函数 |
+| 禁止整份 Excel 入模型 | sample = 前 5 行 + 列名，硬编码 8KB 截断保护 |
+| 高并发批量优化 | `import-users` 分片队列（200/chunk × 10 并发）+ Qwen 调用退避重试 |
 
-> 信息可能不足，建议补充【级别】【获奖等级/参与角色】【成果全称】，例如：竞赛 + XX 比赛 + 省级 + 一等奖 + 第一作者。
+### 不改动
+- 数据库 schema、RLS 策略
+- `src/integrations/supabase/types.ts`
+- 现有 Storage bucket、认证流程
+- 学生端 `AiAssistant` 的 UI 引导（上轮已完成）
 
-随后再展示 AI 的真实回答。这样既不阻塞用户，也能潜移默化引导其养成关键词习惯。
-
-### 不改动的部分
-- 后端 Edge Function `ask-credit-assistant`：现有打分函数 `scoreRule` 已基于关键词匹配，前端引导用户输入更多关键词后，后端检索质量会自动提升，无需改动。
-- 不引入新依赖、不修改样式系统、不增加路由。
-
-### 技术细节
-- 文件：`src/components/AiAssistant.tsx`
-- 新增本地常量：`KEYWORD_CHIPS`（5 个分类标签数组）、`HINT_KEYWORDS`（用于检测用户输入是否结构化的正则/字符串列表）
-- 新增辅助函数：`needsHint(text: string): boolean`
-- 复用现有 `Button`/`Badge`（如未引入 Badge 则用现有 `Button variant="outline" size="sm"` 渲染 chip，避免新增组件）
-- 不破坏现有 `messages` 类型与 `send()` 流程
+### 待确认（如需要可一并确认；否则按"默认值"实施）
+- 默认 Qwen 模型档位：`qwen-plus`（精度优先） vs `qwen-turbo`（速度/成本优先）→ **默认 `qwen-plus` 用于列名映射，`qwen-turbo` 用于错误解释**
+- `import-users` 是否启用"部分提交"模式 → **默认仍为全量回滚，新增可选 `partial` 开关，前端暂不暴露**
