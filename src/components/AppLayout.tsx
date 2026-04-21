@@ -76,7 +76,7 @@ const AppSidebar = () => {
 };
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
-  const { user, roles, signOut } = useAuth();
+  const { user, roles, signOut, hasRole } = useAuth();
   const navigate = useNavigate();
   const handleSignOut = async () => {
     await signOut();
