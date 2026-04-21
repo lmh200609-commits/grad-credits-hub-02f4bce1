@@ -259,14 +259,14 @@ const ApplicationDetail = () => {
         <Card>
           <CardHeader><CardTitle className="text-base">审核记录</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {reviews.map((r) => (
+            {(isReviewer ? reviews : reviews.filter((r) => r.action !== "ai_evaluation")).map((r) => (
               <div key={r.id} className="rounded border p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">
                       {r.action === "ai_evaluation" ? "系统核验" : r.action === "teacher_review" ? "教师复核" : "管理员复核"}
                     </Badge>
-                    <StatusBadge status={r.decision as any} />
+                    <StatusBadge status={r.decision as any} audience={isReviewer ? "staff" : "student"} />
                     {r.credit != null && <span className="text-muted-foreground">学分 {r.credit}</span>}
                     {isReviewer && r.confidence != null && (
                       <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>
@@ -277,7 +277,9 @@ const ApplicationDetail = () => {
                 {r.note && <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{r.note}</p>}
               </div>
             ))}
-            {reviews.length === 0 && <p className="text-sm text-muted-foreground">暂无审核记录</p>}
+            {(isReviewer ? reviews : reviews.filter((r) => r.action !== "ai_evaluation")).length === 0 && (
+              <p className="text-sm text-muted-foreground">暂无审核记录</p>
+            )}
           </CardContent>
         </Card>
       </div>
