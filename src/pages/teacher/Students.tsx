@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
+import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +30,7 @@ type Profile = {
   department: string | null;
   major: string | null;
   class_name: string | null;
-  email: string | null;
+  phone: string | null;
 };
 
 const ALL = "__all__";
@@ -52,11 +53,17 @@ const Students = () => {
       setLoading(true);
       const [roleRows, profileRows] = await Promise.all([
         fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", "student")),
-        fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email")),
+        fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, phone")),
       ]);
       const ids = new Set(roleRows.map((r) => r.user_id));
       setStudentIds(ids);
-      setRows(profileRows.filter((p) => ids.has(p.user_id)));
+      if (ids.size === 0) {
+        // RLS fallback: teacher can't see user_roles → show all visible profiles
+        console.warn("[Students] user_roles returned 0 rows — falling back to all visible profiles");
+        setRows(profileRows);
+      } else {
+        setRows(profileRows.filter((p) => ids.has(p.user_id)));
+      }
       setLoading(false);
     })();
   }, []);
@@ -76,7 +83,7 @@ const Students = () => {
       if (dept !== ALL && r.department !== dept) return false;
       if (major !== ALL && r.major !== major) return false;
       if (!q) return true;
-      return [r.full_name, r.student_no, r.email, r.class_name]
+      return [r.full_name, r.student_no, r.phone, r.class_name]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q));
     });
@@ -114,10 +121,7 @@ const Students = () => {
   return (
     <AppLayout>
       <div className="mx-auto max-w-6xl space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">学生管理</h1>
-          <p className="text-sm text-muted-foreground">查看学生基本信息及其所有申请记录与累计学分</p>
-        </div>
+        <PageHeader title="学生管理" description="查看学生基本信息及其所有申请记录与累计学分" />
 
         <Card>
           <CardHeader>
@@ -125,7 +129,7 @@ const Students = () => {
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-4">
             <Input
-              placeholder="搜索姓名 / 学号 / 邮箱 / 班级"
+              placeholder="搜索姓名 / 学号 / 手机号 / 班级"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -155,11 +159,11 @@ const Students = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>姓名</TableHead>
-                  <TableHead>学号</TableHead>
+                  <TableHead>账号 / 学号</TableHead>
                   <TableHead>院系</TableHead>
                   <TableHead>专业</TableHead>
                   <TableHead>班级</TableHead>
-                  <TableHead>邮箱</TableHead>
+                  <TableHead>手机号</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -180,7 +184,7 @@ const Students = () => {
                       <TableCell>{r.department ?? "—"}</TableCell>
                       <TableCell>{r.major ?? "—"}</TableCell>
                       <TableCell>{r.class_name ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{r.email ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{r.phone ?? "—"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button asChild variant="outline" size="sm">

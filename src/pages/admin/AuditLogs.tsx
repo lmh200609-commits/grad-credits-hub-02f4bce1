@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import EmptyState from "@/components/EmptyState";
+import { Label } from "@/components/ui/label";
 import TableSkeleton from "@/components/TableSkeleton";
 import TablePagination from "@/components/TablePagination";
 import { fetchAll } from "@/lib/fetchAll";
@@ -94,21 +95,33 @@ const AuditLogs = () => {
 
         <Card>
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-4">
-            <Select value={actionFilter} onValueChange={setActionFilter}>
-              <SelectTrigger><SelectValue placeholder="操作类型" /></SelectTrigger>
-              <SelectContent>
-                {ACTION_OPTIONS.map((a) => (
-                  <SelectItem key={a} value={a}>
-                    {a === "all" ? "全部操作" : ACTION_LABEL[a]?.label ?? a}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input placeholder="操作者邮箱" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} />
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            <div className="md:col-span-4 text-sm text-muted-foreground">
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">操作类型</Label>
+              <Select value={actionFilter} onValueChange={setActionFilter}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="操作类型" /></SelectTrigger>
+                <SelectContent>
+                  {ACTION_OPTIONS.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {a === "all" ? "全部操作" : ACTION_LABEL[a]?.label ?? a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">操作者账号</Label>
+              <Input placeholder="输入账号关键字" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} className="w-full" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">开始日期</Label>
+              <Input type="date" lang="zh-CN" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">结束日期</Label>
+              <Input type="date" lang="zh-CN" value={to} onChange={(e) => setTo(e.target.value)} className="w-full" />
+            </div>
+            <div className="md:col-span-2 xl:col-span-4 text-sm text-muted-foreground">
               共 {filtered.length} / {logs.length}
             </div>
           </CardContent>
@@ -139,7 +152,7 @@ const AuditLogs = () => {
                     <TableRow key={l.id}>
                       <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtTime(l.created_at)}</TableCell>
                       <TableCell><Badge variant={meta.variant}>{meta.label}</Badge></TableCell>
-                      <TableCell className="text-sm">{l.actor_email ?? "—"}</TableCell>
+                      <TableCell className="text-sm">{l.actor_email ? l.actor_email.split("@")[0] : "—"}</TableCell>
                       <TableCell className="text-right">{l.affected_count}</TableCell>
                       <TableCell className="text-right text-sm">
                         <span className="text-success">{l.success_count}</span>
@@ -174,7 +187,7 @@ const AuditLogs = () => {
           {detail && (
             <ScrollArea className="max-h-[60vh] pr-3">
               <div className="space-y-3 text-sm">
-                <div><span className="text-muted-foreground">操作者：</span>{detail.actor_email ?? "—"}</div>
+                <div><span className="text-muted-foreground">操作者：</span>{detail.actor_email ? detail.actor_email.split("@")[0] : "—"}</div>
                 <div>
                   <span className="text-muted-foreground">影响：</span>
                   共 {detail.affected_count} 条，成功 {detail.success_count}，失败 {detail.failure_count}

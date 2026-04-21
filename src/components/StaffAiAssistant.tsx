@@ -46,7 +46,7 @@ const StaffAiAssistant = () => {
   const role = hasRole("admin") ? "admin" : "teacher";
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("chat");
+  const [tab, setTab] = useState("quick");
   const [messages, setMessages] = useState<Msg[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -122,7 +122,7 @@ const StaffAiAssistant = () => {
       <button
         onClick={() => setOpen(true)}
         aria-label="打开工作助手"
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-105"
+        className="fixed bottom-20 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-105"
       >
         <Sparkles className="h-6 w-6" />
       </button>
@@ -130,7 +130,7 @@ const StaffAiAssistant = () => {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex h-[min(620px,calc(100vh-3rem))] max-h-[calc(100vh-3rem)] w-[calc(100vw-2rem)] max-w-[420px] flex-col rounded-xl border bg-background shadow-2xl sm:w-[420px]">
+    <div className="fixed bottom-20 right-6 z-50 flex h-[min(560px,calc(100vh-6rem))] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-[420px] flex-col rounded-xl border bg-background shadow-2xl sm:w-[420px]">
       <header className="flex items-center justify-between border-b bg-gradient-to-r from-primary to-primary-glow px-4 py-3 text-primary-foreground rounded-t-xl">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4" />
@@ -222,21 +222,26 @@ const StaffAiAssistant = () => {
         </TabsContent>
 
         <TabsContent value="quick" className="flex-1 overflow-auto m-0 p-3">
-          <div className="grid grid-cols-2 gap-2">
+          <p className="mb-2 text-xs text-muted-foreground">点击下方卡片即可一键执行</p>
+          <div className="grid grid-cols-1 gap-2">
             {QUICK_ACTIONS.map((q) => (
               <button
                 key={q.label}
                 onClick={() => sendMessage(q.prompt)}
                 disabled={loading}
-                className="group flex flex-col items-start gap-1 rounded-lg border bg-card p-3 text-left transition hover:-translate-y-0.5 hover:border-primary hover:shadow-md disabled:opacity-50"
+                className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm disabled:opacity-50"
               >
-                <Zap className="h-4 w-4 text-primary" />
-                <div className="text-sm font-medium">{q.label}</div>
-                <div className="text-[11px] text-muted-foreground line-clamp-2">{q.prompt}</div>
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Zap className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{q.label}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">{q.prompt}</div>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
             ))}
           </div>
-          <p className="mt-3 text-center text-[10px] text-muted-foreground">点击卡片直接执行 · 或切换到智能问答自由对话</p>
         </TabsContent>
       </Tabs>
     </div>
