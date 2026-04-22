@@ -35,6 +35,14 @@ type Review = {
   id: string; action: string; decision: string; credit: number | null;
   confidence: number | null; note: string | null; created_at: string;
 };
+type KeywordRef = {
+  id: string;
+  keyword: string;
+  category: string | null;
+  source: string | null;
+  usage_count: number;
+  created_at: string;
+};
 
 const ApplicationDetail = () => {
   const { id } = useParams();
@@ -47,6 +55,7 @@ const ApplicationDetail = () => {
   const [credit, setCredit] = useState<number>(0);
   const [note, setNote] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [libraryRefs, setLibraryRefs] = useState<KeywordRef[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
