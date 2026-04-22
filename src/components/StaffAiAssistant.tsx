@@ -212,9 +212,15 @@ const StaffAiAssistant = () => {
           </div>
         </TabsContent>
 
-        <TabsContent value="quick" className="flex-1 overflow-auto m-0 mt-3 px-3 pb-3 pt-0 data-[state=active]:block">
-          <p className="mb-3 text-xs text-muted-foreground">点击下方卡片即可一键执行</p>
-          <div className="grid grid-cols-1 content-start gap-2">
+        <TabsContent
+          value="quick"
+          className="flex flex-1 min-h-0 flex-col overflow-hidden m-0 mt-2 data-[state=active]:flex"
+        >
+          <div className="shrink-0 px-3 pt-2 pb-2">
+            <p className="text-xs text-muted-foreground">点击下方卡片即可一键执行</p>
+          </div>
+          <ScrollArea className="flex-1">
+            <div className="grid grid-cols-1 content-start gap-2 px-3 pb-3">
             {QUICK_ACTIONS.map((q) => (
               <button
                 key={q.label}
@@ -232,7 +238,8 @@ const StaffAiAssistant = () => {
                 <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
             ))}
-          </div>
+            </div>
+          </ScrollArea>
         </TabsContent>
       </Tabs>
     </div>
