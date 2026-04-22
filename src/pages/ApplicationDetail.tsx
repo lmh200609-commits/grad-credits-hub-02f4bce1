@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, X, FileDown } from "lucide-react";
+import { ArrowLeft, Check, X, FileDown, ImageIcon } from "lucide-react";
 
 type App = {
   id: string;
@@ -198,17 +198,50 @@ const ApplicationDetail = () => {
                 </div>
               </div>
             )}
-            {fileUrl && (
+            {app.custom_keywords && app.custom_keywords.length > 0 && (
               <div>
-                <Button variant="outline" size="sm" asChild>
-                  <a href={fileUrl} target="_blank" rel="noreferrer"><FileDown className="mr-1 h-4 w-4" /> 查看附件</a>
-                </Button>
+                <div className="mb-1 text-muted-foreground">学生自定义关键词</div>
+                <div className="flex flex-wrap gap-1">
+                  {app.custom_keywords.map((k) => <Badge key={k} variant="outline">{k}</Badge>)}
+                </div>
+              </div>
+            )}
+            {app.file_path && (
+              <div className="space-y-2">
+                <div className="text-muted-foreground flex items-center gap-1">
+                  <ImageIcon className="h-3.5 w-3.5" /> 提交材料
+                  <span className="text-xs break-all">（{app.file_path.split("/").pop()}）</span>
+                </div>
+                {fileUrl ? (
+                  /\.(jpe?g|png|webp|gif)$/i.test(app.file_path) ? (
+                    <a href={fileUrl} target="_blank" rel="noreferrer" className="block">
+                      <img
+                        src={fileUrl}
+                        alt="学生提交的材料"
+                        className="max-h-96 w-auto rounded border bg-muted/30 object-contain"
+                      />
+                    </a>
+                  ) : (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={fileUrl} target="_blank" rel="noreferrer"><FileDown className="mr-1 h-4 w-4" /> 查看附件</a>
+                    </Button>
+                  )
+                ) : (
+                  <p className="text-xs text-muted-foreground">附件加载中或无访问权限…</p>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {app.ai_reasoning && isReviewer && (
+        {isReviewer && (
+          app.ai_reasoning ||
+          app.ai_suggested_credit != null ||
+          app.ai_matched_rule_id ||
+          app.ai_confidence != null ||
+          app.status === "rejected_by_ai" ||
+          app.status === "auto_approved"
+        ) && (
           <Card className={app.status === "rejected_by_ai" ? "border-destructive" : ""}>
             <CardHeader>
               <CardTitle className="text-base">系统核验结果</CardTitle>
@@ -218,7 +251,9 @@ const ApplicationDetail = () => {
             </CardHeader>
             <CardContent>
               <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
-              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">{app.ai_reasoning}</p>
+              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">
+                {app.ai_reasoning || "系统未给出详细理由。"}
+              </p>
             </CardContent>
           </Card>
         )}
