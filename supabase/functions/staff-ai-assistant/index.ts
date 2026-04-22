@@ -14,7 +14,20 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 - navigate_to(path)：跳转到系统内的某个页面
 - find_student(query)：根据姓名/学号/班级模糊查询学生
 - list_failing_students(threshold)：列出累计学分低于阈值（默认 4）的学生
-- query_stats(metric)：查询统计数据，metric 可选：pending_review / approved_week / rejected_week / total_students / total_apps_month
+- query_stats(metric)：查询统计数据。可用 metric：
+    · pending_review        — 待人工复核的申请数
+    · pending_ai            — 系统核验中的申请数
+    · approved_week         — 近 7 天人工复核通过数
+    · rejected_week         — 近 7 天驳回数
+    · total_students        — 学生总人数
+    · total_apps_month      — 近 30 天提交申请数
+    · submitted_total       — 累计提交过申请的去重学生人数
+    · submitted_count       — 累计申请总数
+    · passed_students       — 累计学分 ≥ 4 的学生人数（合格）
+    · failing_students      — 累计学分 < 4 的学生人数（不合格）
+    · auto_approved_total   — 系统初审自动通过的申请数
+    · manual_approved_total — 人工复核通过的申请数
+    · rejected_total        — 累计驳回数（含系统驳回 + 人工驳回）
 
 【路径白名单（仅可使用以下路径）】
 - /admin/dashboard           数据看板
