@@ -105,6 +105,7 @@ const ApplyPage = () => {
   const [picked, setPicked] = useState<Picked>({});
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
   const [customInput, setCustomInput] = useState("");
+  const [libraryKeywords, setLibraryKeywords] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [recent, setRecent] = useState<string[]>(loadRecent());
   const [selectedRule, setSelectedRule] = useState<Rule | null>(null);
@@ -127,6 +128,13 @@ const ApplyPage = () => {
         .eq("active", true);
       const baseRules: Rule[] = ((rulesRes.data as any[]) ?? []).map((r) => ({ ...r, source: "rule" as const }));
       setRules(baseRules);
+      const kwRes = await supabase
+        .from("keywords")
+        .select("keyword")
+        .eq("active", true)
+        .order("usage_count", { ascending: false })
+        .limit(30);
+      setLibraryKeywords(((kwRes.data as { keyword: string }[]) ?? []).map((r) => r.keyword));
       setLoading(false);
     })();
   }, []);
