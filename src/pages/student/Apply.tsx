@@ -105,6 +105,7 @@ const ApplyPage = () => {
   const [picked, setPicked] = useState<Picked>({});
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
   const [customInput, setCustomInput] = useState("");
+  const [libraryKeywords, setLibraryKeywords] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [recent, setRecent] = useState<string[]>(loadRecent());
   const [selectedRule, setSelectedRule] = useState<Rule | null>(null);
@@ -127,6 +128,13 @@ const ApplyPage = () => {
         .eq("active", true);
       const baseRules: Rule[] = ((rulesRes.data as any[]) ?? []).map((r) => ({ ...r, source: "rule" as const }));
       setRules(baseRules);
+      const kwRes = await supabase
+        .from("keywords")
+        .select("keyword")
+        .eq("active", true)
+        .order("usage_count", { ascending: false })
+        .limit(30);
+      setLibraryKeywords(((kwRes.data as { keyword: string }[]) ?? []).map((r) => r.keyword));
       setLoading(false);
     })();
   }, []);
@@ -619,6 +627,29 @@ const ApplyPage = () => {
                         </Badge>
                       );
                     })}
+                  </div>
+                )}
+                {libraryKeywords.length > 0 && (
+                  <div className="space-y-1.5 rounded-md border border-dashed bg-muted/30 p-2">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <BookOpen className="h-3.5 w-3.5" />
+                      <span>关键词库（往届人工通过沉淀，点击一键添加）</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {libraryKeywords
+                        .filter((k) => !customKeywords.includes(k))
+                        .slice(0, 20)
+                        .map((k) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => addCustomKeyword(k)}
+                            className="rounded-full border bg-background px-2 py-0.5 text-xs transition hover:border-primary hover:text-primary"
+                          >
+                            + {k}
+                          </button>
+                        ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
