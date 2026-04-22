@@ -20,6 +20,11 @@ import { writeAuditLog } from "@/lib/audit";
 import { useAuth } from "@/hooks/useAuth";
 import { normalizeKeyword } from "@/lib/keywords";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { DateRange } from "react-day-picker";
 
 type Keyword = {
   id: string;
@@ -37,6 +42,7 @@ const KeywordsPage = () => {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [bulk, setBulk] = useState({ keywords: "", category: "", source: "" });
 
   const load = async () => {
@@ -58,14 +64,28 @@ const KeywordsPage = () => {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (k) =>
-        k.keyword.toLowerCase().includes(q) ||
-        (k.category ?? "").toLowerCase().includes(q) ||
-        (k.source ?? "").toLowerCase().includes(q),
-    );
-  }, [items, search]);
+    const fromTs = dateRange?.from ? new Date(dateRange.from.setHours(0, 0, 0, 0)).getTime() : null;
+    const toTs = dateRange?.to
+      ? new Date(new Date(dateRange.to).setHours(23, 59, 59, 999)).getTime()
+      : dateRange?.from
+        ? new Date(new Date(dateRange.from).setHours(23, 59, 59, 999)).getTime()
+        : null;
+    return items.filter((k) => {
+      if (q) {
+        const hit =
+          k.keyword.toLowerCase().includes(q) ||
+          (k.category ?? "").toLowerCase().includes(q) ||
+          (k.source ?? "").toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      if (fromTs !== null || toTs !== null) {
+        const ts = new Date(k.created_at).getTime();
+        if (fromTs !== null && ts < fromTs) return false;
+        if (toTs !== null && ts > toTs) return false;
+      }
+      return true;
+    });
+  }, [items, search, dateRange]);
 
   const save = async () => {
     const rawList = bulk.keywords
@@ -214,19 +234,72 @@ const KeywordsPage = () => {
         />
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-base">
               关键词列表（{filtered.length}
-              {search && ` / ${items.length}`}）
+              {(search || dateRange) && ` / ${items.length}`}）
             </CardTitle>
-            <div className="relative w-64 max-w-full">
-              <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索关键词 / 分类 / 来源"
-                className="pl-8"
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "justify-start text-left font-normal",
+                      !dateRange && "text-muted-foreground",
+                    )}
+                  >
+                    <CalendarIcon className="mr-1 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {formatDepositDate(dateRange.from)} ~ {formatDepositDate(dateRange.to)}
+                        </>
+                      ) : (
+                        <>{formatDepositDate(dateRange.from)} ~ 至今</>
+                      )
+                    ) : (
+                      <span>沉淀日期范围</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                    initialFocus
+                    className={cn("p-3 pointer-events-auto")}
+                  />
+                  <div className="flex items-center justify-end gap-2 border-t p-2">
+                    <Button variant="ghost" size="sm" onClick={() => setDateRange(undefined)}>
+                      清除
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {dateRange && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setDateRange(undefined)}
+                  aria-label="清除日期筛选"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+              <div className="relative w-64 max-w-full">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索关键词 / 分类 / 来源"
+                  className="pl-8"
+                />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -248,8 +321,12 @@ const KeywordsPage = () => {
                   <TableRow>
                     <TableCell colSpan={6}>
                       <EmptyState
-                        title={search ? "无匹配关键词" : "暂无关键词"}
-                        description={search ? "换个关键词试试" : "点击右上角新增第一批关键词"}
+                        title={search || dateRange ? "无匹配关键词" : "暂无关键词"}
+                        description={
+                          search || dateRange
+                            ? "调整搜索词或沉淀日期范围试试"
+                            : "点击右上角新增第一批关键词"
+                        }
                       />
                     </TableCell>
                   </TableRow>
