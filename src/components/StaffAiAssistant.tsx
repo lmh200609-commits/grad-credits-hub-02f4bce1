@@ -82,7 +82,6 @@ const StaffAiAssistant = () => {
       ]);
     } finally {
       setLoading(false);
-      setActiveQuick(null);
     }
   };
 
@@ -111,7 +110,7 @@ const StaffAiAssistant = () => {
   }
 
   return (
-    <div className="fixed bottom-20 right-6 z-50 flex h-[min(560px,calc(100vh-6rem))] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-[420px] flex-col rounded-xl border bg-background shadow-2xl sm:w-[420px]">
+    <div className="fixed bottom-20 right-6 z-50 flex h-[min(520px,calc(100vh-6rem))] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-[420px] flex-col overflow-hidden rounded-xl border bg-background shadow-2xl sm:w-[420px]">
       <header className="flex items-center justify-between border-b bg-gradient-to-r from-primary to-primary-glow px-4 py-3 text-primary-foreground rounded-t-xl">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4" />
@@ -134,15 +133,8 @@ const StaffAiAssistant = () => {
         </div>
       </header>
 
-      <Tabs value={tab} onValueChange={setTab} className="flex flex-1 min-h-0 flex-col overflow-hidden">
-        <TabsList className="mx-3 mt-2 grid shrink-0 grid-cols-2">
-          <TabsTrigger value="chat" className="gap-1.5"><MessageSquare className="h-3.5 w-3.5" />智能问答</TabsTrigger>
-          <TabsTrigger value="quick" className="gap-1.5"><Zap className="h-3.5 w-3.5" />快捷指令</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="chat" className="flex flex-1 min-h-0 flex-col overflow-hidden mt-2 mx-0 mb-0">
-          <ScrollArea className="flex-1">
-            <div ref={scrollRef} className="flex flex-col gap-3 p-4">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex flex-col gap-3 p-4">
               {messages.map((m, i) => (
                 <div key={i} className={cn("flex flex-col gap-2", m.role === "user" ? "items-end" : "items-start")}>
                   <div
@@ -191,10 +183,10 @@ const StaffAiAssistant = () => {
                   <Loader2 className="h-3 w-3 animate-spin" /> 思考中…
                 </div>
               )}
-            </div>
-          </ScrollArea>
+        </div>
+      </div>
 
-          <div className="border-t p-3">
+      <div className="border-t px-3 py-2">
             <div className="flex items-end gap-2">
               <Textarea
                 value={input}
@@ -209,53 +201,7 @@ const StaffAiAssistant = () => {
                 <Send className="h-4 w-4" />
               </Button>
             </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">由国产大模型驱动 · 自动调用工具完成跳转和查询</p>
-          </div>
-        </TabsContent>
-
-        <TabsContent
-          value="quick"
-          className="flex flex-1 min-h-0 flex-col overflow-hidden m-0 data-[state=active]:flex"
-        >
-          <div className="shrink-0 px-3 pt-2 pb-1">
-            <p className="text-xs text-muted-foreground">点击下方卡片即可一键执行</p>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            <div className="grid grid-cols-1 content-start gap-2 px-3 pb-3">
-            {QUICK_ACTIONS.map((q) => {
-              const isActive = activeQuick === q.label;
-              return (
-                <button
-                  key={q.label}
-                  onClick={() => {
-                    if (loading) return;
-                    setActiveQuick(q.label);
-                    sendMessage(q.prompt);
-                  }}
-                  disabled={loading}
-                  aria-busy={isActive}
-                  className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <div className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
-                    isActive ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary",
-                  )}>
-                    {isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{q.label}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {isActive ? "执行中…" : loading ? "请等待当前请求完成" : q.prompt}
-                    </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                </button>
-              );
-            })}
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
+      </div>
     </div>
   );
 };
