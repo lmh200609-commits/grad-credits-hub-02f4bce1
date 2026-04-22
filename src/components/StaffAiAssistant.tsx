@@ -226,12 +226,12 @@ const StaffAiAssistant = () => {
 
         <TabsContent
           value="quick"
-          className="flex flex-1 min-h-0 flex-col overflow-hidden m-0 mt-2 data-[state=active]:flex"
+          className="flex flex-1 min-h-0 flex-col overflow-hidden m-0 data-[state=active]:flex"
         >
-          <div className="shrink-0 px-3 pt-2 pb-2">
+          <div className="shrink-0 px-3 pt-2 pb-1">
             <p className="text-xs text-muted-foreground">点击下方卡片即可一键执行</p>
           </div>
-          <ScrollArea className="flex-1">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="grid grid-cols-1 content-start gap-2 px-3 pb-3">
             {QUICK_ACTIONS.map((q) => {
               const isActive = activeQuick === q.label;
@@ -264,7 +264,7 @@ const StaffAiAssistant = () => {
               );
             })}
             </div>
-          </ScrollArea>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
