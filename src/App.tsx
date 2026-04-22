@@ -10,6 +10,7 @@ import Index from "./pages/Index.tsx";
 import Login from "./pages/Login.tsx";
 import ImportUsers from "./pages/admin/ImportUsers.tsx";
 import Rules from "./pages/admin/Rules.tsx";
+import Keywords from "./pages/admin/Keywords.tsx";
 import Cases from "./pages/admin/Cases.tsx";
 import AdminDashboard from "./pages/admin/Dashboard.tsx";
 import ReviewHub from "./pages/admin/ReviewHub.tsx";
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/admin/users/:role" element={<RoleRoute role="admin"><UsersManage /></RoleRoute>} />
             <Route path="/admin/import" element={<RoleRoute role="admin"><ImportUsers /></RoleRoute>} />
             <Route path="/admin/rules" element={<RoleRoute role="admin"><Rules /></RoleRoute>} />
+            <Route path="/admin/keywords" element={<RoleRoute role="admin"><Keywords /></RoleRoute>} />
             <Route path="/admin/cases" element={<RoleRoute role="admin"><Cases /></RoleRoute>} />
             <Route path="/admin/audit-logs" element={<RoleRoute role="admin"><AuditLogs /></RoleRoute>} />
             <Route path="/apply" element={<RoleRoute role="student"><Apply /></RoleRoute>} />
