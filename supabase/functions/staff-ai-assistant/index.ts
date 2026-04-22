@@ -183,12 +183,22 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       return { metric, value: count ?? 0, navigate_path: "/reviews?status=pending_review" };
     }
     if (metric === "approved_week") {
-      const { count } = await supabase.from("application_reviews").select("id", { count: "exact", head: true }).eq("decision", "approved").gte("created_at", weekAgo.toISOString());
-      return { metric, value: count ?? 0 };
+      const { data } = await supabase
+        .from("application_reviews")
+        .select("application_id")
+        .eq("decision", "approved")
+        .gte("created_at", weekAgo.toISOString());
+      const set = new Set((data || []).map((r: any) => r.application_id));
+      return { metric, value: set.size };
     }
     if (metric === "rejected_week") {
-      const { count } = await supabase.from("application_reviews").select("id", { count: "exact", head: true }).eq("decision", "rejected").gte("created_at", weekAgo.toISOString());
-      return { metric, value: count ?? 0 };
+      const { data } = await supabase
+        .from("application_reviews")
+        .select("application_id")
+        .eq("decision", "rejected")
+        .gte("created_at", weekAgo.toISOString());
+      const set = new Set((data || []).map((r: any) => r.application_id));
+      return { metric, value: set.size };
     }
     if (metric === "total_students") {
       const { count } = await supabase.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role", "student");
