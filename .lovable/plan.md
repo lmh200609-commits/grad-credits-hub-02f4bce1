@@ -1,38 +1,82 @@
 
 
-# 简化工作助手：移除快捷指令 + 修复滚动 + 去除底部空白
+# 系统功能与数据库同步全面回归测试方案
 
-## 改动概览
+我将以**只读探查 + 真实接口压测**的方式，对当前系统的所有核心模块和数据库同步状态做一次完整体检，最后输出一份可下载的测试报告（Markdown + CSV），不会修改任何业务数据。
 
-### 1. 移除「快捷指令」板块
-- 删除 `QUICK_ACTIONS` 常量、`activeQuick` 状态、`Tabs/TabsList/TabsTrigger/TabsContent` 包裹结构。
-- 助手面板内只保留单一聊天界面（消息列表 + 输入框），不再有 tab 切换栏。
-- 同步清理 `useStaffAssistantStore.ts`：移除 `tab` 字段及 `setTab` action，`loadPersisted` 只持久化 `messages`，避免脏数据残留。
+## 测试范围（覆盖现有全部模块）
 
-### 2. 发送消息后自动滚动到最新内容（当前失效的根因）
-- 现状：`scrollRef` 挂在 ScrollArea 内层 div 上，但 Radix `ScrollArea` 的真正滚动容器是 `[data-radix-scroll-area-viewport]`，所以 `scrollTop = scrollHeight` 写在错位的 div 上没有效果。
-- 修复方案：放弃 `ScrollArea`，改用原生 `div + flex-1 min-h-0 overflow-y-auto`(与「快捷指令」修复一致的模式)，`scrollRef` 直接挂在该滚动容器上。`useEffect` 监听 `messages` 和 `loading` 变化时设置 `scrollTop = scrollHeight`，并加一个 `requestAnimationFrame` 确保 DOM 更新后再滚。
+1. **数据库结构与一致性**
+   - 8 张业务表（profiles / user_roles / applications / application_reviews / rules / keywords / cases / audit_logs）行数、最近写入时间、孤儿数据
+   - RLS 策略覆盖度（每张表 SELECT/INSERT/UPDATE/DELETE 是否齐全）
+   - Supabase linter 安全告警
 
-### 3. 去除发送框下方的大片空白
-- 当前 footer `<div className="border-t p-3">` 下还有一行 `<p className="mt-1 text-[10px] ...">由国产大模型驱动…</p>` 占位较多，加上面板固定高度 `560px` 减去消息区导致视觉空白。
-- 处理：
-  - 删除底部 "由国产大模型驱动…" 提示文案。
-  - 将 footer 内边距从 `p-3` 收紧为 `px-3 py-2`。
-  - 面板高度从固定 `min(560px, …)` 改为内容自适应：`h-[min(520px,calc(100vh-6rem))]`，并确保聊天区 `flex-1 min-h-0`，让消息区自然占满，输入框紧贴底部，无残留空白。
+2. **认证与角色**
+   - 三类账号登录（admin / teacher / student 测试账号）
+   - `has_role` 函数对越权调用的拦截
+   - 角色路由（RoleRoute）实际跳转
 
-## 文件改动
+3. **学生端**
+   - Apply 提交（关键词匹配 + 自定义关键词归一化）
+   - MyApplications 列表 / 详情可见性
+   - 申请人工复核流程触发
 
-**修改**
-- `src/components/StaffAiAssistant.tsx` — 移除 Tabs/快捷指令，改用原生滚动容器，scrollRef 挂到正确节点，收紧底部布局，删除提示文案。
-- `src/hooks/useStaffAssistantStore.ts` — 移除 `tab` 字段与 `setTab` action，持久化只保留 `messages`。
+4. **教师端**
+   - Students 列表与 StudentDetail 数据加载
+   - 复核操作写入 `application_reviews` 并回写 `applications.status`
 
-**不动**
-- 数据库、edge function、其他页面。
+5. **管理员端**
+   - Dashboard 统计、ReviewHub、Cases、Credits
+   - Rules / Keywords CRUD（含日期范围筛选、归一化去重）
+   - UsersManage、ImportUsers、AuditLogs
+   - **AI 初审压测**（10 用例）—— 直接调用 `ai-eval-stress-test` 取实际通过率
+   - AiAssistant / StaffAiAssistant 边缘函数可用性
 
-## 验收
+6. **Edge Functions 健康检查**
+   - 11 个函数逐一探活：bootstrap-admin / import-users / evaluate-application / reset-password / dev-seed / ai-parse-roster / ask-credit-assistant / ai-explain-import / staff-ai-assistant / ai-eval-stress-test / audit-log
+   - 调用次数、平均耗时、最近 24h 错误率（来自 analytics_query）
 
-- 打开工作助手 → 直接进入聊天界面，没有「智能问答 / 快捷指令」tab 栏。
-- 发送任意消息或收到 AI 回复 → 消息列表自动滚到最底部，最新内容可见。
-- 输入框紧贴面板底部，下方无多余空白；面板整体更紧凑。
-- 刷新页面后历史消息仍保留（localStorage 持久化未受影响）。
+7. **Realtime / 同步**
+   - `useRealtimeTable` 在 applications / keywords 上的订阅是否成功（通过 edge logs 验证 channel）
+   - keywords.usage_count 在审批通过后是否正确递增
+
+8. **存储**
+   - `application-files` bucket 中文件与 `applications.file_path` 的引用一致性（孤儿文件 / 失效引用）
+
+## 测试方法
+
+```text
+┌──────────────────────────────────────────────┐
+│  只读 SQL 抽样           → supabase--read_query        │
+│  Edge Function 探活      → supabase--curl_edge_functions│
+│  日志 / 错误率          → supabase--analytics_query    │
+│  RLS / 安全             → supabase--linter             │
+│  AI 压测 10 用例        → 调 ai-eval-stress-test       │
+│  结果汇总               → /mnt/documents/system-qa-报告 │
+└──────────────────────────────────────────────┘
+```
+
+不会执行任何 INSERT/UPDATE/DELETE。AI 压测是只读的（不写库）。
+
+## 交付物
+
+放在 `/mnt/documents/`：
+
+- `system-qa-report.md` —— 人类可读总报告（每模块 ✅ / ⚠️ / ❌ + 证据 + 修复建议）
+- `system-qa-summary.csv` —— 模块 / 检查项 / 状态 / 数据 一行一项，便于归档
+- `ai-stress-test-result.csv` —— 10 个用例的 expected vs actual 明细
+
+## 技术细节（实现层）
+
+- 切回默认模式后，按上面顺序串行执行只读工具，每个模块结果暂存内存
+- AI 压测调用使用现有 admin 测试账号的 JWT（curl_edge_functions 自动注入）
+- 报告由 Python 脚本本地拼装（`/tmp/build_report.py`），不依赖外部依赖
+- 所有 SQL 加 `LIMIT` 防止超出 1000 行默认上限影响判断
+- 报告中所有时间戳统一用 `formatDepositDate` 同款 `YYYY-MM-DD HH:mm:ss` 格式，避免浏览器差异
+
+## 不在范围内
+
+- 不做前端 UI 截图回归（需要 browser 工具，成本高，未要求）
+- 不做性能压测 / 并发压测
+- 不修改任何代码或数据；如发现 bug 仅在报告中列出建议
 
