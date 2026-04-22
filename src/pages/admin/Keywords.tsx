@@ -19,6 +19,7 @@ import TableSkeleton from "@/components/TableSkeleton";
 import { writeAuditLog } from "@/lib/audit";
 import { useAuth } from "@/hooks/useAuth";
 import { normalizeKeyword } from "@/lib/keywords";
+import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 
 type Keyword = {
   id: string;
@@ -260,10 +261,10 @@ const KeywordsPage = () => {
                         {k.category ? <Badge variant="secondary">{k.category}</Badge> : "—"}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {k.source ?? "—"}
+                        {k.source ?? EMPTY_PLACEHOLDER}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                        {new Date(k.created_at).toLocaleDateString()}
+                        {formatDepositDate(k.created_at)}
                       </TableCell>
                       <TableCell>{k.usage_count}</TableCell>
                       <TableCell className="text-right">

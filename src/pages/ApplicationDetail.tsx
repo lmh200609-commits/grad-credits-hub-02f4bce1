@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { toast } from "@/hooks/use-toast";
 import { ArrowLeft, Check, X, FileDown, ImageIcon } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
+import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 
 type App = {
   id: string;
@@ -344,11 +345,11 @@ const ApplicationDetail = () => {
                       <tr key={k.id} className="border-b last:border-0">
                         <td className="py-2 pr-3 font-medium">{k.keyword}</td>
                         <td className="py-2 pr-3">
-                          {k.category ? <Badge variant="secondary">{k.category}</Badge> : <span className="text-muted-foreground">—</span>}
+                          {k.category ? <Badge variant="secondary">{k.category}</Badge> : <span className="text-muted-foreground">{EMPTY_PLACEHOLDER}</span>}
                         </td>
-                        <td className="py-2 pr-3 text-muted-foreground">{k.source ?? "—"}</td>
+                        <td className="py-2 pr-3 text-muted-foreground">{k.source ?? EMPTY_PLACEHOLDER}</td>
                         <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
-                          {new Date(k.created_at).toLocaleDateString()}
+                          {formatDepositDate(k.created_at)}
                         </td>
                         <td className="py-2 pr-3">{k.usage_count}</td>
                       </tr>
