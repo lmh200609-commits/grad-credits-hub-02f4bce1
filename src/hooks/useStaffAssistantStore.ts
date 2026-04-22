@@ -24,7 +24,6 @@ export const WELCOME: Msg = {
 
 type State = {
   open: boolean;
-  tab: string;
   messages: Msg[];
   input: string;
 };
@@ -32,24 +31,22 @@ type State = {
 const STORAGE_KEY = "staff-assistant-v1";
 const MAX_MESSAGES = 50;
 
-const loadPersisted = (): Pick<State, "messages" | "tab"> => {
-  if (typeof window === "undefined") return { messages: [WELCOME], tab: "quick" };
+const loadPersisted = (): Pick<State, "messages"> => {
+  if (typeof window === "undefined") return { messages: [WELCOME] };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { messages: [WELCOME], tab: "quick" };
+    if (!raw) return { messages: [WELCOME] };
     const parsed = JSON.parse(raw);
     const messages = Array.isArray(parsed?.messages) && parsed.messages.length > 0 ? parsed.messages : [WELCOME];
-    const tab = typeof parsed?.tab === "string" ? parsed.tab : "quick";
-    return { messages, tab };
+    return { messages };
   } catch {
-    return { messages: [WELCOME], tab: "quick" };
+    return { messages: [WELCOME] };
   }
 };
 
 const initial = loadPersisted();
 let state: State = {
   open: false,
-  tab: initial.tab,
   messages: initial.messages,
   input: "",
 };
@@ -62,7 +59,7 @@ const persist = () => {
     const trimmed = state.messages.slice(-MAX_MESSAGES);
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ messages: trimmed, tab: state.tab }),
+      JSON.stringify({ messages: trimmed }),
     );
   } catch {
     // ignore
@@ -86,7 +83,6 @@ export const useStaffAssistantStore = () => useSyncExternalStore(subscribe, getS
 
 export const staffAssistantActions = {
   setOpen: (open: boolean) => setState({ open }),
-  setTab: (tab: string) => setState({ tab }),
   setInput: (input: string) => setState({ input }),
   setMessages: (updater: Msg[] | ((prev: Msg[]) => Msg[])) => {
     const next = typeof updater === "function" ? (updater as (p: Msg[]) => Msg[])(state.messages) : updater;
