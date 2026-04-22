@@ -35,6 +35,14 @@ type Review = {
   id: string; action: string; decision: string; credit: number | null;
   confidence: number | null; note: string | null; created_at: string;
 };
+type KeywordRef = {
+  id: string;
+  keyword: string;
+  category: string | null;
+  source: string | null;
+  usage_count: number;
+  created_at: string;
+};
 
 const ApplicationDetail = () => {
   const { id } = useParams();
@@ -47,6 +55,7 @@ const ApplicationDetail = () => {
   const [credit, setCredit] = useState<number>(0);
   const [note, setNote] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [libraryRefs, setLibraryRefs] = useState<KeywordRef[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -70,6 +79,21 @@ const ApplicationDetail = () => {
         .from("application-files")
         .createSignedUrl((a as App).file_path!, 3600);
       setFileUrl(signed?.signedUrl ?? null);
+    }
+
+    // 加载关键词库中与本申请相关的条目（学生选择 + 自定义关键词命中），用于复核者确认可靠性
+    const allKw = Array.from(new Set([
+      ...((a as App).selected_keywords ?? []),
+      ...((a as App).custom_keywords ?? []),
+    ].map((k) => k.trim()).filter(Boolean)));
+    if (allKw.length > 0) {
+      const { data: kwData } = await supabase
+        .from("keywords")
+        .select("id, keyword, category, source, usage_count, created_at")
+        .in("keyword", allKw);
+      setLibraryRefs((kwData as KeywordRef[]) ?? []);
+    } else {
+      setLibraryRefs([]);
     }
   }, [id]);
   useEffect(() => { load(); }, [load]);
@@ -268,6 +292,47 @@ const ApplicationDetail = () => {
             )}
           </CardContent>
         </Card>
+
+        {isReviewer && libraryRefs.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">关键词库推荐</CardTitle>
+              <CardDescription>
+                本申请的关键词在关键词库中的沉淀来源与日期，便于确认可靠性
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="py-2 pr-3 text-left font-normal">关键词</th>
+                      <th className="py-2 pr-3 text-left font-normal">分类</th>
+                      <th className="py-2 pr-3 text-left font-normal">来源</th>
+                      <th className="py-2 pr-3 text-left font-normal whitespace-nowrap">沉淀日期</th>
+                      <th className="py-2 pr-3 text-left font-normal">使用次数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {libraryRefs.map((k) => (
+                      <tr key={k.id} className="border-b last:border-0">
+                        <td className="py-2 pr-3 font-medium">{k.keyword}</td>
+                        <td className="py-2 pr-3">
+                          {k.category ? <Badge variant="secondary">{k.category}</Badge> : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-muted-foreground">{k.source ?? "—"}</td>
+                        <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
+                          {new Date(k.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="py-2 pr-3">{k.usage_count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isReviewer && (
           app.ai_reasoning ||
