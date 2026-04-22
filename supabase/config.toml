@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.staff-ai-assistant]
 verify_jwt = false
+
+[functions.ai-eval-stress-test]
+verify_jwt = false
