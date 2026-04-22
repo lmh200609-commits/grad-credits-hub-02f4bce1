@@ -20,6 +20,11 @@ import { writeAuditLog } from "@/lib/audit";
 import { useAuth } from "@/hooks/useAuth";
 import { normalizeKeyword } from "@/lib/keywords";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { DateRange } from "react-day-picker";
 
 type Keyword = {
   id: string;
@@ -37,6 +42,7 @@ const KeywordsPage = () => {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [bulk, setBulk] = useState({ keywords: "", category: "", source: "" });
 
   const load = async () => {
@@ -58,14 +64,28 @@ const KeywordsPage = () => {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (k) =>
-        k.keyword.toLowerCase().includes(q) ||
-        (k.category ?? "").toLowerCase().includes(q) ||
-        (k.source ?? "").toLowerCase().includes(q),
-    );
-  }, [items, search]);
+    const fromTs = dateRange?.from ? new Date(dateRange.from.setHours(0, 0, 0, 0)).getTime() : null;
+    const toTs = dateRange?.to
+      ? new Date(new Date(dateRange.to).setHours(23, 59, 59, 999)).getTime()
+      : dateRange?.from
+        ? new Date(new Date(dateRange.from).setHours(23, 59, 59, 999)).getTime()
+        : null;
+    return items.filter((k) => {
+      if (q) {
+        const hit =
+          k.keyword.toLowerCase().includes(q) ||
+          (k.category ?? "").toLowerCase().includes(q) ||
+          (k.source ?? "").toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      if (fromTs !== null || toTs !== null) {
+        const ts = new Date(k.created_at).getTime();
+        if (fromTs !== null && ts < fromTs) return false;
+        if (toTs !== null && ts > toTs) return false;
+      }
+      return true;
+    });
+  }, [items, search, dateRange]);
 
   const save = async () => {
     const rawList = bulk.keywords
