@@ -214,12 +214,16 @@ const TeacherWorkbench = () => {
         supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
         supabase.from("applications").select("id,description,status,submitted_at").eq("status", "pending_review").order("submitted_at", { ascending: true }).limit(5),
         supabase.from("application_reviews").select("id", { count: "exact", head: true }).eq("reviewer_id", user.id).gte("created_at", todayStart.toISOString()),
-        supabase.from("application_reviews").select("decision").eq("reviewer_id", user.id).gte("created_at", weekStart.toISOString()),
+        supabase.from("application_reviews").select("application_id,decision").in("decision", ["approved", "rejected"]).gte("created_at", weekStart.toISOString()),
         supabase.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role", "student"),
       ]);
-      const weekRows = (weekRes.data ?? []) as { decision: string }[];
-      const approvedCount = weekRows.filter((r) => r.decision === "approved").length;
-      const rate = weekRows.length ? Math.round((approvedCount / weekRows.length) * 100) : 0;
+      // 按申请去重：一份申请可能有多条复核记录，只取最新的 decision
+      const weekRows = (weekRes.data ?? []) as { application_id: string; decision: string }[];
+      const latestByApp = new Map<string, string>();
+      for (const r of weekRows) latestByApp.set(r.application_id, r.decision);
+      const decisions = Array.from(latestByApp.values());
+      const approvedCount = decisions.filter((d) => d === "approved").length;
+      const rate = decisions.length ? Math.round((approvedCount / decisions.length) * 100) : 0;
       setCounts({
         pending: pendingRes.count ?? 0,
         todayDone: todayRes.count ?? 0,
