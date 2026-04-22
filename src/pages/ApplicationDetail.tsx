@@ -80,6 +80,21 @@ const ApplicationDetail = () => {
         .createSignedUrl((a as App).file_path!, 3600);
       setFileUrl(signed?.signedUrl ?? null);
     }
+
+    // 加载关键词库中与本申请相关的条目（学生选择 + 自定义关键词命中），用于复核者确认可靠性
+    const allKw = Array.from(new Set([
+      ...((a as App).selected_keywords ?? []),
+      ...((a as App).custom_keywords ?? []),
+    ].map((k) => k.trim()).filter(Boolean)));
+    if (allKw.length > 0) {
+      const { data: kwData } = await supabase
+        .from("keywords")
+        .select("id, keyword, category, source, usage_count, created_at")
+        .in("keyword", allKw);
+      setLibraryRefs((kwData as KeywordRef[]) ?? []);
+    } else {
+      setLibraryRefs([]);
+    }
   }, [id]);
   useEffect(() => { load(); }, [load]);
   useRealtimeTable("applications", load, { filter: id ? `id=eq.${id}` : undefined });
