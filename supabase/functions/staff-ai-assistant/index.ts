@@ -49,7 +49,9 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 2. 如果用户请求"查看 XX 档案"但姓名有多人匹配，先调用 find_student 拿到候选，让用户选择，不要擅自跳转。
 3. 如果用户请求与学分系统无关，礼貌拒绝并提醒可用功能。
 4. 回答简洁，不超过两句话；执行动作时直接调工具，不要冗长解释。
-5. 教师角色不要给出"管理员后台"建议；管理员角色可访问全部页面。`;
+5. 教师角色不要给出"管理员后台"建议；管理员角色可访问全部页面。
+6. 【严禁幻觉】凡涉及任何数量、人数、统计的提问（"多少人"、"几个"、"提交了多少"、"合格/不合格人数"、"通过/驳回数"等），必须先调用 query_stats（或对应工具如 list_failing_students）拿到真实数字，绝不允许凭对话上下文、记忆或推测给出数字。
+7. 如果用户问的统计指标不在上面 metric 列表中，回复"暂不支持该统计"，不要编造。`;
 
 const TOOLS = [
   {
@@ -97,7 +99,21 @@ const TOOLS = [
         properties: {
           metric: {
             type: "string",
-            enum: ["pending_review", "approved_week", "rejected_week", "total_students", "total_apps_month"],
+            enum: [
+              "pending_review",
+              "pending_ai",
+              "approved_week",
+              "rejected_week",
+              "total_students",
+              "total_apps_month",
+              "submitted_total",
+              "submitted_count",
+              "passed_students",
+              "failing_students",
+              "auto_approved_total",
+              "manual_approved_total",
+              "rejected_total",
+            ],
           },
         },
         required: ["metric"],
@@ -180,6 +196,57 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     }
     if (metric === "total_apps_month") {
       const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).gte("submitted_at", monthAgo.toISOString());
+      return { metric, value: count ?? 0 };
+    }
+    if (metric === "pending_ai") {
+      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_ai");
+      return { metric, value: count ?? 0 };
+    }
+    if (metric === "submitted_total") {
+      const { data } = await supabase.from("applications").select("student_id");
+      const set = new Set((data || []).map((r: any) => r.student_id));
+      return { metric, value: set.size, navigate_path: "/admin/users/students" };
+    }
+    if (metric === "submitted_count") {
+      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true });
+      return { metric, value: count ?? 0 };
+    }
+    if (metric === "passed_students" || metric === "failing_students") {
+      const threshold = 4;
+      const { data: roles } = await supabase.from("user_roles").select("user_id").eq("role", "student");
+      const ids = new Set((roles || []).map((r: any) => r.user_id));
+      const { data: apps } = await supabase
+        .from("applications")
+        .select("student_id, status, final_credit, ai_suggested_credit");
+      const credit = new Map<string, number>();
+      (apps || []).forEach((a: any) => {
+        if (!["approved", "auto_approved"].includes(a.status)) return;
+        const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
+        credit.set(a.student_id, (credit.get(a.student_id) ?? 0) + c);
+      });
+      const passing = Array.from(ids).filter((id: any) => (credit.get(id) ?? 0) >= threshold).length;
+      const failing = ids.size - passing;
+      const value = metric === "passed_students" ? passing : failing;
+      return {
+        metric,
+        value,
+        threshold,
+        navigate_path: `/admin/credits?passFilter=${metric === "passed_students" ? "pass" : "fail"}`,
+      };
+    }
+    if (metric === "auto_approved_total") {
+      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "auto_approved");
+      return { metric, value: count ?? 0 };
+    }
+    if (metric === "manual_approved_total") {
+      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "approved");
+      return { metric, value: count ?? 0 };
+    }
+    if (metric === "rejected_total") {
+      const { count } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["rejected", "rejected_by_ai"]);
       return { metric, value: count ?? 0 };
     }
     return { metric, value: 0 };
