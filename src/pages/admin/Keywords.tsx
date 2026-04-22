@@ -234,19 +234,72 @@ const KeywordsPage = () => {
         />
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-base">
               关键词列表（{filtered.length}
-              {search && ` / ${items.length}`}）
+              {(search || dateRange) && ` / ${items.length}`}）
             </CardTitle>
-            <div className="relative w-64 max-w-full">
-              <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索关键词 / 分类 / 来源"
-                className="pl-8"
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "justify-start text-left font-normal",
+                      !dateRange && "text-muted-foreground",
+                    )}
+                  >
+                    <CalendarIcon className="mr-1 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {formatDepositDate(dateRange.from)} ~ {formatDepositDate(dateRange.to)}
+                        </>
+                      ) : (
+                        <>{formatDepositDate(dateRange.from)} ~ 至今</>
+                      )
+                    ) : (
+                      <span>沉淀日期范围</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                    initialFocus
+                    className={cn("p-3 pointer-events-auto")}
+                  />
+                  <div className="flex items-center justify-end gap-2 border-t p-2">
+                    <Button variant="ghost" size="sm" onClick={() => setDateRange(undefined)}>
+                      清除
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {dateRange && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setDateRange(undefined)}
+                  aria-label="清除日期筛选"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+              <div className="relative w-64 max-w-full">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索关键词 / 分类 / 来源"
+                  className="pl-8"
+                />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
