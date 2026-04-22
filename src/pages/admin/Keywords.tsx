@@ -321,8 +321,12 @@ const KeywordsPage = () => {
                   <TableRow>
                     <TableCell colSpan={6}>
                       <EmptyState
-                        title={search ? "无匹配关键词" : "暂无关键词"}
-                        description={search ? "换个关键词试试" : "点击右上角新增第一批关键词"}
+                        title={search || dateRange ? "无匹配关键词" : "暂无关键词"}
+                        description={
+                          search || dateRange
+                            ? "调整搜索词或沉淀日期范围试试"
+                            : "点击右上角新增第一批关键词"
+                        }
                       />
                     </TableCell>
                   </TableRow>
