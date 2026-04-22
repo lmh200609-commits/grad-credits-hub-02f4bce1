@@ -4,8 +4,9 @@ import { useAuth } from "@/hooks/useAuth";
 
 type AppRole = "admin" | "teacher" | "student";
 
-const RoleRoute = ({ role, children }: { role: AppRole; children: ReactNode }) => {
+const RoleRoute = ({ role, children }: { role: AppRole | AppRole[]; children: ReactNode }) => {
   const { user, loading, hasRole } = useAuth();
+  const roles = Array.isArray(role) ? role : [role];
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -14,7 +15,7 @@ const RoleRoute = ({ role, children }: { role: AppRole; children: ReactNode }) =
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (!hasRole(role)) return <Navigate to="/" replace />;
+  if (!roles.some((r) => hasRole(r))) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
