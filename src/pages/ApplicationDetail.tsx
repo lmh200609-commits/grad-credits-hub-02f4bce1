@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
 import { toast } from "@/hooks/use-toast";
 import { ArrowLeft, Check, X, FileDown, ImageIcon } from "lucide-react";
+import { normalizeKeyword } from "@/lib/keywords";
 
 type App = {
   id: string;
@@ -175,24 +176,49 @@ const ApplicationDetail = () => {
       }
 
       // 自定义关键词沉淀到关键词库（已存在则累加使用次数，新词自动入库）
-      const customKws = (app.custom_keywords ?? [])
+      // 输入端按规范化形式去重（避免「ACM」「acm 」「ＡＣＭ」重复落库）
+      const customRaw = (app.custom_keywords ?? [])
         .map((k) => k.trim())
         .filter((k) => k && k.length <= 64);
+      const seenNorm = new Set<string>();
+      const customKws: string[] = [];
+      for (const k of customRaw) {
+        const n = normalizeKeyword(k);
+        if (!n || seenNorm.has(n)) continue;
+        seenNorm.add(n);
+        customKws.push(k);
+      }
       if (customKws.length > 0) {
-        const { data: existing } = await supabase
+        // 拉取库内全部关键词，按规范化形式比对（DB 唯一约束基于原文，无法覆盖大小写/空格差异）
+        const { data: allLib } = await supabase
           .from("keywords")
-          .select("id, keyword, usage_count")
-          .in("keyword", customKws);
-        const existingMap = new Map((existing ?? []).map((k: any) => [k.keyword, k]));
-        const toInsert = customKws
-          .filter((k) => !existingMap.has(k))
-          .map((k) => ({
-            keyword: k,
-            category: "学生申请沉淀",
-            source: `人工复核通过 · ${new Date().toISOString().slice(0, 10)}`,
-            usage_count: 1,
-            created_by: user!.id,
-          }));
+          .select("id, keyword, usage_count");
+        const libByNorm = new Map<string, { id: string; keyword: string; usage_count: number }>();
+        for (const r of (allLib ?? []) as any[]) {
+          libByNorm.set(normalizeKeyword(r.keyword), r);
+        }
+        const toInsert: Array<{
+          keyword: string;
+          category: string;
+          source: string;
+          usage_count: number;
+          created_by: string;
+        }> = [];
+        const toBump: typeof libByNorm extends Map<string, infer V> ? V[] : never = [] as any;
+        for (const k of customKws) {
+          const hit = libByNorm.get(normalizeKeyword(k));
+          if (hit) {
+            toBump.push(hit);
+          } else {
+            toInsert.push({
+              keyword: k,
+              category: "学生申请沉淀",
+              source: `人工复核通过 · ${new Date().toISOString().slice(0, 10)}`,
+              usage_count: 1,
+              created_by: user!.id,
+            });
+          }
+        }
         if (toInsert.length > 0) {
           await supabase.from("keywords").upsert(toInsert, {
             onConflict: "keyword",
@@ -200,7 +226,7 @@ const ApplicationDetail = () => {
           });
         }
         await Promise.all(
-          (existing ?? []).map((k: any) =>
+          toBump.map((k) =>
             supabase
               .from("keywords")
               .update({ usage_count: (k.usage_count ?? 0) + 1 })
