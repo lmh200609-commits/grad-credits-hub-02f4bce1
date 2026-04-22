@@ -1,63 +1,85 @@
 
 
-# 工作助手保持常驻 + 聊天记录持久化
+# 修复六项问题
 
-## 问题
+## 1. AI 助手数据调用不准（说"2 个"实际只有白雪 1 个）
 
-1. 管理员点击 AI 助手返回的「跳转 xxx」按钮或候选学生卡片后，路由切换导致 `StaffAiAssistant` 组件被卸载（或 state 重置），面板关闭。
-2. 重新打开助手时 `messages` 回到初始 `[WELCOME]`，历史对话丢失。
+**根因**：`staff-ai-assistant` Edge Function 的 `query_stats` 工具仅支持 `pending_review / approved_week / rejected_week / total_students / total_apps_month` 五个 metric，不存在「提交人数」「合格人数」「不合格人数」等指标。模型遇到这些问题时**编造数字**。
 
-## 根因
+**修复**：扩充 `query_stats` 的 metric 枚举：
+- `submitted_total` — 提交申请的去重学生数（`distinct student_id`，非申请数）
+- `submitted_count` — 申请总数
+- `passed_students` — 累计学分 ≥ 4 的学生数（合格）
+- `failing_students` — 累计学分 < 4 的学生数（不合格）
+- `auto_approved_total` — 系统初审通过申请数
+- `manual_approved_total` — 人工复核通过申请数
+- `rejected_total` — 驳回总数（含 rejected_by_ai + rejected）
+- `pending_ai` — 系统核验中数量
 
-- `StaffAiAssistant` 渲染在 `AppLayout` 内，路由切换时虽然 Layout 不卸载，但组件内 `open`、`messages`、`tab`、`input` 都是局部 `useState`，任何导致组件重挂载的情况都会清空。
-- 没有持久化层；即使组件不卸载，刷新页面也会丢。
+每个分支用真实 SQL 查询（COUNT / 聚合），并在系统提示词里**强制要求**：「凡涉及任何数量、人数、统计的提问，必须先调用 query_stats 工具，禁止凭对话上下文猜数字」。同时把可用 metric 列表写进 system prompt，模型遇到不在列表里的统计需求时回复"暂不支持该统计"而不是编。
 
-## 修复方案
+## 2. 管理员看不到学生提交材料的详细资料和图片
 
-将助手的 UI 状态与会话提升为**全局 + 持久化**：
+**根因**：`ApplicationDetail.tsx` 第 68-73 行用 `supabase.storage.from("application-files").createSignedUrl(file_path, 3600)` 拿签名 URL。当前 `application-files` 桶是私有桶，**没有 SELECT 策略允许 admin/teacher 读取学生上传的文件** → `createSignedUrl` 返回 null → 附件按钮不显示。同时学生填的 `custom_keywords`（自定义关键词）没渲染出来，也算"详情不全"。
 
-### 1. 新增 `src/hooks/useStaffAssistantStore.ts`
+**修复**：
+- 新建 storage RLS 策略：`admin` 和 `teacher` 角色可对 `application-files` 桶执行 SELECT（学生只能读自己的，已存在策略不动）
+- `ApplicationDetail.tsx`：在「基本信息」卡片中补充渲染 `custom_keywords`（学生自定义关键词）和文件名预览；图片类附件（jpg/png/jpeg/webp）直接 `<img>` 内嵌预览，PDF 仍走「查看附件」按钮
 
-用 Zustand（项目已用过类似轻量模式）或一个简单的自定义 store + `localStorage` 持久化。优先用**纯自定义实现**避免新增依赖：
-- 模块级 `let state` + `Set<listener>` + `useSyncExternalStore`
-- 字段：`open`、`tab`、`messages`、`input`
-- 写入时同步到 `localStorage`（key: `staff-assistant-v1`），仅持久化 `messages` 和 `tab`，不持久化 `open`（避免每次进系统就弹出）
-- 提供 `setOpen / setTab / setMessages / setInput / clearMessages` 方法
+## 3. 教师端看不到 AI 初审的结果
 
-### 2. 改造 `src/components/StaffAiAssistant.tsx`
+**根因**：`ApplicationDetail.tsx` 第 211 行「系统核验结果」卡片的渲染条件是 `app.ai_reasoning && isReviewer`。当 AI 初审跑完但未生成 `ai_reasoning`（部分边缘情况只写了 `ai_suggested_credit / ai_confidence / ai_matched_rule_id`），整张卡都不显示，教师就看不到任何 AI 结果。
 
-- 删除所有 `useState` 关于 `open / tab / messages / input`，改用 store hook
-- 在 header 增加「清空对话」按钮（垃圾桶图标），调用 `clearMessages()` 重置为 `[WELCOME]`
-- 顶部 X 按钮仅设置 `open=false`，不清空消息
+**修复**：把渲染条件放宽为 `isReviewer && (app.ai_reasoning || app.ai_suggested_credit != null || app.ai_matched_rule_id || app.ai_confidence != null || app.status === "rejected_by_ai" || app.status === "auto_approved")`，理由文本若空显示"系统未给出详细理由"。
 
-### 3. 确保跳转后助手不被卸载
+## 4. 工作助手「快捷指令」太靠下
 
-- `StaffAiAssistant` 已挂在 `AppLayout` 顶层（教师/管理员路由共用），路由切换 Layout 不卸载 → 组件实例保留
-- 配合 store 化后，即便某个角色路由切换导致 Layout 重渲染，状态也从 store 读取，`open` 维持 `true`
-- 验证：点击「跳转 /admin/credits」按钮后，`navigate()` 触发路由变化，`StaffAiAssistant` 仍保持 `open=true`、消息列表完整
+**根因**：`StaffAiAssistant.tsx` 第 215 行 `TabsContent value="quick"` 用 `flex-1 overflow-auto`，当面板高度有富余时 flex-1 占满空间但内容是 `mt-2 p-3 pt-0`，加上面板用 `min(560px, 100vh-6rem)` 在 611px 视口下被压到 ~530px，TabsContent 内部的 grid 没有 `items-start`/`content-start`，被居中拉伸。
 
-### 4. 容错
+**修复**：
+- TabsContent 用 `block`（去掉 flex），加 `data-[state=active]:block`
+- grid 容器追加 `content-start` 让卡片**贴顶排列**
+- 标题 "点击下方卡片即可一键执行" 行 margin 从 `mb-2` 改为 `mb-3`，整块从 tab 栏正下方开始
 
-- `localStorage` 解析失败时回退到 `[WELCOME]`
-- 限制持久化消息条数 ≤ 50，避免无限增长
-- SSR / 首次加载时 `typeof window === "undefined"` 守卫
+## 5. 三端侧边栏太宽
+
+**根因**：`src/components/ui/sidebar.tsx` 第 17 行 `SIDEBAR_WIDTH = "16rem"` (256px)，在 883px 视口下占了近 30%。
+
+**修复**：改为 `SIDEBAR_WIDTH = "12rem"` (192px)，移动端 `SIDEBAR_WIDTH_MOBILE` 保持 `18rem`（移动端用 Sheet 抽屉，宽点更易点）。导航文案最长「批量导入账号」5 个汉字，12rem 完全够。
+
+## 6. 数据库变更（仅一项）
+
+新建 migration：为 `storage.objects` 表 `application-files` bucket 添加 admin/teacher SELECT 策略。
+
+```sql
+CREATE POLICY "Staff can read application files"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'application-files'
+  AND (has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'teacher'::app_role))
+);
+```
 
 ## 文件改动
 
-**新增**
-- `src/hooks/useStaffAssistantStore.ts` — 全局 store + localStorage 持久化
-
 **修改**
-- `src/components/StaffAiAssistant.tsx` — 改用 store、添加「清空对话」按钮
+- `supabase/functions/staff-ai-assistant/index.ts` — 扩充 metric、强化 prompt 防幻觉
+- `src/pages/ApplicationDetail.tsx` — 放宽 AI 卡片显示条件、补充自定义关键词、图片内嵌预览
+- `src/components/StaffAiAssistant.tsx` — 快捷指令 TabsContent 贴顶布局
+- `src/components/ui/sidebar.tsx` — `SIDEBAR_WIDTH` 16rem → 12rem
+
+**新增**
+- `supabase/migrations/<新>.sql` — storage admin/teacher SELECT 策略
 
 **不动**
-- `AppLayout.tsx`、Edge Function、其他页面
+- 其他页面、edge function 鉴权、表结构
 
 ## 验收
 
-- 管理员与助手对话 → 点击「跳转 /admin/review」→ 路由切到复核中心，**助手面板仍保持打开**，对话记录完整
-- 手动点击 X 关闭后再打开 → 历史对话仍在
-- 刷新整个页面 → 对话记录从 localStorage 恢复
-- 点击 header「清空对话」→ 回到欢迎语
-- 任何场景下助手不会自动关闭，只能由用户点击 X
+- 管理员/教师打开任一学生的申请详情 → 能看到学生说明、自定义关键词、AI 系统核验结果（即使无理由文本也显示卡片）、附件图片直接内嵌预览
+- 助手问「有多少学生提交了材料」→ 回答"提交申请的学生共 1 人"（白雪），其他统计同样准确
+- 助手问「不合格学生有多少」「初审通过多少」「复核通过多少」「本周驳回多少」→ 全部走 query_stats，数字真实
+- 助手面板打开 → 「快捷指令」6 个卡片紧贴在 tab 栏下方
+- 三端侧边栏宽度肉眼变窄约 25%，主内容区更宽
 
