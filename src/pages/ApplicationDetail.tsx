@@ -293,6 +293,47 @@ const ApplicationDetail = () => {
           </CardContent>
         </Card>
 
+        {isReviewer && libraryRefs.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">关键词库推荐</CardTitle>
+              <CardDescription>
+                本申请的关键词在关键词库中的沉淀来源与日期，便于确认可靠性
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="py-2 pr-3 text-left font-normal">关键词</th>
+                      <th className="py-2 pr-3 text-left font-normal">分类</th>
+                      <th className="py-2 pr-3 text-left font-normal">来源</th>
+                      <th className="py-2 pr-3 text-left font-normal whitespace-nowrap">沉淀日期</th>
+                      <th className="py-2 pr-3 text-left font-normal">使用次数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {libraryRefs.map((k) => (
+                      <tr key={k.id} className="border-b last:border-0">
+                        <td className="py-2 pr-3 font-medium">{k.keyword}</td>
+                        <td className="py-2 pr-3">
+                          {k.category ? <Badge variant="secondary">{k.category}</Badge> : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-muted-foreground">{k.source ?? "—"}</td>
+                        <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
+                          {new Date(k.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="py-2 pr-3">{k.usage_count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {isReviewer && (
           app.ai_reasoning ||
           app.ai_suggested_credit != null ||
