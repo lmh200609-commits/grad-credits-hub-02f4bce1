@@ -18,6 +18,7 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { writeAuditLog } from "@/lib/audit";
 import { useAuth } from "@/hooks/useAuth";
+import { normalizeKeyword } from "@/lib/keywords";
 
 type Keyword = {
   id: string;
@@ -66,15 +67,43 @@ const KeywordsPage = () => {
   }, [items, search]);
 
   const save = async () => {
-    const list = bulk.keywords
+    const rawList = bulk.keywords
       .split(/[,，\s\n]+/)
       .map((s) => s.trim())
       .filter(Boolean);
-    if (list.length === 0) {
+    if (rawList.length === 0) {
       return toast({ title: "请至少输入一个关键词", variant: "destructive" });
     }
-    const payload = list.map((k) => ({
-      keyword: k,
+
+    // 1) 输入内部按规范化形式去重，保留首个原始形态
+    const seenLocal = new Set<string>();
+    const localUnique: string[] = [];
+    for (const k of rawList) {
+      const norm = normalizeKeyword(k);
+      if (!norm || seenLocal.has(norm)) continue;
+      seenLocal.add(norm);
+      localUnique.push(k);
+    }
+
+    // 2) 与库内已有关键词按规范化形式比对，剔除重复
+    const { data: existingAll } = await supabase
+      .from("keywords")
+      .select("keyword");
+    const existingNormSet = new Set(
+      ((existingAll as { keyword: string }[]) ?? []).map((r) => normalizeKeyword(r.keyword)),
+    );
+    const finalList = localUnique.filter((k) => !existingNormSet.has(normalizeKeyword(k)));
+    const skippedDup = rawList.length - finalList.length;
+
+    if (finalList.length === 0) {
+      return toast({
+        title: "全部为重复关键词",
+        description: `已忽略 ${skippedDup} 个（按规范化大小写/空格/标点比对）`,
+      });
+    }
+
+    const payload = finalList.map((k) => ({
+      keyword: k.trim(),
       category: bulk.category.trim() || null,
       source: bulk.source.trim() || null,
       created_by: user?.id ?? null,
@@ -91,13 +120,18 @@ const KeywordsPage = () => {
       action: "keyword_create",
       target_ids: inserted.map((i) => i.id),
       target_labels: inserted.map((i) => i.keyword),
-      affected_count: list.length,
+      affected_count: rawList.length,
       success_count: inserted.length,
-      metadata: { category: bulk.category || null, source: bulk.source || null, attempted: list.length },
+      metadata: {
+        category: bulk.category || null,
+        source: bulk.source || null,
+        attempted: rawList.length,
+        skipped_duplicates: skippedDup,
+      },
     });
     toast({
       title: "已保存",
-      description: `新增 ${inserted.length} 个，跳过重复 ${list.length - inserted.length} 个`,
+      description: `新增 ${inserted.length} 个，跳过重复 ${rawList.length - inserted.length} 个（含规范化去重）`,
     });
     setBulk({ keywords: "", category: "", source: "" });
     setOpen(false);
