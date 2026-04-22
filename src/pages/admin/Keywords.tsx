@@ -201,16 +201,17 @@ const KeywordsPage = () => {
                   <TableHead>关键词</TableHead>
                   <TableHead>分类</TableHead>
                   <TableHead>来源</TableHead>
+                  <TableHead>沉淀日期</TableHead>
                   <TableHead>使用次数</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableSkeleton rows={5} cols={5} />
+                  <TableSkeleton rows={5} cols={6} />
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5}>
+                    <TableCell colSpan={6}>
                       <EmptyState
                         title={search ? "无匹配关键词" : "暂无关键词"}
                         description={search ? "换个关键词试试" : "点击右上角新增第一批关键词"}
@@ -226,6 +227,9 @@ const KeywordsPage = () => {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {k.source ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {new Date(k.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>{k.usage_count}</TableCell>
                       <TableCell className="text-right">
