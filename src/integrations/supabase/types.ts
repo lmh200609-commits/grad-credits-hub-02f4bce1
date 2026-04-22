@@ -228,6 +228,42 @@ export type Database = {
           },
         ]
       }
+      keywords: {
+        Row: {
+          active: boolean
+          category: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          keyword: string
+          source: string | null
+          updated_at: string
+          usage_count: number
+        }
+        Insert: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          keyword: string
+          source?: string | null
+          updated_at?: string
+          usage_count?: number
+        }
+        Update: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          keyword?: string
+          source?: string | null
+          updated_at?: string
+          usage_count?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           class_name: string | null

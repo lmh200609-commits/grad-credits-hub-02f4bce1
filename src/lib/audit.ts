@@ -5,7 +5,9 @@ export type AuditAction =
   | "role_change"
   | "rule_create"
   | "rule_update"
-  | "rule_delete";
+  | "rule_delete"
+  | "keyword_create"
+  | "keyword_delete";
 
 export type AuditPayload = {
   action: AuditAction;
