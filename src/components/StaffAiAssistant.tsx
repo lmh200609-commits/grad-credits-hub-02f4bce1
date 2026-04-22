@@ -33,6 +33,7 @@ const StaffAiAssistant = () => {
   const { open, tab, messages, input } = useStaffAssistantStore();
   const { setOpen, setTab, setMessages, setInput, clearMessages } = staffAssistantActions;
   const [loading, setLoading] = useState(false);
+  const [activeQuick, setActiveQuick] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,9 +52,13 @@ const StaffAiAssistant = () => {
     setInput("");
     try {
       const history = next.filter((m) => m.content !== WELCOME.content).map((m) => ({ role: m.role, content: m.content }));
-      const { data, error } = await supabase.functions.invoke("staff-ai-assistant", {
+      const invokePromise = supabase.functions.invoke("staff-ai-assistant", {
         body: { messages: history, role },
       });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("请求超时（30 秒），请检查网络后重试")), 30000),
+      );
+      const { data, error } = (await Promise.race([invokePromise, timeoutPromise])) as Awaited<typeof invokePromise>;
       if (error) throw error;
       const d = data as any;
       const assistantMsg: Msg = {
@@ -71,17 +76,24 @@ const StaffAiAssistant = () => {
         }, 400);
       }
     } catch (e: any) {
+      const isTimeout = /超时|timeout/i.test(e?.message || "");
       toast({
-        title: "助手暂时不可用",
+        title: isTimeout ? "请求超时" : "助手暂时不可用",
         description: e?.message || "请稍后再试",
         variant: "destructive",
       });
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "抱歉，服务暂时不可用，请稍后再试。" },
+        {
+          role: "assistant",
+          content: isTimeout
+            ? "⚠️ 请求超时，可能是网络较慢或服务繁忙。请稍后重试。"
+            : `⚠️ 服务暂时不可用：${e?.message || "未知错误"}。请稍后重试。`,
+        },
       ]);
     } finally {
       setLoading(false);
+      setActiveQuick(null);
     }
   };
 
@@ -221,23 +233,36 @@ const StaffAiAssistant = () => {
           </div>
           <ScrollArea className="flex-1">
             <div className="grid grid-cols-1 content-start gap-2 px-3 pb-3">
-            {QUICK_ACTIONS.map((q) => (
-              <button
-                key={q.label}
-                onClick={() => sendMessage(q.prompt)}
-                disabled={loading}
-                className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm disabled:opacity-50"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Zap className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{q.label}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">{q.prompt}</div>
-                </div>
-                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </button>
-            ))}
+            {QUICK_ACTIONS.map((q) => {
+              const isActive = activeQuick === q.label;
+              return (
+                <button
+                  key={q.label}
+                  onClick={() => {
+                    if (loading) return;
+                    setActiveQuick(q.label);
+                    sendMessage(q.prompt);
+                  }}
+                  disabled={loading}
+                  aria-busy={isActive}
+                  className="group flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition hover:border-primary hover:bg-muted/40 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <div className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
+                    isActive ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary",
+                  )}>
+                    {isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium">{q.label}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      {isActive ? "执行中…" : loading ? "请等待当前请求完成" : q.prompt}
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                </button>
+              );
+            })}
             </div>
           </ScrollArea>
         </TabsContent>
