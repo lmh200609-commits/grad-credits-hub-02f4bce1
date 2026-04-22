@@ -1,10 +1,8 @@
 import { useRef, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, X, Send, Loader2, Zap, MessageSquare, ArrowRight, Trash2 } from "lucide-react";
+import { Sparkles, X, Send, Loader2, ArrowRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -17,36 +15,27 @@ import {
   type Msg,
 } from "@/hooks/useStaffAssistantStore";
 
-const QUICK_ACTIONS: { label: string; prompt: string }[] = [
-  { label: "待我审核", prompt: "打开复核中心，列出待复核的申请" },
-  { label: "不合格学生", prompt: "列出累计学分不合格的学生" },
-  { label: "数据看板", prompt: "打开数据看板" },
-  { label: "查学生档案", prompt: "查找学生档案" },
-  { label: "学分排名", prompt: "打开学分排名页面" },
-  { label: "本月新提交", prompt: "本月一共有多少新提交的申请" },
-];
-
 const StaffAiAssistant = () => {
   const { hasRole } = useAuth();
   const role = hasRole("admin") ? "admin" : "teacher";
   const navigate = useNavigate();
-  const { open, tab, messages, input } = useStaffAssistantStore();
-  const { setOpen, setTab, setMessages, setInput, clearMessages } = staffAssistantActions;
+  const { open, messages, input } = useStaffAssistantStore();
+  const { setOpen, setMessages, setInput, clearMessages } = staffAssistantActions;
   const [loading, setLoading] = useState(false);
-  const [activeQuick, setActiveQuick] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    const el = scrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [messages, loading]);
 
   const sendMessage = async (text: string) => {
     const t = text.trim();
     if (!t || loading) return;
     setLoading(true);
-    setTab("chat");
     const next: Msg[] = [...messages, { role: "user", content: t }];
     setMessages(next);
     setInput("");
