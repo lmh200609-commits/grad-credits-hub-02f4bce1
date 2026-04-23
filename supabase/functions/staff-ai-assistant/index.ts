@@ -265,6 +265,61 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
         .in("status", ["rejected", "rejected_by_ai"]);
       return { metric, value: count ?? 0 };
     }
+    if (metric === "rules_overview") {
+      const { data: rules } = await supabase
+        .from("rules")
+        .select("category,level,identity,active")
+        .eq("active", true);
+      const byCategory: Record<string, number> = {};
+      const byLevel: Record<string, number> = {};
+      const byIdentity: Record<string, number> = {};
+      (rules || []).forEach((r: any) => {
+        const c = (r.category || "未分类").trim() || "未分类";
+        const l = (r.level || "未指定").trim() || "未指定";
+        const id = (r.identity || "未指定").trim() || "未指定";
+        byCategory[c] = (byCategory[c] || 0) + 1;
+        byLevel[l] = (byLevel[l] || 0) + 1;
+        byIdentity[id] = (byIdentity[id] || 0) + 1;
+      });
+      return {
+        metric,
+        value: rules?.length ?? 0,
+        category_count: Object.keys(byCategory).length,
+        by_category: byCategory,
+        by_level: byLevel,
+        by_identity: byIdentity,
+        navigate_path: "/admin/rules",
+      };
+    }
+    if (metric === "cases_overview") {
+      const { data: cases } = await supabase.from("cases").select("rule_id");
+      const ruleIds = new Set((cases || []).map((c: any) => c.rule_id).filter(Boolean));
+      return {
+        metric,
+        value: cases?.length ?? 0,
+        linked_rule_count: ruleIds.size,
+        navigate_path: "/admin/cases",
+      };
+    }
+    if (metric === "keywords_overview") {
+      const { data: kws } = await supabase.from("keywords").select("category,active");
+      const total = kws?.length ?? 0;
+      let active = 0;
+      const byCategory: Record<string, number> = {};
+      (kws || []).forEach((k: any) => {
+        if (k.active) active++;
+        const c = (k.category || "未分类").trim() || "未分类";
+        byCategory[c] = (byCategory[c] || 0) + 1;
+      });
+      return {
+        metric,
+        value: total,
+        active,
+        inactive: total - active,
+        by_category: byCategory,
+        navigate_path: "/admin/keywords",
+      };
+    }
     return { metric, value: 0 };
   }
 
