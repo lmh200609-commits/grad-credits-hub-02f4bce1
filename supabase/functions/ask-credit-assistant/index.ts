@@ -10,10 +10,12 @@ type Msg = { role: "user" | "assistant" | "system"; content: string };
 const SYSTEM_PROMPT = `你是「学分认定规则问答助手」，仅服务于学生关于学分认定规则的咨询。
 
 【严格行为约束】
-1. 你只能依据下方「检索到的规则」和「相关案例」作答，禁止编造任何规则、学分数、级别、条件。
-2. 若提供的规则/案例不足以回答问题，必须明确说"无法判断"，并引导用户补充关键信息（如证书全称、级别、获奖等级、参与角色、是否第一作者/参赛者等）。
+1. 你只能依据下方「检索到的规则」「相关案例」「证书类型字典」「我的学分汇总」作答，禁止编造任何规则、学分数、级别、条件、申请记录。
+2. 若提供的资料不足以回答问题，必须明确说"无法判断"或"数据库中暂无相关记录"，并引导用户补充关键信息（如证书全称、级别、获奖等级、参与角色等）。
 3. 你不是审批员，不做最终学分判定。回答中可以说"建议参考 X 学分"，但禁止使用"批准/通过/已认定"等终审措辞。
 4. 拒绝闲聊和与学分认定无关的问题，统一回复："我只能回答学分认定相关问题。"
+5. 涉及"我的"申请/学分明细时，仅可基于下方「我的学分汇总」段落作答；该段落为空时回复"暂无您的申请记录"。绝不编造申请编号、AI 结论、教师评语、学分数。
+6. 严禁泄露任何其他学生的信息。如果用户询问他人，明确拒绝。
 
 【输出格式（必须严格遵守，三段式）】
 结论：xxx
@@ -24,6 +26,13 @@ const SYSTEM_PROMPT = `你是「学分认定规则问答助手」，仅服务于
 
 function tokenize(s: string): string[] {
   return (s || "").toLowerCase().match(/[\u4e00-\u9fa5]|[a-z0-9]+/g) || [];
+}
+
+// 是否在询问"我的"个人数据（学分汇总/申请历史）
+function isPersonalQuery(q: string): boolean {
+  const s = (q || "").toLowerCase();
+  const personal = ["我的", "我累计", "我提交", "我之前", "我现在", "我已经", "我有多少", "我多少", "我的学分", "我的申请", "我的记录"];
+  return personal.some((k) => s.includes(k));
 }
 
 // 识别"统计/盘点/总览"类问题：用户问规则/案例/佐证的数量、种类、有哪些类别等
@@ -108,6 +117,51 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // —— 识别学生身份（用 JWT），仅用于"我的"类问题 ——
+    let myUserId: string | null = null;
+    let myProfile: any = null;
+    let mySummary = "";
+    const authHeader = req.headers.get("Authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      try {
+        const userClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_ANON_KEY")!,
+          { global: { headers: { Authorization: authHeader } } },
+        );
+        const { data: claims } = await userClient.auth.getClaims(token);
+        myUserId = claims?.claims?.sub ?? null;
+      } catch (_) { myUserId = null; }
+    }
+
+    if (myUserId && isPersonalQuery(query)) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, student_no, department, class_name")
+        .eq("user_id", myUserId)
+        .maybeSingle();
+      myProfile = prof || null;
+
+      const { data: rows } = await supabase
+        .from("submission_summary")
+        .select("application_id, status, description, submitted_at, ai_confidence, ai_suggested_credit, ai_reasoning, final_credit, reviewer_name, final_review_note, reviewed_at")
+        .eq("student_id", myUserId)
+        .order("submitted_at", { ascending: false })
+        .limit(20);
+
+      let totalCredit = 0;
+      (rows || []).forEach((r: any) => {
+        if (["approved", "auto_approved"].includes(r.status)) {
+          totalCredit += Number(r.final_credit ?? r.ai_suggested_credit ?? 0);
+        }
+      });
+      const lines = (rows || []).map((r: any, i: number) =>
+        `【申请${i + 1}】${(r.description || "").slice(0, 40)}\n  状态：${r.status} | 提交时间：${(r.submitted_at || "").slice(0, 10)}\n  AI 初审：建议${r.ai_suggested_credit ?? "-"}学分（置信度 ${r.ai_confidence ?? "-"}）｜理由：${(r.ai_reasoning || "-").slice(0, 80)}\n  教师复核：${r.reviewer_name || "-"} 给出${r.final_credit ?? "-"}学分｜备注：${(r.final_review_note || "-").slice(0, 80)}`
+      ).join("\n\n");
+      mySummary = `===== 我的学分汇总 =====\n姓名：${myProfile?.full_name ?? "-"} | 学号：${myProfile?.student_no ?? "-"} | 累计已认定学分：${totalCredit}\n申请总数：${rows?.length ?? 0}\n${lines || "（暂无申请记录）"}`;
+    }
+
     // RAG: load all active rules, score in memory
     const { data: allRules } = await supabase
       .from("rules")
@@ -136,7 +190,7 @@ Deno.serve(async (req) => {
       .slice(0, 8)
       .map((x) => x.r);
 
-    if (scored.length === 0) {
+    if (scored.length === 0 && !mySummary) {
       return new Response(JSON.stringify({
         answer: "结论：未找到相关认定规则，无法回答。\n依据：知识库中暂无与您问题匹配的规则。\n补充：请补充关键信息后再试，例如：成果/证书全称、级别（校级/省级/国家级/国际级）、获奖等级、您的参与角色（第一作者/团队成员等）。",
         matched_rules: [],
@@ -145,11 +199,13 @@ Deno.serve(async (req) => {
     }
 
     const ruleIds = scored.map((r) => r.id);
-    const { data: cases } = await supabase
-      .from("cases")
-      .select("title,summary,awarded_credit,notes,rule_id")
-      .in("rule_id", ruleIds)
-      .limit(5);
+    const { data: cases } = ruleIds.length
+      ? await supabase
+          .from("cases")
+          .select("title,summary,awarded_credit,notes,rule_id")
+          .in("rule_id", ruleIds)
+          .limit(5)
+      : { data: [] as any[] };
 
     const rulesText = scored.map((r, i) =>
       `【规则${i + 1}】${r.name}\n  类别：${r.category || "-"} | 身份：${r.identity || "-"} | 级别：${r.level || "-"} | 获奖等级：${r.achievement || "-"} | 项目：${r.project || "-"}\n  学分：${r.credit}\n  关键词：${(r.keywords || []).join("、") || "-"}\n  说明：${r.description || "-"}`
@@ -164,6 +220,7 @@ Deno.serve(async (req) => {
     const fullMessages: Msg[] = [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "system", content: ragContext },
+      ...(mySummary ? [{ role: "system" as const, content: mySummary }] : []),
       ...messages.slice(-20),
     ];
 
