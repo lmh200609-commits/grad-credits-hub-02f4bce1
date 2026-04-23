@@ -222,7 +222,7 @@ const TeacherWorkbench = () => {
         .select("full_name")
         .eq("user_id", user.id)
         .maybeSingle();
-      setDisplayName(prof?.full_name?.trim() || account);
+      setDisplayName(resolveDisplayName(prof, account));
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
       const [pendingRes, queueRes, todayRes, weekRes, studentsRes] = await Promise.all([
