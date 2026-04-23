@@ -1,82 +1,89 @@
 
 
-# 系统功能与数据库同步全面回归测试方案
+# 计划：三张新表 + 三端 AI 助手接入
 
-我将以**只读探查 + 真实接口压测**的方式，对当前系统的所有核心模块和数据库同步状态做一次完整体检，最后输出一份可下载的测试报告（Markdown + CSV），不会修改任何业务数据。
+## 一、数据库改动
 
-## 测试范围（覆盖现有全部模块）
+### 1. `certificate_types`（证书类型字典，自动汇总，只读）
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | uuid PK | |
+| name | text unique | 证书/成果类型，如「英语六级」「SCI论文」「计算机高级」 |
+| category | text | 来自 rules.category（如 论文/竞赛/英语/职业证书）|
+| level | text | 级别，如 国家级/省级/六级/高级 |
+| typical_credit | numeric | 该类型在 rules 中的典型学分 |
+| source_rule_ids | uuid[] | 关联的 rules.id |
+| source_case_ids | uuid[] | 关联的 cases.id |
+| keywords | text[] | 命中关键词 |
+| occurrence_count | int | 在 cases 中出现次数 |
+| last_synced_at | timestamptz | |
 
-1. **数据库结构与一致性**
-   - 8 张业务表（profiles / user_roles / applications / application_reviews / rules / keywords / cases / audit_logs）行数、最近写入时间、孤儿数据
-   - RLS 策略覆盖度（每张表 SELECT/INSERT/UPDATE/DELETE 是否齐全）
-   - Supabase linter 安全告警
+- RLS：所有 authenticated 可 SELECT，仅 admin 可 INSERT/UPDATE/DELETE。
+- 通过函数 `refresh_certificate_types()`（SECURITY DEFINER）扫描 `rules + cases + keywords`，按 (category, level, name) 去重写入。一次性首次填充，后续每天/手动刷新。
 
-2. **认证与角色**
-   - 三类账号登录（admin / teacher / student 测试账号）
-   - `has_role` 函数对越权调用的拦截
-   - 角色路由（RoleRoute）实际跳转
+### 2. `profiles` 字段扩展（不另建学生信息表）
+为 `profiles` 增加：`id_card text`、`gender text`、`enrollment_year int`、`political_status text`、`birth_date date`、`address text`、`emergency_contact text`、`emergency_phone text`。
+- 密码继续由 `auth.users` 管理，**绝不进库**。
+- RLS 沿用现有策略（学生看自己、教师/管理员可看全部）。
+- 新增字段 `id_card` 设置为 admin/teacher/本人可读，避免横向越权。
 
-3. **学生端**
-   - Apply 提交（关键词匹配 + 自定义关键词归一化）
-   - MyApplications 列表 / 详情可见性
-   - 申请人工复核流程触发
+### 3. `submission_records`（材料提交流水表）
+每次「提交 / AI 初审 / 教师复核 / 补交 / 撤回」各一条事件记录。
+| 字段 | 说明 |
+|---|---|
+| id, application_id, student_id, student_no（冗余便于检索）|
+| event_type | enum: submitted / ai_reviewed / manual_reviewed / resubmitted / withdrawn |
+| actor_id, actor_role, actor_name |
+| ai_decision, ai_confidence, ai_suggested_credit, ai_matched_rule_id, ai_reasoning |
+| review_decision, review_credit, review_note, matched_rule_id |
+| file_path, description_snapshot, keywords_snapshot |
+| created_at |
 
-4. **教师端**
-   - Students 列表与 StudentDetail 数据加载
-   - 复核操作写入 `application_reviews` 并回写 `applications.status`
+- RLS：学生只能 SELECT 自己；teacher/admin 可 SELECT 全部；只允许 service_role 写入。
+- 由 edge function（evaluate-application、复核 API）写入；同时建 `applications` 的 AFTER INSERT/UPDATE 触发器自动补流水，保证历史完整。
 
-5. **管理员端**
-   - Dashboard 统计、ReviewHub、Cases、Credits
-   - Rules / Keywords CRUD（含日期范围筛选、归一化去重）
-   - UsersManage、ImportUsers、AuditLogs
-   - **AI 初审压测**（10 用例）—— 直接调用 `ai-eval-stress-test` 取实际通过率
-   - AiAssistant / StaffAiAssistant 边缘函数可用性
+### 4. `submission_summary`（材料汇总视图）
+`CREATE VIEW`，每份 application 一行，关联 profiles + 最新一条 AI 流水 + 最新一条复核流水：
+`student_no, full_name, department, application_id, status, submitted_at, ai_decision, ai_confidence, ai_suggested_credit, ai_reasoning, final_credit, reviewer_name, review_note, reviewed_at, file_path`。AI 助手优先查这张视图。
 
-6. **Edge Functions 健康检查**
-   - 11 个函数逐一探活：bootstrap-admin / import-users / evaluate-application / reset-password / dev-seed / ai-parse-roster / ask-credit-assistant / ai-explain-import / staff-ai-assistant / ai-eval-stress-test / audit-log
-   - 调用次数、平均耗时、最近 24h 错误率（来自 analytics_query）
+## 二、AI 助手接入
 
-7. **Realtime / 同步**
-   - `useRealtimeTable` 在 applications / keywords 上的订阅是否成功（通过 edge logs 验证 channel）
-   - keywords.usage_count 在审批通过后是否正确递增
+### A. 教师/管理员助手 `staff-ai-assistant` 新增 4 个工具
+1. `student_full_profile(query)` — 通过学号/姓名定位学生，返回 profiles 全字段 + 累计学分 + 申请数。
+2. `student_submission_history(student_no, limit?)` — 从 `submission_summary` 拉该生全部申请，含 AI 初审结论与教师复核结论。
+3. `submission_timeline(application_id)` — 从 `submission_records` 拉单份申请的完整时间线。
+4. `certificate_type_lookup(keyword)` — 在 `certificate_types` 检索匹配的证书类型 + 典型学分 + 关联规则。
 
-8. **存储**
-   - `application-files` bucket 中文件与 `applications.file_path` 的引用一致性（孤儿文件 / 失效引用）
+System Prompt 追加约束："凡涉及学生个人信息、提交记录、复核记录、证书类型，必须先调用对应工具，禁止凭记忆回答；找不到就回答'数据库中暂无该信息'。"
 
-## 测试方法
+### B. 学生助手 `ask-credit-assistant` 扩展
+- 默认：继续 RAG 公共规则知识（rules + rule_library + cases + keywords + certificate_types）。
+- 新增工具/分支：识别"我的"类问题（"我累计多少学分"/"我之前那份…如何"），通过 JWT 中 `auth.uid()` 调用 `submission_summary` 仅过滤 `student_id = 当前用户`。
+- System Prompt 强约束：禁止访问其他学生数据；非学分相关问题继续拒绝。
+
+### C. 安全
+- 学生端 edge function 改为 `verify_jwt = true` 或在代码里强制校验 JWT 并使用 `auth.uid()`；查询 `submission_summary` 始终带 `student_id = auth.uid()` 过滤。
+- 教师端继续 service_role，但由前端确保只在 teacher/admin 角色处展示。
+
+## 三、技术细节
 
 ```text
-┌──────────────────────────────────────────────┐
-│  只读 SQL 抽样           → supabase--read_query        │
-│  Edge Function 探活      → supabase--curl_edge_functions│
-│  日志 / 错误率          → supabase--analytics_query    │
-│  RLS / 安全             → supabase--linter             │
-│  AI 压测 10 用例        → 调 ai-eval-stress-test       │
-│  结果汇总               → /mnt/documents/system-qa-报告 │
-└──────────────────────────────────────────────┘
+rules ─┐
+cases ─┼──(refresh fn)──> certificate_types ──┐
+keywords ─┘                                     │
+                                                ▼
+applications ──(trigger)──> submission_records ──> submission_summary (view)
+profiles (扩展实名字段)                          ▲
+                                                │
+                       ┌────────────────────────┴────────────────────┐
+              staff-ai-assistant                              ask-credit-assistant
+        (4 个新工具，全表可读)                          (公共知识 + 自己的数据)
 ```
 
-不会执行任何 INSERT/UPDATE/DELETE。AI 压测是只读的（不写库）。
+迁移文件：1 个 schema migration（建表/视图/触发器/函数/RLS）+ 1 个 data 写入（首次 `refresh_certificate_types()`）。
+代码改动：`supabase/functions/staff-ai-assistant/index.ts`、`supabase/functions/ask-credit-assistant/index.ts`、`supabase/functions/evaluate-application/index.ts`（写入流水）、`src/integrations/supabase/types.ts` 自动重生成。
 
-## 交付物
+## 四、用户需要确认
 
-放在 `/mnt/documents/`：
-
-- `system-qa-report.md` —— 人类可读总报告（每模块 ✅ / ⚠️ / ❌ + 证据 + 修复建议）
-- `system-qa-summary.csv` —— 模块 / 检查项 / 状态 / 数据 一行一项，便于归档
-- `ai-stress-test-result.csv` —— 10 个用例的 expected vs actual 明细
-
-## 技术细节（实现层）
-
-- 切回默认模式后，按上面顺序串行执行只读工具，每个模块结果暂存内存
-- AI 压测调用使用现有 admin 测试账号的 JWT（curl_edge_functions 自动注入）
-- 报告由 Python 脚本本地拼装（`/tmp/build_report.py`），不依赖外部依赖
-- 所有 SQL 加 `LIMIT` 防止超出 1000 行默认上限影响判断
-- 报告中所有时间戳统一用 `formatDepositDate` 同款 `YYYY-MM-DD HH:mm:ss` 格式，避免浏览器差异
-
-## 不在范围内
-
-- 不做前端 UI 截图回归（需要 browser 工具，成本高，未要求）
-- 不做性能压测 / 并发压测
-- 不修改任何代码或数据；如发现 bug 仅在报告中列出建议
+执行前请批准 1 个数据库迁移；之后我会更新 3 个 edge function。所有 AI 回答严格基于上述表/视图，找不到数据即明确告知"数据库中暂无该信息"，绝不虚构。
 
