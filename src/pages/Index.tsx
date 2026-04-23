@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { resolveDisplayName } from "@/lib/displayName";
 import {
   ClipboardCheck, FileText, Send, Users, Inbox, CheckCircle2, XCircle,
   Clock, ArrowRight, Sparkles, FileCheck,
