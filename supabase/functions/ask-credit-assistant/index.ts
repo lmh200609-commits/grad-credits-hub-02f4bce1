@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
       .slice(0, 8)
       .map((x) => x.r);
 
-    if (scored.length === 0) {
+    if (scored.length === 0 && !mySummary) {
       return new Response(JSON.stringify({
         answer: "结论：未找到相关认定规则，无法回答。\n依据：知识库中暂无与您问题匹配的规则。\n补充：请补充关键信息后再试，例如：成果/证书全称、级别（校级/省级/国家级/国际级）、获奖等级、您的参与角色（第一作者/团队成员等）。",
         matched_rules: [],
@@ -199,11 +199,13 @@ Deno.serve(async (req) => {
     }
 
     const ruleIds = scored.map((r) => r.id);
-    const { data: cases } = await supabase
-      .from("cases")
-      .select("title,summary,awarded_credit,notes,rule_id")
-      .in("rule_id", ruleIds)
-      .limit(5);
+    const { data: cases } = ruleIds.length
+      ? await supabase
+          .from("cases")
+          .select("title,summary,awarded_credit,notes,rule_id")
+          .in("rule_id", ruleIds)
+          .limit(5)
+      : { data: [] as any[] };
 
     const rulesText = scored.map((r, i) =>
       `【规则${i + 1}】${r.name}\n  类别：${r.category || "-"} | 身份：${r.identity || "-"} | 级别：${r.level || "-"} | 获奖等级：${r.achievement || "-"} | 项目：${r.project || "-"}\n  学分：${r.credit}\n  关键词：${(r.keywords || []).join("、") || "-"}\n  说明：${r.description || "-"}`
