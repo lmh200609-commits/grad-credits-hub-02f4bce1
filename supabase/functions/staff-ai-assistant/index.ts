@@ -28,6 +28,9 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
     · auto_approved_total   — 系统初审自动通过的申请数
     · manual_approved_total — 人工复核通过的申请数
     · rejected_total        — 累计驳回数（含系统驳回 + 人工驳回）
+    · rules_overview        — 规则库总数 + 按类别/级别/适用身份分布
+    · cases_overview        — 案例库总数 + 关联规则数
+    · keywords_overview     — 关键词库总数（含启用/停用拆分）+ 按类别分布
 
 【路径白名单（仅可使用以下路径）】
 - /admin/dashboard           数据看板
@@ -113,6 +116,9 @@ const TOOLS = [
               "auto_approved_total",
               "manual_approved_total",
               "rejected_total",
+              "rules_overview",
+              "cases_overview",
+              "keywords_overview",
             ],
           },
         },
@@ -258,6 +264,61 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
         .select("id", { count: "exact", head: true })
         .in("status", ["rejected", "rejected_by_ai"]);
       return { metric, value: count ?? 0 };
+    }
+    if (metric === "rules_overview") {
+      const { data: rules } = await supabase
+        .from("rules")
+        .select("category,level,identity,active")
+        .eq("active", true);
+      const byCategory: Record<string, number> = {};
+      const byLevel: Record<string, number> = {};
+      const byIdentity: Record<string, number> = {};
+      (rules || []).forEach((r: any) => {
+        const c = (r.category || "未分类").trim() || "未分类";
+        const l = (r.level || "未指定").trim() || "未指定";
+        const id = (r.identity || "未指定").trim() || "未指定";
+        byCategory[c] = (byCategory[c] || 0) + 1;
+        byLevel[l] = (byLevel[l] || 0) + 1;
+        byIdentity[id] = (byIdentity[id] || 0) + 1;
+      });
+      return {
+        metric,
+        value: rules?.length ?? 0,
+        category_count: Object.keys(byCategory).length,
+        by_category: byCategory,
+        by_level: byLevel,
+        by_identity: byIdentity,
+        navigate_path: "/admin/rules",
+      };
+    }
+    if (metric === "cases_overview") {
+      const { data: cases } = await supabase.from("cases").select("rule_id");
+      const ruleIds = new Set((cases || []).map((c: any) => c.rule_id).filter(Boolean));
+      return {
+        metric,
+        value: cases?.length ?? 0,
+        linked_rule_count: ruleIds.size,
+        navigate_path: "/admin/cases",
+      };
+    }
+    if (metric === "keywords_overview") {
+      const { data: kws } = await supabase.from("keywords").select("category,active");
+      const total = kws?.length ?? 0;
+      let active = 0;
+      const byCategory: Record<string, number> = {};
+      (kws || []).forEach((k: any) => {
+        if (k.active) active++;
+        const c = (k.category || "未分类").trim() || "未分类";
+        byCategory[c] = (byCategory[c] || 0) + 1;
+      });
+      return {
+        metric,
+        value: total,
+        active,
+        inactive: total - active,
+        by_category: byCategory,
+        navigate_path: "/admin/keywords",
+      };
     }
     return { metric, value: 0 };
   }
