@@ -306,6 +306,36 @@ export type Database = {
         }
         Relationships: []
       }
+      rule_library: {
+        Row: {
+          active: boolean
+          content: string
+          created_at: string
+          created_by: string | null
+          id: string
+          rule_no: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          content: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          rule_no?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          rule_no?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rules: {
         Row: {
           achievement: string | null
