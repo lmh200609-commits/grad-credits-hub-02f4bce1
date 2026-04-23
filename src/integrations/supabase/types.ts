@@ -60,6 +60,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "application_reviews_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "submission_summary"
+            referencedColumns: ["application_id"]
+          },
+          {
             foreignKeyName: "application_reviews_matched_rule_id_fkey"
             columns: ["matched_rule_id"]
             isOneToOne: false
@@ -228,6 +235,60 @@ export type Database = {
           },
         ]
       }
+      certificate_types: {
+        Row: {
+          active: boolean
+          category: string | null
+          created_at: string
+          description: string | null
+          id: string
+          identity: string | null
+          keywords: string[]
+          last_synced_at: string
+          level: string | null
+          name: string
+          occurrence_count: number
+          source_case_ids: string[]
+          source_rule_ids: string[]
+          typical_credit: number | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          identity?: string | null
+          keywords?: string[]
+          last_synced_at?: string
+          level?: string | null
+          name: string
+          occurrence_count?: number
+          source_case_ids?: string[]
+          source_rule_ids?: string[]
+          typical_credit?: number | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          identity?: string | null
+          keywords?: string[]
+          last_synced_at?: string
+          level?: string | null
+          name?: string
+          occurrence_count?: number
+          source_case_ids?: string[]
+          source_rule_ids?: string[]
+          typical_credit?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       keywords: {
         Row: {
           active: boolean
@@ -266,40 +327,64 @@ export type Database = {
       }
       profiles: {
         Row: {
+          address: string | null
+          birth_date: string | null
           class_name: string | null
           created_at: string
           department: string | null
           email: string | null
+          emergency_contact: string | null
+          emergency_phone: string | null
+          enrollment_year: number | null
           full_name: string | null
+          gender: string | null
           id: string
+          id_card: string | null
           major: string | null
           phone: string | null
+          political_status: string | null
           student_no: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          address?: string | null
+          birth_date?: string | null
           class_name?: string | null
           created_at?: string
           department?: string | null
           email?: string | null
+          emergency_contact?: string | null
+          emergency_phone?: string | null
+          enrollment_year?: number | null
           full_name?: string | null
+          gender?: string | null
           id?: string
+          id_card?: string | null
           major?: string | null
           phone?: string | null
+          political_status?: string | null
           student_no?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          address?: string | null
+          birth_date?: string | null
           class_name?: string | null
           created_at?: string
           department?: string | null
           email?: string | null
+          emergency_contact?: string | null
+          emergency_phone?: string | null
+          enrollment_year?: number | null
           full_name?: string | null
+          gender?: string | null
           id?: string
+          id_card?: string | null
           major?: string | null
           phone?: string | null
+          political_status?: string | null
           student_no?: string | null
           updated_at?: string
           user_id?: string
@@ -387,6 +472,84 @@ export type Database = {
         }
         Relationships: []
       }
+      submission_records: {
+        Row: {
+          actor_id: string | null
+          actor_name: string | null
+          actor_role: string | null
+          ai_confidence: number | null
+          ai_decision: string | null
+          ai_matched_rule_id: string | null
+          ai_reasoning: string | null
+          ai_suggested_credit: number | null
+          application_id: string
+          created_at: string
+          description_snapshot: string | null
+          event_type: Database["public"]["Enums"]["submission_event_type"]
+          file_path: string | null
+          id: string
+          keywords_snapshot: string[] | null
+          matched_rule_id: string | null
+          review_credit: number | null
+          review_decision: string | null
+          review_note: string | null
+          status_snapshot: string | null
+          student_id: string
+          student_name: string | null
+          student_no: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: string | null
+          ai_confidence?: number | null
+          ai_decision?: string | null
+          ai_matched_rule_id?: string | null
+          ai_reasoning?: string | null
+          ai_suggested_credit?: number | null
+          application_id: string
+          created_at?: string
+          description_snapshot?: string | null
+          event_type: Database["public"]["Enums"]["submission_event_type"]
+          file_path?: string | null
+          id?: string
+          keywords_snapshot?: string[] | null
+          matched_rule_id?: string | null
+          review_credit?: number | null
+          review_decision?: string | null
+          review_note?: string | null
+          status_snapshot?: string | null
+          student_id: string
+          student_name?: string | null
+          student_no?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_name?: string | null
+          actor_role?: string | null
+          ai_confidence?: number | null
+          ai_decision?: string | null
+          ai_matched_rule_id?: string | null
+          ai_reasoning?: string | null
+          ai_suggested_credit?: number | null
+          application_id?: string
+          created_at?: string
+          description_snapshot?: string | null
+          event_type?: Database["public"]["Enums"]["submission_event_type"]
+          file_path?: string | null
+          id?: string
+          keywords_snapshot?: string[] | null
+          matched_rule_id?: string | null
+          review_credit?: number | null
+          review_decision?: string | null
+          review_note?: string | null
+          status_snapshot?: string | null
+          student_id?: string
+          student_name?: string | null
+          student_no?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -410,7 +573,41 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      submission_summary: {
+        Row: {
+          ai_confidence: number | null
+          ai_matched_rule_id: string | null
+          ai_reasoning: string | null
+          ai_suggested_credit: number | null
+          application_id: string | null
+          class_name: string | null
+          custom_keywords: string[] | null
+          department: string | null
+          description: string | null
+          file_path: string | null
+          final_credit: number | null
+          final_review_note: string | null
+          final_reviewer_id: string | null
+          reviewed_at: string | null
+          reviewer_name: string | null
+          selected_keywords: string[] | null
+          status: string | null
+          student_id: string | null
+          student_name: string | null
+          student_no: string | null
+          submitted_at: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "applications_ai_matched_rule_id_fkey"
+            columns: ["ai_matched_rule_id"]
+            isOneToOne: false
+            referencedRelation: "rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       has_role: {
@@ -420,6 +617,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      refresh_certificate_types: { Args: never; Returns: number }
     }
     Enums: {
       app_role: "admin" | "teacher" | "student"
@@ -431,6 +629,12 @@ export type Database = {
         | "approved"
         | "rejected"
       review_action: "ai_evaluation" | "teacher_review" | "admin_review"
+      submission_event_type:
+        | "submitted"
+        | "ai_reviewed"
+        | "manual_reviewed"
+        | "resubmitted"
+        | "withdrawn"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -568,6 +772,13 @@ export const Constants = {
         "rejected",
       ],
       review_action: ["ai_evaluation", "teacher_review", "admin_review"],
+      submission_event_type: [
+        "submitted",
+        "ai_reviewed",
+        "manual_reviewed",
+        "resubmitted",
+        "withdrawn",
+      ],
     },
   },
 } as const
