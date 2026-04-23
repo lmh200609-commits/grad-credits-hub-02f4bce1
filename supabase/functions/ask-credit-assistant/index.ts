@@ -117,6 +117,51 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // —— 识别学生身份（用 JWT），仅用于"我的"类问题 ——
+    let myUserId: string | null = null;
+    let myProfile: any = null;
+    let mySummary = "";
+    const authHeader = req.headers.get("Authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      try {
+        const userClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_ANON_KEY")!,
+          { global: { headers: { Authorization: authHeader } } },
+        );
+        const { data: claims } = await userClient.auth.getClaims(token);
+        myUserId = claims?.claims?.sub ?? null;
+      } catch (_) { myUserId = null; }
+    }
+
+    if (myUserId && isPersonalQuery(query)) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, student_no, department, class_name")
+        .eq("user_id", myUserId)
+        .maybeSingle();
+      myProfile = prof || null;
+
+      const { data: rows } = await supabase
+        .from("submission_summary")
+        .select("application_id, status, description, submitted_at, ai_confidence, ai_suggested_credit, ai_reasoning, final_credit, reviewer_name, final_review_note, reviewed_at")
+        .eq("student_id", myUserId)
+        .order("submitted_at", { ascending: false })
+        .limit(20);
+
+      let totalCredit = 0;
+      (rows || []).forEach((r: any) => {
+        if (["approved", "auto_approved"].includes(r.status)) {
+          totalCredit += Number(r.final_credit ?? r.ai_suggested_credit ?? 0);
+        }
+      });
+      const lines = (rows || []).map((r: any, i: number) =>
+        `【申请${i + 1}】${(r.description || "").slice(0, 40)}\n  状态：${r.status} | 提交时间：${(r.submitted_at || "").slice(0, 10)}\n  AI 初审：建议${r.ai_suggested_credit ?? "-"}学分（置信度 ${r.ai_confidence ?? "-"}）｜理由：${(r.ai_reasoning || "-").slice(0, 80)}\n  教师复核：${r.reviewer_name || "-"} 给出${r.final_credit ?? "-"}学分｜备注：${(r.final_review_note || "-").slice(0, 80)}`
+      ).join("\n\n");
+      mySummary = `===== 我的学分汇总 =====\n姓名：${myProfile?.full_name ?? "-"} | 学号：${myProfile?.student_no ?? "-"} | 累计已认定学分：${totalCredit}\n申请总数：${rows?.length ?? 0}\n${lines || "（暂无申请记录）"}`;
+    }
+
     // RAG: load all active rules, score in memory
     const { data: allRules } = await supabase
       .from("rules")
@@ -173,6 +218,7 @@ Deno.serve(async (req) => {
     const fullMessages: Msg[] = [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "system", content: ragContext },
+      ...(mySummary ? [{ role: "system" as const, content: mySummary }] : []),
       ...messages.slice(-20),
     ];
 
