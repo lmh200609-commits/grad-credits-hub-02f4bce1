@@ -41,7 +41,7 @@ const StudentWorkbench = () => {
         .select("full_name")
         .eq("user_id", user.id)
         .maybeSingle();
-      setDisplayName(prof?.full_name?.trim() || account);
+      setDisplayName(resolveDisplayName(prof, account));
       const { data } = await supabase
         .from("applications")
         .select("id,description,status,submitted_at")
