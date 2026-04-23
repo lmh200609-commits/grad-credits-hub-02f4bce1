@@ -50,19 +50,19 @@ const AppSidebar = () => {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarContent>
-        <SidebarGroup>
+      <SidebarContent className="h-full">
+        <SidebarGroup className="flex h-full flex-col">
           <SidebarGroupLabel>导航</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
+          <SidebarGroupContent className="flex-1">
+            <SidebarMenu className="flex h-full flex-col justify-between gap-1">
               {items.map((it) => (
-                <SidebarMenuItem key={it.url}>
+                <SidebarMenuItem key={it.url} className="flex-1">
                   <SidebarMenuButton asChild tooltip={it.title}>
                     <NavLink
                       to={it.url}
                       end
                       className={({ isActive }) =>
-                        `relative flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted ${
+                        `relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted ${
                           isActive
                             ? "bg-primary/10 font-medium text-primary before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-primary"
                             : "text-sidebar-foreground"
