@@ -381,7 +381,131 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
         navigate_path: "/admin/keywords",
       };
     }
+    if (metric === "certificate_types_overview") {
+      const { data: cts } = await supabase.from("certificate_types").select("category,level,active");
+      const total = cts?.length ?? 0;
+      let active = 0;
+      const byCategory: Record<string, number> = {};
+      const byLevel: Record<string, number> = {};
+      (cts || []).forEach((c: any) => {
+        if (c.active) active++;
+        const cat = (c.category || "未分类").trim() || "未分类";
+        const lv = (c.level || "未指定").trim() || "未指定";
+        byCategory[cat] = (byCategory[cat] || 0) + 1;
+        byLevel[lv] = (byLevel[lv] || 0) + 1;
+      });
+      return { metric, value: total, active, inactive: total - active, by_category: byCategory, by_level: byLevel };
+    }
+    if (metric === "submission_records_overview") {
+      const { data: rs } = await supabase.from("submission_records").select("event_type");
+      const total = rs?.length ?? 0;
+      const byEvent: Record<string, number> = {};
+      (rs || []).forEach((r: any) => {
+        const e = r.event_type || "unknown";
+        byEvent[e] = (byEvent[e] || 0) + 1;
+      });
+      return { metric, value: total, by_event: byEvent };
+    }
     return { metric, value: 0 };
+  }
+
+  if (name === "student_full_profile") {
+    const q = String(args?.query || "").trim();
+    if (!q) return { found: false, reason: "查询关键词为空" };
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, student_no, department, class_name, major, phone, email, id_card, gender, birth_date, enrollment_year, political_status, address, emergency_contact, emergency_phone")
+      .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
+      .limit(5);
+    if (!profiles || profiles.length === 0) return { found: false, reason: "数据库中未找到该学生" };
+    // Prefer exact student_no/full_name match
+    const p: any = profiles.find((x: any) => x.student_no === q || x.full_name === q) || profiles[0];
+    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", p.user_id).eq("role", "student");
+    if (!roles || roles.length === 0) return { found: false, reason: "匹配到的用户不是学生" };
+    const { data: apps } = await supabase
+      .from("applications")
+      .select("status, final_credit, ai_suggested_credit");
+    let total_credit = 0;
+    let app_count = 0;
+    (apps || []).forEach((a: any) => {
+      // We need student-scoped; refetch with filter
+    });
+    const { data: myApps } = await supabase
+      .from("applications")
+      .select("status, final_credit, ai_suggested_credit")
+      .eq("student_id", p.user_id);
+    (myApps || []).forEach((a: any) => {
+      app_count++;
+      if (["approved", "auto_approved"].includes(a.status)) {
+        total_credit += Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
+      }
+    });
+    return {
+      found: true,
+      profile: p,
+      total_credit,
+      application_count: app_count,
+      ambiguous_count: profiles.length > 1 ? profiles.length : 0,
+    };
+  }
+
+  if (name === "student_submission_history") {
+    const q = String(args?.query || "").trim();
+    const limit = Math.min(Number(args?.limit ?? 10), 30);
+    if (!q) return { records: [], reason: "查询关键词为空" };
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, student_no, full_name")
+      .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
+      .limit(1);
+    if (!profiles || profiles.length === 0) return { records: [], reason: "数据库中未找到该学生" };
+    const sid = (profiles[0] as any).user_id;
+    const { data: rows } = await supabase
+      .from("submission_summary")
+      .select("application_id, status, description, submitted_at, ai_confidence, ai_suggested_credit, ai_reasoning, final_credit, reviewer_name, final_review_note, reviewed_at")
+      .eq("student_id", sid)
+      .order("submitted_at", { ascending: false })
+      .limit(limit);
+    return {
+      student: profiles[0],
+      count: rows?.length ?? 0,
+      records: rows || [],
+    };
+  }
+
+  if (name === "submission_timeline") {
+    const aid = String(args?.application_id || "").trim();
+    if (!aid) return { events: [], reason: "application_id 为空" };
+    const { data: rows } = await supabase
+      .from("submission_records")
+      .select("event_type, ai_decision, ai_confidence, ai_suggested_credit, ai_reasoning, review_decision, review_credit, review_note, status_snapshot, created_at, actor_id")
+      .eq("application_id", aid)
+      .order("created_at", { ascending: true });
+    return { application_id: aid, count: rows?.length ?? 0, events: rows || [] };
+  }
+
+  if (name === "certificate_type_lookup") {
+    const k = String(args?.keyword || "").trim();
+    if (!k) return { matches: [], reason: "关键词为空" };
+    const { data: rows } = await supabase
+      .from("certificate_types")
+      .select("name, category, level, identity, typical_credit, occurrence_count, source_rule_ids, source_case_ids, keywords")
+      .or(`name.ilike.%${k}%,category.ilike.%${k}%,level.ilike.%${k}%`)
+      .limit(15);
+    return {
+      keyword: k,
+      count: rows?.length ?? 0,
+      matches: (rows || []).map((r: any) => ({
+        name: r.name,
+        category: r.category,
+        level: r.level,
+        identity: r.identity,
+        typical_credit: r.typical_credit,
+        linked_rule_count: (r.source_rule_ids || []).length,
+        linked_case_count: (r.source_case_ids || []).length,
+        keywords: r.keywords,
+      })),
+    };
   }
 
   return { error: `unknown tool: ${name}` };
