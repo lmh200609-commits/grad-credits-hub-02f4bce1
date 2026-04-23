@@ -28,6 +28,9 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
     · auto_approved_total   — 系统初审自动通过的申请数
     · manual_approved_total — 人工复核通过的申请数
     · rejected_total        — 累计驳回数（含系统驳回 + 人工驳回）
+    · rules_overview        — 规则库总数 + 按类别/级别/适用身份分布
+    · cases_overview        — 案例库总数 + 关联规则数
+    · keywords_overview     — 关键词库总数（含启用/停用拆分）+ 按类别分布
 
 【路径白名单（仅可使用以下路径）】
 - /admin/dashboard           数据看板
