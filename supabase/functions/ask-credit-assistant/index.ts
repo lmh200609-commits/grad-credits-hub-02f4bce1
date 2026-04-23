@@ -26,6 +26,38 @@ function tokenize(s: string): string[] {
   return (s || "").toLowerCase().match(/[\u4e00-\u9fa5]|[a-z0-9]+/g) || [];
 }
 
+// 识别"统计/盘点/总览"类问题：用户问规则/案例/佐证的数量、种类、有哪些类别等
+function isStatsQuery(q: string): boolean {
+  const s = (q || "").toLowerCase();
+  const intent = ["多少", "几种", "几类", "几条", "数量", "总数", "总共", "一共", "盘点", "覆盖", "有哪些", "包含哪些", "种类", "分布", "统计", "目录", "清单", "列表"];
+  const subject = ["规则", "条款", "佐证", "证明", "材料", "案例", "关键词", "类别", "类目", "项目", "认定"];
+  return intent.some((k) => s.includes(k)) && subject.some((k) => s.includes(k));
+}
+
+function formatStats(rules: any[], casesCount: number, keywordsCount: number): string {
+  const total = rules.length;
+  const byCategory = new Map<string, number>();
+  const byLevel = new Map<string, number>();
+  const byIdentity = new Map<string, number>();
+  for (const r of rules) {
+    const c = (r.category || "未分类").trim() || "未分类";
+    const l = (r.level || "未指定").trim() || "未指定";
+    const id = (r.identity || "未指定").trim() || "未指定";
+    byCategory.set(c, (byCategory.get(c) || 0) + 1);
+    byLevel.set(l, (byLevel.get(l) || 0) + 1);
+    byIdentity.set(id, (byIdentity.get(id) || 0) + 1);
+  }
+  const fmt = (m: Map<string, number>) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}（${v}）`).join("、") || "无";
+
+  return `结论：当前知识库共有 ${total} 条有效学分认定规则，覆盖 ${byCategory.size} 个类别；案例库 ${casesCount} 条，关键词库 ${keywordsCount} 个。
+依据：
+- 按类别分布：${fmt(byCategory)}
+- 按级别分布：${fmt(byLevel)}
+- 按适用身份分布：${fmt(byIdentity)}
+补充：以上为系统实时统计结果。如需了解某一类别/级别下的具体规则，请告知关键词（例如"竞赛 国家级"），我将检索对应规则为您解释。`;
+}
+
 function scoreRule(query: string, rule: any): number {
   const qTokens = new Set(tokenize(query));
   if (qTokens.size === 0) return 0;
@@ -81,6 +113,21 @@ Deno.serve(async (req) => {
       .from("rules")
       .select("id,name,keywords,description,identity,level,achievement,project,category,credit")
       .eq("active", true);
+
+    // 统计/盘点类问题：直接基于数据库给出实时数量分布
+    if (isStatsQuery(query)) {
+      const [{ count: casesCount }, { count: keywordsCount }] = await Promise.all([
+        supabase.from("cases").select("id", { count: "exact", head: true }),
+        supabase.from("keywords").select("id", { count: "exact", head: true }).eq("active", true),
+      ]);
+      const answer = formatStats(allRules || [], casesCount || 0, keywordsCount || 0);
+      return new Response(JSON.stringify({
+        answer,
+        matched_rules: [],
+        matched_cases_count: casesCount || 0,
+        stats: true,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const scored = (allRules || [])
       .map((r) => ({ r, s: scoreRule(query, r) }))
