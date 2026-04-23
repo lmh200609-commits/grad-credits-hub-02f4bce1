@@ -207,6 +207,7 @@ const TeacherWorkbench = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const account = user?.email?.split("@")[0] ?? "";
+  const [displayName, setDisplayName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState({ pending: 0, todayDone: 0, weekRate: 0, students: 0 });
   const [queue, setQueue] = useState<AppRow[]>([]);
@@ -215,6 +216,12 @@ const TeacherWorkbench = () => {
     if (!user) return;
     (async () => {
       setLoading(true);
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      setDisplayName(prof?.full_name?.trim() || account);
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
       const [pendingRes, queueRes, todayRes, weekRes, studentsRes] = await Promise.all([
@@ -245,7 +252,7 @@ const TeacherWorkbench = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`你好，${account} 👋`}
+        title={`你好，${displayName || account} 👋`}
         description="教师工作台 — 待审核任务与学生情况一目了然。"
         actions={
           <Button onClick={() => navigate("/reviews")} className="bg-gradient-primary text-primary-foreground shadow-card active:scale-[0.98]">
