@@ -150,6 +150,15 @@ Deno.serve(async (req) => {
         .order("submitted_at", { ascending: false })
         .limit(20);
 
+      // 学生问"我的"但确实没有任何申请记录 → 直接返回统一文案，不再走 RAG/早返回
+      if (!rows || rows.length === 0) {
+        return new Response(JSON.stringify({
+          answer: "暂无您的申请记录",
+          matched_rules: [],
+          matched_cases_count: 0,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       let totalCredit = 0;
       (rows || []).forEach((r: any) => {
         if (["approved", "auto_approved"].includes(r.status)) {
@@ -160,6 +169,15 @@ Deno.serve(async (req) => {
         `【申请${i + 1}】${(r.description || "").slice(0, 40)}\n  状态：${r.status} | 提交时间：${(r.submitted_at || "").slice(0, 10)}\n  AI 初审：建议${r.ai_suggested_credit ?? "-"}学分（置信度 ${r.ai_confidence ?? "-"}）｜理由：${(r.ai_reasoning || "-").slice(0, 80)}\n  教师复核：${r.reviewer_name || "-"} 给出${r.final_credit ?? "-"}学分｜备注：${(r.final_review_note || "-").slice(0, 80)}`
       ).join("\n\n");
       mySummary = `===== 我的学分汇总 =====\n姓名：${myProfile?.full_name ?? "-"} | 学号：${myProfile?.student_no ?? "-"} | 累计已认定学分：${totalCredit}\n申请总数：${rows?.length ?? 0}\n${lines || "（暂无申请记录）"}`;
+    }
+
+    // 未登录但问"我的"：也统一返回（无法区分身份，按"无记录"处理）
+    if (!myUserId && isPersonalQuery(query)) {
+      return new Response(JSON.stringify({
+        answer: "暂无您的申请记录",
+        matched_rules: [],
+        matched_cases_count: 0,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // RAG: load all active rules, score in memory
