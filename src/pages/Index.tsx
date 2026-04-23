@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { resolveDisplayName } from "@/lib/displayName";
 import {
   ClipboardCheck, FileText, Send, Users, Inbox, CheckCircle2, XCircle,
   Clock, ArrowRight, Sparkles, FileCheck,
@@ -40,7 +41,7 @@ const StudentWorkbench = () => {
         .select("full_name")
         .eq("user_id", user.id)
         .maybeSingle();
-      setDisplayName(prof?.full_name?.trim() || account);
+      setDisplayName(resolveDisplayName(prof, account));
       const { data } = await supabase
         .from("applications")
         .select("id,description,status,submitted_at")
@@ -221,7 +222,7 @@ const TeacherWorkbench = () => {
         .select("full_name")
         .eq("user_id", user.id)
         .maybeSingle();
-      setDisplayName(prof?.full_name?.trim() || account);
+      setDisplayName(resolveDisplayName(prof, account));
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
       const [pendingRes, queueRes, todayRes, weekRes, studentsRes] = await Promise.all([
