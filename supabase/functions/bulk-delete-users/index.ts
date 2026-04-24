@@ -32,7 +32,9 @@ Deno.serve(async (req) => {
     let ids: string[] = Array.isArray(body?.user_ids) ? body.user_ids.filter((x: unknown) => typeof x === "string") : [];
     if (ids.length === 0) return json({ error: "user_ids 必填" }, 400);
     if (ids.length > 200) return json({ error: "单次最多 200 条" }, 400);
-    ids = ids.filter((id) => id !== callerId);
+    if (ids.includes(callerId)) {
+      return json({ error: "不能删除当前登录账号，请先取消勾选自己的账号" }, 400);
+    }
 
     const { data: profiles } = await admin
       .from("profiles").select("user_id, full_name, student_no, email").in("user_id", ids);

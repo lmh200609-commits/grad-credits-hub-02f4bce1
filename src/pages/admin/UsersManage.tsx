@@ -22,6 +22,7 @@ import TableSkeleton from "@/components/TableSkeleton";
 import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
 import BulkUserDialog from "@/components/BulkUserDialog";
+import { useAuth } from "@/hooks/useAuth";
 
 const PAGE_SIZE = 50;
 
@@ -44,6 +45,8 @@ const TITLES: Record<string, { title: string; desc: string }> = {
 const ALL = "__all__";
 
 const UsersManage = () => {
+  const { user } = useAuth();
+  const selfId = user?.id ?? null;
   const { role: roleParam } = useParams<{ role: string }>();
   const role = roleParam === "teachers" ? "teacher" : "student";
   const meta = TITLES[roleParam ?? "students"] ?? TITLES.students;
@@ -127,6 +130,11 @@ const UsersManage = () => {
 
   const deleteAccount = async () => {
     if (!deleteTarget) return;
+    if (selfId && deleteTarget.user_id === selfId) {
+      toast.error("不能删除当前登录账号");
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     const { data, error } = await supabase.functions.invoke("delete-user", {
       body: { user_id: deleteTarget.user_id },
