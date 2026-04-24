@@ -255,12 +255,9 @@ const ApplyPage = () => {
   // 完成度
   const stepsDone = useMemo(() => {
     let n = 0;
-    if (selectedRule || DIMS.some((d) => picked[d])) n = Math.max(n, 1);
-    if (
-      DIMS.some((d) => picked[d]) ||
-      customKeywords.length > 0 ||
-      description.trim().length > 0
-    ) n = Math.max(n, 2);
+    const hasKw = DIMS.some((d) => picked[d]) || customKeywords.length > 0;
+    if (hasKw) n = Math.max(n, 1);
+    if (description.trim().length > 0) n = Math.max(n, 2);
     if (file) n = Math.max(n, 3);
     return n;
   }, [selectedRule, picked, customKeywords, description, file]);
@@ -289,7 +286,7 @@ const ApplyPage = () => {
     const selected_keywords = DIMS.map((d) => picked[d]).filter(Boolean) as string[];
     const parsed = applySchema.safeParse({
       description, selected_keywords, custom_keywords: customKeywords,
-      rule_id: selectedRule?.id ?? null,
+      rule_id: null,
     });
     if (!parsed.success) {
       const msg = parsed.error.issues[0]?.message ?? "请检查表单";
@@ -297,6 +294,12 @@ const ApplyPage = () => {
       return toast({ title: msg, variant: "destructive" });
     }
     setDescError(null);
+    if (!file) {
+      return toast({ title: "请上传图片证明材料", variant: "destructive" });
+    }
+    if (!file.type.startsWith("image/")) {
+      return toast({ title: "证明材料必须为图片格式", variant: "destructive" });
+    }
     if (fileTooBig) return toast({ title: "文件不能超过 10MB", variant: "destructive" });
     setSubmitting(true);
     try {
@@ -355,10 +358,9 @@ const ApplyPage = () => {
   );
 
   const checklist = [
-    { ok: !!selectedRule || DIMS.some((d) => picked[d]), label: "已选择/匹配规则" },
     { ok: DIMS.some((d) => picked[d]) || customKeywords.length > 0, label: "已选择/添加关键词" },
+    { ok: !!file, label: "已上传图片证明材料" },
     { ok: descLen > 0, label: `申请说明（当前 ${descLen} 字）`, optional: true },
-    { ok: !!file, label: "已上传证明材料（推荐）", optional: true },
   ];
 
   return (
