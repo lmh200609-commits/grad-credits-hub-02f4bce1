@@ -1,113 +1,90 @@
 
 
-# 计划：统一两端 AI 助手输出格式与呈现规范（含学生端）
+# 计划：清理整个数据库中所有"时间/届次"标识
 
 ## 目标
-- 解决"杂乱符号"（裸露 `**`、`###`、`---`、`|`）和列表/表格不清晰
-- 学生端、教师端、管理员端**三端统一**渲染管线与输出契约
-- 必要时由轻量国产模型做"二次整理"，去除原生生成痕迹
+扫描数据库中所有可能包含"年份/届次/期/次"标识的文本字段，统一删除时间相关前缀，**保留项目/比赛名称本身**。
 
-## 一、前端：统一渲染层（三端共用）
+## 影响范围（涉及表与字段）
 
-新建 `src/components/AssistantMessage.tsx` —— 学生端 `AiAssistant.tsx` 与员工端 `StaffAiAssistant.tsx` 共用：
+| 表 | 待清理字段 |
+|---|---|
+| `cases` | `title`, `summary`, `notes` |
+| `rules` | `name`, `description`, `project`, `achievement` |
+| `certificate_types` | `name`, `description` |
+| `rule_library` | `content` |
+| `keywords` | `keyword` |
 
-1. **Markdown 渲染**：引入 `react-markdown` + `remark-gfm` + `rehype-sanitize`，废弃 `whitespace-pre-wrap` 裸显
-2. **样式 token**：Tailwind `prose prose-sm max-w-none` + 自定义覆盖
-   - 标题：h1/h2/h3 收敛为同一字号 + 主题色小色块前缀
-   - 列表：紧凑行距，嵌套≤2 层
-   - 表格：shadcn `<Table>` 包裹，圆角斑马纹，可横向滚
-   - 引用：左侧主题色竖条；代码：浅底等宽
-3. **结构化卡片**：识别后端 `sections` 字段，按"结论 / 依据 / 补充 / 操作建议"分卡渲染，每卡有图标 + chip 标题，不再依赖正文里的"结论："字样
-4. **fallback**：只有 `answer` 时仍跑 markdown 管线
-5. **学生端三段式特殊适配**：保留"结论 / 依据 / 补充"语义，但用三张紧凑卡片替代三行纯文本，视觉与员工端统一
+不涉及：用户数据 (`profiles`)、申请记录 (`applications` / `submission_records`)、审核记录、审计日志——这些是真实业务数据快照，不应被改写。
 
-替换点：
-- `src/components/AiAssistant.tsx` 第 142-148 行：`<div … whitespace-pre-wrap>{m.content}</div>` → `<AssistantMessage content={m.content} sections={m.sections}/>`，HINT_MSG / WELCOME 同样走新渲染
-- `src/components/StaffAiAssistant.tsx` 第 140-147 行：同上替换；候选学生卡 / stats 卡 / 跳转按钮逻辑保留
+## 清理规则（统一应用到上述所有字段）
 
-## 二、前端清洗工具
+按顺序使用 `regexp_replace`：
 
-新建 `src/lib/sanitizeMarkdown.ts`：
-- 折叠 ≥3 个连续 `*`/`-`/`=` 分割线为单条 `<hr>`
-- 去除常见寒暄："作为 AI 助手…""根据您提供的信息…""我将为您…"
-- 孤立 `|` 表格残片转列表
-- 多空行规范为 1 空行
-- 去除模型偶尔输出的 ```` ```markdown ```` 包裹
+1. **届/期/次**：`第[一二三四五六七八九十百零0-9]+(届|期|次)` → 删除
+2. **公元年份**：`(19|20)\d{2}年?` → 删除
+3. **学年表达**：`\d{4}[-—]\d{2,4}(学年|年度)?` → 删除（如 `2022-2023学年`）
+4. **收尾清理**：
+   - 连续空格 → 单空格
+   - 中文括号开头残留的 `（·` → `（`
+   - 字段开头残留的空格、`年`、`·`、`-` 等
 
-## 三、后端：输出契约统一
+## 示例效果
 
-### 1. 共享格式化器
-新建 `supabase/functions/_shared/format-answer.ts`：
-- `normalizeMarkdown(raw)`：服务端清洗（同上规则）
-- `toSections(raw)`：切分"结论/依据/补充/操作建议"四段为 `{key,title,body}[]`，未命中放 `summary`
-- 统一返回：`{ answer, sections?, meta?: { polished: boolean } }`
+- `2022年第八届"互联网+"大学生创新创业大赛（国家级一等奖·负责人）`
+  → `"互联网+"大学生创新创业大赛（国家级一等奖·负责人）`
+- `第十二届全国大学生数学建模竞赛` → `全国大学生数学建模竞赛`
+- `2023-2024学年优秀学生干部` → `优秀学生干部`
 
-### 2. `ask-credit-assistant`（学生端）
-- SYSTEM_PROMPT 调整：
-  > 用 markdown 输出三段：`## 结论` / `## 依据` / `## 补充`。允许无序列表、表格、加粗。禁止一级标题、emoji、分割线、代码块、寒暄开场
-- 现有硬编码回复（"暂无您的申请记录"、"未找到相关认定规则…"）也走 `normalizeMarkdown` + `toSections`，与员工端视觉一致
-- "我的学分汇总"由当前长文本换为表格化提示词，模型更易输出整齐表格
+## 执行方式
 
-### 3. `staff-ai-assistant`（教师/管理员端）
-- SYSTEM_PROMPT 增补"输出格式"：
-  > 结论一句先行；列表 ≥5 行必须用表格呈现；不要写"我将为您查询…"等过程语；只用 ##、列表、表格、加粗
-- 工具结果向 LLM 注入时预格式化为 markdown 表格，减少模型自由发挥
-- 返回前同样跑 `normalizeMarkdown` + `toSections`
+通过"修改数据库"工具执行**一个事务**，对上面 5 张表的目标字段统一跑同一套 `regexp_replace` 链：
 
-### 4. 二次整理（按需触发）
-新建 edge function `polish-answer`（默认 DeepSeek，可切 Qwen，温度 0，max_tokens 800）
+```sql
+BEGIN;
 
-触发条件（在两个助手内部判断，避免每次都调）：
-1. 原始 answer > 600 字 **或**
-2. 含 ≥3 处疑似杂乱符号（正则 `\*{3,}`、孤立 `|`、连续 `###`） **或**
-3. 工具调用 ≥2 次（员工端复杂回答）
+-- cases
+UPDATE public.cases SET
+  title   = clean_fn(title),
+  summary = clean_fn(summary),
+  notes   = clean_fn(notes)
+WHERE title ~ '<pattern>' OR summary ~ '<pattern>' OR notes ~ '<pattern>';
 
-提示词："你是排版编辑。在不增减事实、不改动数字/姓名/学号/学分的前提下，把内容改写为整洁 markdown：先一句结论，列表/表格陈列要点，去除寒暄与冗余符号。"
+-- rules
+UPDATE public.rules SET
+  name = clean_fn(name), description = clean_fn(description),
+  project = clean_fn(project), achievement = clean_fn(achievement)
+WHERE …;
 
-失败/超时（>3s）→ 回退原文，不阻塞主流程。返回 `meta.polished=true`，前端显示淡灰"已整理"小标。
+-- certificate_types
+UPDATE public.certificate_types SET
+  name = clean_fn(name), description = clean_fn(description)
+WHERE …;
 
-复用已有 `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY`，无需新 secret。
+-- rule_library
+UPDATE public.rule_library SET content = clean_fn(content) WHERE …;
 
-## 四、依赖与配置
+-- keywords
+UPDATE public.keywords SET keyword = clean_fn(keyword) WHERE …;
 
-新增前端依赖：`react-markdown`、`remark-gfm`、`rehype-sanitize`
-
-无新数据库迁移，无新 secrets。`supabase/config.toml` 注册 `polish-answer`（`verify_jwt = false`，由两个助手内部 service-to-service 调用）。
-
-## 五、技术架构
-
-```text
-┌─────────────── 用户问 (学生 / 教师 / 管理员) ───────────────┐
-│   edge function (ask-credit / staff-ai)                    │
-│   ├─ 业务逻辑 + LLM 生成 raw                                │
-│   ├─ normalizeMarkdown(raw)                                │
-│   ├─ 触发器命中? → polish-answer ─→ DeepSeek/Qwen 排版整理 │
-│   ├─ toSections() → sections[]                             │
-│   └─ return { answer, sections, meta }                     │
-│                                                            │
-│   <AssistantMessage>  (三端共用)                           │
-│   ├─ sections 存在 → 卡片式分块渲染 (结论/依据/补充/操作)  │
-│   └─ 否则 → react-markdown + sanitize 渲染 answer          │
-└────────────────────────────────────────────────────────────┘
+COMMIT;
 ```
 
-## 六、文件改动清单
+`clean_fn` 在 SQL 中以三层嵌套 `regexp_replace` 直接展开，不新增数据库函数。
 
-新建：
-- `src/components/AssistantMessage.tsx`
-- `src/lib/sanitizeMarkdown.ts`
-- `supabase/functions/_shared/format-answer.ts`
-- `supabase/functions/polish-answer/index.ts`
+## 安全性
 
-修改：
-- `src/components/AiAssistant.tsx`（学生端）
-- `src/components/StaffAiAssistant.tsx`（教师/管理员端）
-- `package.json`（3 个新依赖）
-- `supabase/functions/ask-credit-assistant/index.ts`
-- `supabase/functions/staff-ai-assistant/index.ts`
-- `supabase/config.toml`（注册 polish-answer）
+- **只改 5 张"配置/知识库"性质的表**，不动任何申请/审核/用户/日志数据。
+- 操作前先对每张表 `SELECT count(*)` 预估行数告知用户。
+- 不可逆。建议同时建立一次性备份（推荐）：每张目标表先 `CREATE TABLE <name>_backup_YYYYMMDD AS SELECT * FROM <name>;`，便于回滚。
+- `keywords` 字段较短，清理后若变成空字符串将自动跳过该行（在 `WHERE` 中加 `length(trim(...)) > 0` 保护）。
+- `certificate_types.name` 是唯一索引 `(name, category, level)` 的一部分；若清理后产生重名将报错。届时会改为：先合并同名行的 `occurrence_count`，再删除冗余、再清理。
 
-## 七、用户需要确认
+## 用户需要确认
 
-执行前请批准：1）安装 3 个 npm 依赖；2）新建 + 修改上述前后端文件；3）部署 3 个 edge function。所有"二次整理"严格遵守"不改数字/姓名/学号/学分"，失败自动回退原文，不会影响数据准确性。
+请批准以下两件事：
+1. 是否需要建立 `*_backup_<日期>` 备份表（推荐"是"）。
+2. 对上述 5 张表的指定字段执行统一清理（默认本次执行）。
+
+如只想清理其中部分表（例如只清理 `cases` 和 `rules`），请告知。默认按上述 5 张表全量执行。
 
