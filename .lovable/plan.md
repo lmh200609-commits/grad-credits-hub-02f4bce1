@@ -1,72 +1,47 @@
-## 学生端申请流程调整
+## 改动一：关键词库默认收起
 
-### 目标
-1. 学生端"直接搜索"和"关键词导航"的内容**只来自案例库**（cases），不再使用 rules 表/keywords 表作为来源。
-2. 图片证明材料改为**必填**。
-3. 取消"必须匹配到学分规则"的提交校验，只要满足"选择/自定义至少一个关键词" + "上传了图片" 即可提交并进入 AI 初审。
-4. 后端 AI 初审：**佐证材料只来自案例库**，不再以 rules 作为命中目标。
+文件：`src/pages/student/Apply.tsx`
 
-### 前端改动 — `src/pages/student/Apply.tsx`
+把"自定义关键词"卡片中第 621–643 行的「关键词库（往届人工通过沉淀）」整块用 `Collapsible` 包裹：
 
-**数据来源（仅案例库）**
-- 移除 `rules` 表加载逻辑；移除 `keywords` 表加载逻辑（关键词库展示）。
-- 改为初始化时从 `cases` 表加载（取最新若干百条，含 title/summary/awarded_credit），统一映射为现有 `Rule` 结构（`source: "case"`），用于：
-  - 关键词导航的四级维度选项（来自 `parseCaseKeywords(summary)` 解析的 project/achievement/level/identity）
-  - 直接搜索结果（替代原 ruleMatches + caseMatches，统一为 cases）
-  - 热门关键词（按 cases 中 achievement 频次）
-  - 自定义关键词建议库（用 cases 中出现的关键词聚合后展示，而非 keywords 表）
+- 触发器一行：`BookOpen` 图标 + 文案「关键词库（共 N 个，点击展开作为参考）」+ 右侧 `ChevronRight` / `ChevronDown` 图标，整行可点击。
+- 默认 `open=false`，不点击则保持收起，节省版面。
+- 展开后展示 chips 列表（保留现有 `slice(0, 20)` 的 + 添加交互），点击 chip 仍是一键加入自定义关键词；并把上限从 20 提升到 40 + 一句"仅供参考"提示。
+- 使用项目内已有的 `@/components/ui/collapsible`（Radix），无需新增依赖。
 
-**关键词导航**
-- `nextOptions` 维度选项与 `filteredRules` 全部基于 cases 派生数据。
-- "已选规则卡"展示的"预计学分"改为"参考学分"，注明"来自相似案例平均，仅供参考"。
+不影响 step 完成度逻辑、不影响提交校验。
 
-**图片证明材料 → 必填**
-- 步骤 4 标题描述：`PDF / 图片，必须上传，单个文件 ≤ 10 MB`。
-- 文件类型限制为图片（`accept="image/*"`），描述同步：`仅支持 JPG / PNG / WEBP 等图片格式，最大 10 MB`（按用户原话"图片证明材料"理解为限图片；如保留 PDF，会在技术细节里说明）。
-- `checklist` 中"已上传证明材料"去掉 `optional`，改为必填项；准备清单中显示"必填"标识。
-- `submit()` 增加校验：`if (!file) return toast({ title: "请上传图片证明材料", variant: "destructive" })`。
+## 改动二：AI 助手对"挑战杯"等词检索失败
 
-**取消"必须匹配学分规则"的限制**
-- 修改 `src/lib/schemas.ts` 的 `applySchema`：
-  - 移除/不再使用 `rule_id`（保留为可选 nullable，但不强制 uuid）。
-  - 保留"至少 1 个关键词"约束。
-- `submit()` 中删除/忽略 `rule_id` 校验路径（`selectedRule?.id` 不再传入 schema 校验）。
-- 顶部 `STEPS` 文案微调：
-  - 步骤 1：`选择关键词` / `从案例库搜索或导航`
-  - 步骤 3：改为 `上传材料`（必填）
-  - 步骤 4 文案对应保持"提交审核"。
-- "申请说明"卡片标题描述改为：`可选。可补充活动详情；提交不强制要求填写`。
+根因（已用 SQL 验证）：
+- "挑战杯"在 `cases` 表（案例库）多条记录里出现，但 `rules` 表里没有任何规则名称/keywords 包含"挑战杯"。
+- 现有 `ask-credit-assistant` 仅对 `rules` 做打分，case 只在命中 rule 后通过 `rule_id` 回带，导致输入"挑战杯"完全检索不到任何上下文，触发"未找到相关认定规则"兜底。
+- 另外，中文 tokenizer 把句子切成单字，案例库里的"挑战杯"不会按整词参与打分。
 
-**已选"规则"语义**
-- 保留 `selectedRule` 仅作为关键词来源（自动把 case 派生的 4 维写入 picked），不再作为提交必备。
+文件：`supabase/functions/ask-credit-assistant/index.ts`
 
-### 后端改动 — `supabase/functions/evaluate-application/index.ts`
+调整检索流程（仅服务端，不动前端调用方式）：
 
-**佐证仅来自案例库**
-- 移除从 `rules` 表加载并匹配 candidate 的逻辑。
-- `candidate` / `detectedRule` / `effectiveRule` / `matched_rule_id` / `suggestedCredit` 全部改为基于 cases：
-  - 用学生关键词在 cases 中按 title/summary ilike 匹配，作为 `candidate_case`，建议学分 = 该 case 的 `awarded_credit`。
-  - AI 返回的 detected_* 同样在 cases 中再次匹配，得到 `detected_case`。
-  - `matched_rule_id` 写入 `null`（applications.ai_matched_rule_id 字段保留为 null，因为不再指向 rules）。
-  - `ai_suggested_credit` 取自匹配到的 case `awarded_credit`，无匹配则为 null。
-- `relatedCases` 逻辑保留并加强（仍然作为 reference_cases 传入 prompt）。
-- 系统提示词中"认定范围参考"保留，但删除/弱化"匹配规则"措辞，强调"以历史通过案例为参考"。
-- 自动通过 / 拒绝 / 转人工的判定阈值不变。
+1. **新增 cases 直接打分检索**：
+   - 加载 `cases.title, summary, awarded_credit, notes, rule_id`（限制 500 条）。
+   - 复用 `scoreRule` 思路新增 `scoreCase(query, c)`：把 `title + summary + notes` 拼成字段串做 token 计数；额外做"整词包含"加分——遍历用户原始 query 中的 2~6 字中文连续片段（用正则 `/[\u4e00-\u9fa5]{2,6}/g` 抽取，如"挑战杯"），若片段在 case 文本中出现则 `score += 5`。同样的整词包含加分也加到 `scoreRule`，让"挑战杯/三创赛/英语四级"这类整词命中 keywords/description 时大幅加权。
+   - 取案例 top 5。
 
-**说明**：因 `applications.ai_matched_rule_id` 是非外键的 uuid 列，写 null 不影响 schema；无需数据库迁移。
+2. **合并上下文**：
+   - 当 rules 命中为空但 cases 命中非空时，**不再返回兜底"未找到相关认定规则"**，改为基于案例库构造回答上下文，并在 system 提示里说明"以下为相关历史案例，可据此解释，但需明确告知学生这是案例参考、最终学分以教师复核为准"。
+   - 当 rules 与 cases 都命中：把两者一并写入 RAG 上下文（保留现有 `===== 检索到的规则 =====` + `===== 相关案例 =====` 结构，案例段落用新打分结果，去掉只能跟 `rule_id` 关联的限制）。
+   - 兜底（rules+cases 都为 0 命中）仍返回原"未找到"提示。
 
-### 准备清单（侧栏）更新
-- 项 1：`已选择/添加关键词`（合并原"规则" + "关键词"，因为不再要求规则）。
-- 项 2：`已上传图片证明材料`（必填，去掉"推荐"）。
-- 项 3：`申请说明`（可选）。
-- 完成度计算同步调整。
+3. **学生端数据源对齐**（次要）：在 SYSTEM_PROMPT 里增加一句"案例库（cases）与规则库（rules）同为合法依据，案例库优先用于解释相似情形"，使回答口径与申请页"仅来自案例库"的设定一致。
 
-### 不变项
-- 教师端 / 管理员端 UI 与逻辑不变。
-- 数据库 schema 不变；rules / keywords 表仍由管理员维护，仅学生端不再展示作为搜索源。
-- AI 详情页面对教师展示的 `ai_matched_rule_id` 字段，匹配为空时 UI 已能容错（之前 case 来源也是 null，无需额外改动；如发现详情页强依赖会一并兜底）。
+不改动调用方式、返回结构，前端 `AiAssistant.tsx` 无需修改。
 
-### 文件清单
-- `src/pages/student/Apply.tsx` — 数据源切换为 cases、文件必填、提交校验调整、文案。
-- `src/lib/schemas.ts` — `applySchema` 移除 rule_id 强校验。
-- `supabase/functions/evaluate-application/index.ts` — 佐证与建议学分仅基于 cases。
+## 验证
+
+- 申请页：进入 `/apply`，"自定义关键词"卡片中"关键词库"那一行默认折叠，点击后展开 chips，再次点击收起。
+- 助手：在悬浮窗输入"挑战杯"应能给出基于案例的「结论 / 依据 / 补充」三段答复，引用类似"挑战杯…国家级一等奖…10 学分"的案例。
+
+## 涉及文件
+
+- `src/pages/student/Apply.tsx`
+- `supabase/functions/ask-credit-assistant/index.ts`

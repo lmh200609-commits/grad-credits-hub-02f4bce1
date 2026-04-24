@@ -15,10 +15,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "@/hooks/use-toast";
 import {
   Send, Sparkles, X, Search, ChevronRight, Plus, FileText, Image as ImageIcon, File as FileIcon,
-  Upload, CheckCircle2, Circle, ArrowLeft, RefreshCw, Trash2, Lightbulb, BookOpen, HelpCircle,
+  Upload, CheckCircle2, Circle, ArrowLeft, RefreshCw, Trash2, Lightbulb, BookOpen, HelpCircle, ChevronDown,
 } from "lucide-react";
 import { applySchema } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
@@ -619,27 +620,33 @@ const ApplyPage = () => {
                   </div>
                 )}
                 {libraryKeywords.length > 0 && (
-                  <div className="space-y-1.5 rounded-md border border-dashed bg-muted/30 p-2">
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <BookOpen className="h-3.5 w-3.5" />
-                      <span>关键词库（往届人工通过沉淀，点击一键添加）</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {libraryKeywords
-                        .filter((k) => !customKeywords.includes(k))
-                        .slice(0, 20)
-                        .map((k) => (
-                          <button
-                            key={k}
-                            type="button"
-                            onClick={() => addCustomKeyword(k)}
-                            className="rounded-full border bg-background px-2 py-0.5 text-xs transition hover:border-primary hover:text-primary"
-                          >
-                            + {k}
-                          </button>
-                        ))}
-                    </div>
-                  </div>
+                  <Collapsible className="rounded-md border border-dashed bg-muted/30">
+                    <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <BookOpen className="h-3.5 w-3.5" />
+                        关键词库（共 {libraryKeywords.length} 个，点击展开作为参考）
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-1.5 px-2 pb-2">
+                      <p className="text-[11px] text-muted-foreground">仅供参考，点击 chip 一键加入自定义关键词</p>
+                      <div className="flex flex-wrap gap-1">
+                        {libraryKeywords
+                          .filter((k) => !customKeywords.includes(k))
+                          .slice(0, 40)
+                          .map((k) => (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => addCustomKeyword(k)}
+                              className="rounded-full border bg-background px-2 py-0.5 text-xs transition hover:border-primary hover:text-primary"
+                            >
+                              + {k}
+                            </button>
+                          ))}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 )}
               </CardContent>
             </Card>
