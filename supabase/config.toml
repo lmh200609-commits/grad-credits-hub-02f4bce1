@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.ai-eval-stress-test]
 verify_jwt = false
+
+[functions.polish-answer]
+verify_jwt = false

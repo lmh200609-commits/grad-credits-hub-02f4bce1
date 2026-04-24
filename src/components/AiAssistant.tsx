@@ -6,8 +6,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import AssistantMessage, { type Section } from "@/components/AssistantMessage";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = { role: "user" | "assistant"; content: string; sections?: Section[] | null; polished?: boolean };
 
 const WELCOME: Msg = {
   role: "assistant",
@@ -65,8 +66,14 @@ const AiAssistant = () => {
         body: { messages: history },
       });
       if (error) throw error;
-      const answer = (data as any)?.answer || "（暂无回答）";
-      setMessages((prev) => [...prev, { role: "assistant", content: answer }]);
+      const d = data as any;
+      const answer = d?.answer || "（暂无回答）";
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: answer,
+        sections: d?.sections ?? null,
+        polished: !!d?.meta?.polished,
+      }]);
     } catch (e: any) {
       toast({
         title: "助手暂时不可用",
@@ -139,16 +146,14 @@ const AiAssistant = () => {
       <ScrollArea className="flex-1">
         <div ref={scrollRef} className="flex flex-col gap-3 p-4">
           {messages.map((m, i) => (
-            <div
-              key={i}
-              className={cn(
-                "max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm leading-relaxed",
-                m.role === "user"
-                  ? "self-end bg-primary text-primary-foreground"
-                  : "self-start bg-muted text-foreground",
+            <div key={i} className={cn("flex w-full", m.role === "user" ? "justify-end" : "justify-start")}>
+              {m.role === "user" ? (
+                <div className="max-w-[85%]">
+                  <AssistantMessage variant="user" content={m.content} />
+                </div>
+              ) : (
+                <AssistantMessage content={m.content} sections={m.sections} polished={m.polished} />
               )}
-            >
-              {m.content}
             </div>
           ))}
           {loading && (

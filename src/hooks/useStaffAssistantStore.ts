@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 
+import type { Section } from "@/components/AssistantMessage";
+
 export type Candidate = {
   user_id: string;
   full_name: string | null;
@@ -14,6 +16,8 @@ export type Msg = {
   candidates?: Candidate[] | null;
   stats?: any;
   action?: { type: string; payload: any } | null;
+  sections?: Section[] | null;
+  polished?: boolean;
 };
 
 export const WELCOME: Msg = {

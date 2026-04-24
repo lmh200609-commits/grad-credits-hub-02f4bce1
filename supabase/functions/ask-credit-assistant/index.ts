@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { normalizeMarkdown, toSections, shouldPolish, callPolish } from "../_shared/format-answer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,12 +18,16 @@ const SYSTEM_PROMPT = `你是「学分认定规则问答助手」，仅服务于
 5. 涉及"我的"申请/学分明细时，仅可基于下方「我的学分汇总」段落作答；该段落为空时回复"暂无您的申请记录"。绝不编造申请编号、AI 结论、教师评语、学分数。
 6. 严禁泄露任何其他学生的信息。如果用户询问他人，明确拒绝。
 
-【输出格式（必须严格遵守，三段式）】
-结论：xxx
-依据：xxx（引用规则名称和具体条款解释）
-补充：xxx（相关案例或注意事项；没有可写"无"）
+【输出格式（必须严格遵守）】
+使用 markdown，固定三段，每段以二级标题开头：
+## 结论
+一句话给出结论。
+## 依据
+引用规则名称与条款，要点用 - 列表；并列信息超过 5 行用表格。
+## 补充
+相关案例或注意事项；没有写"无"。
 
-不要使用 Markdown 标题，不要加额外章节。`;
+禁止：一级标题、emoji、分割线、代码块、寒暄开场（如"作为 AI 助手…"）。`;
 
 function tokenize(s: string): string[] {
   return (s || "").toLowerCase().match(/[\u4e00-\u9fa5]|[a-z0-9]+/g) || [];
@@ -152,10 +157,10 @@ Deno.serve(async (req) => {
 
       // 学生问"我的"但确实没有任何申请记录 → 直接返回统一文案，不再走 RAG/早返回
       if (!rows || rows.length === 0) {
+        const ans = normalizeMarkdown("## 结论\n暂无您的申请记录。\n\n## 依据\n数据库中未查询到您账号下的任何申请。\n\n## 补充\n如已提交，请到「我的申请」核对状态。");
         return new Response(JSON.stringify({
-          answer: "暂无您的申请记录",
-          matched_rules: [],
-          matched_cases_count: 0,
+          answer: ans, sections: toSections(ans), meta: { polished: false },
+          matched_rules: [], matched_cases_count: 0,
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
@@ -173,10 +178,10 @@ Deno.serve(async (req) => {
 
     // 未登录但问"我的"：也统一返回（无法区分身份，按"无记录"处理）
     if (!myUserId && isPersonalQuery(query)) {
+      const ans = normalizeMarkdown("## 结论\n暂无您的申请记录。\n\n## 依据\n未识别到登录身份。\n\n## 补充\n请先登录后再查询。");
       return new Response(JSON.stringify({
-        answer: "暂无您的申请记录",
-        matched_rules: [],
-        matched_cases_count: 0,
+        answer: ans, sections: toSections(ans), meta: { polished: false },
+        matched_rules: [], matched_cases_count: 0,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -193,8 +198,11 @@ Deno.serve(async (req) => {
         supabase.from("keywords").select("id", { count: "exact", head: true }).eq("active", true),
       ]);
       const answer = formatStats(allRules || [], casesCount || 0, keywordsCount || 0);
+      const cleaned = normalizeMarkdown(answer);
       return new Response(JSON.stringify({
-        answer,
+        answer: cleaned,
+        sections: toSections(cleaned),
+        meta: { polished: false },
         matched_rules: [],
         matched_cases_count: casesCount || 0,
         stats: true,
@@ -209,10 +217,10 @@ Deno.serve(async (req) => {
       .map((x) => x.r);
 
     if (scored.length === 0 && !mySummary) {
+      const ans = normalizeMarkdown("## 结论\n未找到相关认定规则，无法回答。\n\n## 依据\n知识库中暂无与您问题匹配的规则。\n\n## 补充\n请补充关键信息后再试：\n- 成果/证书全称\n- 级别（校级/省级/国家级/国际级）\n- 获奖等级\n- 您的参与角色（第一作者/团队成员等）");
       return new Response(JSON.stringify({
-        answer: "结论：未找到相关认定规则，无法回答。\n依据：知识库中暂无与您问题匹配的规则。\n补充：请补充关键信息后再试，例如：成果/证书全称、级别（校级/省级/国家级/国际级）、获奖等级、您的参与角色（第一作者/团队成员等）。",
-        matched_rules: [],
-        matched_cases_count: 0,
+        answer: ans, sections: toSections(ans), meta: { polished: false },
+        matched_rules: [], matched_cases_count: 0,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -281,10 +289,21 @@ Deno.serve(async (req) => {
     }
 
     const data = await resp.json();
-    const answer = data?.choices?.[0]?.message?.content?.trim() || "（无回答）";
-
+    let answer = data?.choices?.[0]?.message?.content?.trim() || "（无回答）";
+    let polished = false;
+    if (shouldPolish(answer)) {
+      const r = await callPolish(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        answer,
+      );
+      if (r.polished) { answer = r.text; polished = true; }
+    }
+    const cleaned = normalizeMarkdown(answer);
     return new Response(JSON.stringify({
-      answer,
+      answer: cleaned,
+      sections: toSections(cleaned),
+      meta: { polished },
       matched_rules: scored.map((r) => ({ id: r.id, name: r.name })),
       matched_cases_count: cases?.length || 0,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
