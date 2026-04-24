@@ -331,7 +331,7 @@ const ApplyPage = () => {
         .from("applications")
         .insert({
           student_id: user!.id,
-          description: parsed.data.description,
+          description: parsed.data.description ?? "",
           selected_keywords: parsed.data.selected_keywords,
           custom_keywords: parsed.data.custom_keywords,
           file_path: filePath,
