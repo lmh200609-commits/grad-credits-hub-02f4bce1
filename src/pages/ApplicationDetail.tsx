@@ -29,6 +29,7 @@ type App = {
   ai_suggested_credit: number | null;
   ai_confidence: number | null;
   ai_reasoning: string | null;
+  ai_reasoning_short: string | null;
   final_credit: number | null;
   final_review_note: string | null;
   submitted_at: string;
@@ -103,6 +104,24 @@ const ApplicationDetail = () => {
   useRealtimeTable("application_reviews", load, { filter: id ? `application_id=eq.${id}` : undefined });
 
   const isReviewer = !!app && (hasRole("admin") || hasRole("teacher"));
+
+  // 已发生的人工复核次数（teacher_review / admin_review）
+  const manualReviewCount = reviews.filter(
+    (r) => r.action === "teacher_review" || r.action === "admin_review",
+  ).length;
+  // 当 status=pending_review 且已存在 ≥1 次人工复核 → 标注"第 N 次人工复核"
+  const isReReview =
+    !!app &&
+    app.status === "pending_review" &&
+    manualReviewCount >= 1;
+  const reReviewIndex = manualReviewCount + 1;
+
+  const displayFinalCredit = (s: any, c: number | null) =>
+    s === "rejected" || s === "rejected_by_ai" ? 0 : c;
+
+  const studentShortReason =
+    app?.ai_reasoning_short?.trim() ||
+    (app?.ai_reasoning ? app.ai_reasoning.slice(0, 60) + (app.ai_reasoning.length > 60 ? "…" : "") : "");
 
   const decide = async (decision: "approved" | "rejected") => {
     if (!app) return;
@@ -261,6 +280,11 @@ const ApplicationDetail = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft /></Button>
           <h1 className="text-2xl font-bold">申请详情</h1>
           <StatusBadge status={app.status} audience={isReviewer ? "staff" : "student"} />
+          {isReviewer && isReReview && (
+            <Badge variant="destructive" className="ml-1">
+              ⚠ 第 {reReviewIndex} 次人工复核（学生再次申诉）
+            </Badge>
+          )}
         </div>
 
         <Card>
