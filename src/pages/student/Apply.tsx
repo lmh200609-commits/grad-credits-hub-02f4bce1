@@ -395,9 +395,9 @@ const ApplyPage = () => {
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <StepBadge n={1} />
-                  <CardTitle className="text-base">智能匹配规则</CardTitle>
+                  <CardTitle className="text-base">从案例库匹配关键词</CardTitle>
                 </div>
-                <CardDescription>支持直接搜索或四级关键词导航</CardDescription>
+                <CardDescription>所有候选内容均来自历史通过案例库</CardDescription>
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="search">
@@ -458,7 +458,7 @@ const ApplyPage = () => {
                       </div>
                     )}
                     {search && searchMatches.length === 0 && (
-                      <p className="text-xs text-muted-foreground">未匹配到规则，可切换到「关键词导航」逐级查找。</p>
+                      <p className="text-xs text-muted-foreground">案例库中未匹配，可切换到「关键词导航」逐级查找，或使用自定义关键词。</p>
                     )}
                   </TabsContent>
 
@@ -507,7 +507,7 @@ const ApplyPage = () => {
                     {DIMS.some((d) => picked[d]) && (
                       <div className="space-y-2">
                         <p className="text-xs text-muted-foreground">
-                          匹配到 {filteredRules.length} 条规则{filteredRules.length > 0 ? "，点击选择：" : ""}
+                          匹配到 {filteredRules.length} 条案例{filteredRules.length > 0 ? "，点击选择关键词：" : ""}
                         </p>
                         {filteredRules.slice(0, 20).map((r) => (
                           <button key={r.id} type="button" onClick={() => chooseRule(r)}
@@ -530,7 +530,7 @@ const ApplyPage = () => {
                           </button>
                         ))}
                         {filteredRules.length === 0 && (
-                          <p className="text-sm text-muted-foreground">没有匹配的规则，请回退或使用自定义关键词补充说明</p>
+                          <p className="text-sm text-muted-foreground">案例库中没有匹配项，可回退或使用自定义关键词补充</p>
                         )}
                       </div>
                     )}
@@ -545,7 +545,7 @@ const ApplyPage = () => {
                 <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">已选规则</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">已选关键词组合（来自案例库）</p>
                       <h3 className="mt-1 truncate text-lg font-semibold">
                         {selectedRule.achievement ?? selectedRule.name}
                       </h3>
@@ -564,7 +564,7 @@ const ApplyPage = () => {
                     </div>
                     <div className="text-right">
                       <div className="text-3xl font-bold text-primary">+{selectedRule.credit}</div>
-                      <div className="text-xs text-muted-foreground">预计学分</div>
+                      <div className="text-xs text-muted-foreground">参考学分（仅供参考）</div>
                       <Button size="sm" variant="ghost" onClick={reset} className="mt-2">
                         <RefreshCw className="mr-1 h-3 w-3" />换一个
                       </Button>
