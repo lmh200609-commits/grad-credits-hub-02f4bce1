@@ -131,12 +131,21 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
       return;
     }
     const d = data as { results: Array<{ user_id: string; ok: boolean; label: string; password?: string; error?: string }>; success_count: number; failure_count: number };
+    const total = ids.length;
+    const failedLabels = d.results.filter((r) => !r.ok).map((r) => r.label).slice(0, 3).join("、");
+    const failDesc = d.failure_count > 0
+      ? `失败 ${d.failure_count} 个${failedLabels ? `：${failedLabels}${d.failure_count > 3 ? " 等" : ""}` : ""}`
+      : undefined;
     if (mode === "delete") {
-      toast.success(`批量删除完成：成功 ${d.success_count}，失败 ${d.failure_count}`);
+      const msg = `批量删除完成：共 ${total} 个，成功 ${d.success_count}，失败 ${d.failure_count}`;
+      if (d.failure_count === 0) toast.success(msg);
+      else toast.warning(msg, { description: failDesc });
       onDone?.();
       onClose();
     } else {
-      toast.success(`批量重置完成：成功 ${d.success_count}，失败 ${d.failure_count}`);
+      const msg = `批量重置完成：共 ${total} 个，成功 ${d.success_count}，失败 ${d.failure_count}`;
+      if (d.failure_count === 0) toast.success(msg);
+      else toast.warning(msg, { description: failDesc });
       setResults(d.results);
       onDone?.();
     }

@@ -146,7 +146,7 @@ const UsersManage = () => {
     }
     toast.success(`已删除 ${deleteTarget.full_name ?? deleteTarget.student_no ?? deleteTarget.email ?? "账号"}`);
     setDeleteTarget(null);
-    setRows((prev) => prev.filter((p) => p.user_id !== deleteTarget.user_id));
+    await load();
   };
 
   return (
