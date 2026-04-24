@@ -122,12 +122,17 @@ const Students = () => {
           <CardHeader>
             <CardTitle className="text-base">筛选</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-4">
-            <Input
-              placeholder="搜索姓名 / 学号 / 手机号 / 班级"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="min-w-[260px] flex-1"
+                placeholder="搜索姓名 / 学号 / 手机号 / 班级"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Button variant="outline" onClick={() => setBulkOpen(true)}>批量重置密码</Button>
+            </div>
+            <div className="grid gap-2 md:grid-cols-4">
             <Select value={dept} onValueChange={setDept}>
               <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
               <SelectContent>
@@ -142,8 +147,16 @@ const Students = () => {
                 {majors.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={klass} onValueChange={setKlass}>
+              <SelectTrigger><SelectValue placeholder="班级" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>全部班级</SelectItem>
+                {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <div className="flex items-center text-sm text-muted-foreground">
               共 {filtered.length} / {rows.length} 名学生
+            </div>
             </div>
           </CardContent>
         </Card>
@@ -185,7 +198,7 @@ const Students = () => {
                           <Button asChild variant="outline" size="sm">
                             <Link to={`/teacher/students/${r.user_id}`}>查看详情</Link>
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => openReset(r)}>
+                          <Button variant="outline" size="sm" onClick={() => setResetTarget(r)}>
                             重置密码
                           </Button>
                         </div>
@@ -202,35 +215,30 @@ const Students = () => {
         </Card>
       </div>
 
-      <Dialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>重置学生密码</DialogTitle>
-            <DialogDescription>
-              为 <span className="font-medium">{resetTarget?.full_name ?? "学生"}</span>
-              （{resetTarget?.student_no ?? "—"}）设置新密码。请通过线下渠道告知学生。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="new-pw">新密码</Label>
-            <Input
-              id="new-pw"
-              type="text"
-              value={newPassword}
-              onChange={(e) => { setNewPassword(e.target.value); setPwError(null); }}
-              placeholder="至少 8 位，含字母和数字"
-              autoComplete="new-password"
-            />
-            {pwError && <p className="text-sm text-destructive">{pwError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResetTarget(null)} disabled={resetting}>取消</Button>
-            <Button onClick={submitReset} disabled={resetting}>
+      <AlertDialog open={!!resetTarget} onOpenChange={(o) => !o && !resetting && setResetTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认重置学生密码</AlertDialogTitle>
+            <AlertDialogDescription>
+              将把 <span className="font-semibold text-foreground">{resetTarget?.full_name ?? "该学生"}</span>
+              （{resetTarget?.student_no ?? "—"}）的密码重置为默认密码（学号 + 身份证后 6 位，缺失则补 0）。请通过线下渠道告知学生。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); submitReset(); }} disabled={resetting}>
               {resetting ? "重置中…" : "确认重置"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <BulkUserDialog
+        open={bulkOpen}
+        mode="reset"
+        role="student"
+        onClose={() => setBulkOpen(false)}
+      />
     </AppLayout>
   );
 };
