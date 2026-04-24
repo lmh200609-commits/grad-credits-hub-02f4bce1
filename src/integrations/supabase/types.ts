@@ -833,6 +833,7 @@ export type Database = {
       }
       normalize_keyword: { Args: { s: string }; Returns: string }
       refresh_certificate_types: { Args: never; Returns: number }
+      strip_time_tokens: { Args: { s: string }; Returns: string }
     }
     Enums: {
       app_role: "admin" | "teacher" | "student"
