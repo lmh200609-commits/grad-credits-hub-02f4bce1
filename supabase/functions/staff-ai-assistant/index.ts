@@ -6,6 +6,7 @@ const corsHeaders = {
 };
 
 type Msg = { role: "user" | "assistant" | "system" | "tool"; content: string; tool_call_id?: string; name?: string; tool_calls?: any[] };
+import { normalizeMarkdown, toSections, shouldPolish, callPolish } from "../_shared/format-answer.ts";
 
 const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校学分认定系统的教师与管理员服务。
 
@@ -63,6 +64,8 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 7. 如果用户问的统计指标不在上面 metric 列表中，回复"暂不支持该统计"，不要编造。
 8. 【数据来源严格基于数据库】凡涉及具体学生、申请、证书类型、AI/教师审核内容，必须先调用对应工具读取数据库。工具返回为空时必须明确回复"数据库中暂无相关记录"，绝不编造姓名、学号、学分、审核意见、证书类型、典型学分等任何细节。
 9. 询问"某学生的资料/记录/申请/AI审/教师审"时，优先用 student_full_profile + student_submission_history；询问"某次申请怎么走的"用 submission_timeline；询问"某证书几学分/属于哪类"用 certificate_type_lookup。`;
+
+const FORMAT_GUIDE = `\n\n【输出格式】使用 markdown：第一行一句结论；之后用 ## 二级标题分段；列表用 -；并列信息 ≥5 行必须用表格。禁止一级标题、emoji、分割线、整篇代码块、寒暄过程语（如"我将为您查询…"）。`;
 
 const TOOLS = [
   {
@@ -542,12 +545,13 @@ Deno.serve(async (req) => {
     const apiKey = provider === "qwen" ? DASHSCOPE_API_KEY! : DEEPSEEK_API_KEY!;
     const model = provider === "qwen" ? "qwen-plus" : "deepseek-chat";
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}\n\n当前用户角色：${userRole}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
     let convo: Msg[] = [sysMsg, ...messages.slice(-12)];
 
     let action: any = null;
     let candidates: any[] | null = null;
     let stats: any = null;
+    let toolCallCount = 0;
 
     // Up to 3 tool-call rounds
     for (let round = 0; round < 3; round++) {
@@ -578,6 +582,7 @@ Deno.serve(async (req) => {
       const toolCalls = message?.tool_calls;
 
       if (toolCalls && toolCalls.length > 0) {
+        toolCallCount += toolCalls.length;
         convo.push({ role: "assistant", content: message.content || "", tool_calls: toolCalls });
         for (const tc of toolCalls) {
           let args: any = {};
@@ -611,17 +616,28 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const answer = (message?.content || "").trim() || "好的。";
+      let answer = (message?.content || "").trim() || "好的。";
+      let polished = false;
+      if (shouldPolish(answer, { toolCalls: toolCallCount })) {
+        const r = await callPolish(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+          answer,
+        );
+        if (r.polished) { answer = r.text; polished = true; }
+      }
+      const cleaned = normalizeMarkdown(answer);
       return new Response(JSON.stringify({
-        answer,
-        action,
-        candidates,
-        stats,
+        answer: cleaned,
+        sections: toSections(cleaned),
+        meta: { polished },
+        action, candidates, stats,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    const fallback = normalizeMarkdown("已完成多轮工具调用，请查看结果。");
     return new Response(JSON.stringify({
-      answer: "已完成多轮工具调用，请查看结果。",
+      answer: fallback, sections: toSections(fallback), meta: { polished: false },
       action, candidates, stats,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
