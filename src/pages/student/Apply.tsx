@@ -20,6 +20,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   Send, Sparkles, X, Search, ChevronRight, Plus, FileText, Image as ImageIcon, File as FileIcon,
   Upload, CheckCircle2, Circle, ArrowLeft, RefreshCw, Trash2, Lightbulb, BookOpen, HelpCircle, ChevronDown,
+  Wand2,
 } from "lucide-react";
 import { applySchema } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
