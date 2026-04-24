@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,6 +14,10 @@ import {
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { resetPasswordSchema } from "@/lib/schemas";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
@@ -53,6 +57,8 @@ const UsersManage = () => {
   const [newPassword, setNewPassword] = useState("");
   const [pwError, setPwError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [page, setPage] = useState(0);
 
   const load = async () => {
@@ -118,6 +124,22 @@ const UsersManage = () => {
     setNewPassword("");
   };
 
+  const deleteAccount = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { data, error } = await supabase.functions.invoke("delete-user", {
+      body: { user_id: deleteTarget.user_id },
+    });
+    setDeleting(false);
+    if (error || (data as { error?: string })?.error) {
+      toast.error((data as { error?: string })?.error ?? error?.message ?? "删除失败");
+      return;
+    }
+    toast.success(`已删除 ${deleteTarget.full_name ?? deleteTarget.student_no ?? deleteTarget.email ?? "账号"}`);
+    setDeleteTarget(null);
+    setRows((prev) => prev.filter((p) => p.user_id !== deleteTarget.user_id));
+  };
+
   return (
     <AppLayout>
       <div className="space-y-4">
@@ -172,13 +194,11 @@ const UsersManage = () => {
                       </TableCell>
                     )}
                     <TableCell className="space-x-2 text-right">
-                      {role === "student" && (
-                        <Button asChild variant="outline" size="sm">
-                          <Link to={`/teacher/students/${r.user_id}`}>详情</Link>
-                        </Button>
-                      )}
                       <Button variant="outline" size="sm" onClick={() => { setResetTarget(r); setNewPassword(""); setPwError(null); }}>
                         重置密码
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(r)}>
+                        删除账号
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -212,6 +232,27 @@ const UsersManage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && !deleting && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除账号</AlertDialogTitle>
+            <AlertDialogDescription>
+              将永久删除 <span className="font-semibold text-foreground">{deleteTarget?.full_name ?? deleteTarget?.student_no ?? deleteTarget?.email ?? "该用户"}</span> 的账号、个人资料及角色信息，操作不可撤销。请再次点击「确认删除」继续。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); deleteAccount(); }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "删除中…" : "确认删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 };
