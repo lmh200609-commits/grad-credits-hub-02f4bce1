@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import AssistantMessage from "@/components/AssistantMessage";
 import {
   useStaffAssistantStore,
   staffAssistantActions,
@@ -56,6 +57,8 @@ const StaffAiAssistant = () => {
         candidates: d?.candidates ?? null,
         stats: d?.stats ?? null,
         action: d?.action ?? null,
+        sections: d?.sections ?? null,
+        polished: !!d?.meta?.polished,
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
@@ -137,14 +140,13 @@ const StaffAiAssistant = () => {
         <div className="flex flex-col gap-3 p-4">
               {messages.map((m, i) => (
                 <div key={i} className={cn("flex flex-col gap-2", m.role === "user" ? "items-end" : "items-start")}>
-                  <div
-                    className={cn(
-                      "max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm leading-relaxed",
-                      m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
-                    )}
-                  >
-                    {m.content}
-                  </div>
+                  {m.role === "user" ? (
+                    <div className="max-w-[85%]">
+                      <AssistantMessage variant="user" content={m.content} />
+                    </div>
+                  ) : (
+                    <AssistantMessage content={m.content} sections={m.sections} polished={m.polished} />
+                  )}
 
                   {m.candidates && m.candidates.length > 0 && (
                     <div className="flex w-full max-w-[90%] flex-col gap-1.5">
