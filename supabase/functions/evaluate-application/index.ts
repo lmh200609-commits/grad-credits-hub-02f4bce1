@@ -63,22 +63,14 @@ Deno.serve(async (req) => {
       .eq("user_id", app.student_id)
       .single();
 
-    const { data: rules } = await admin
-      .from("rules")
-      .select("id, name, project, achievement, level, identity, credit")
-      .eq("active", true);
-
-    // 找出与申请关键词最契合的规则（用于建议学分）
     const selected: string[] = app.selected_keywords ?? [];
     const custom: string[] = app.custom_keywords ?? [];
-    const candidate = rules?.find((r) =>
-      [r.project, r.achievement, r.level, r.identity].filter(Boolean).every((v) => selected.includes(v as string))
-    ) ?? null;
-
-    // 拉取与本次申请关键词相关的人工通过案例（教师覆盖系统驳回时沉淀）
     const allKw = [...selected, ...custom];
+
+    // 学生端 AI 初审佐证：仅来自案例库（cases）
     // 服务端按关键词 ilike 匹配，避免数千案例时漏检 / 超量传输
-    let relatedCases: Array<{ title: string; summary: string; awarded_credit: number | null }> = [];
+    type CaseRow = { id: string; title: string; summary: string; awarded_credit: number | null };
+    let relatedCases: CaseRow[] = [];
     const cleanedKw = allKw.filter((k) => k && k.trim().length > 0).slice(0, 8);
     if (cleanedKw.length) {
       const orExpr = cleanedKw
@@ -86,12 +78,21 @@ Deno.serve(async (req) => {
         .join(",");
       const { data: matched } = await admin
         .from("cases")
-        .select("title, summary, awarded_credit")
+        .select("id, title, summary, awarded_credit")
         .or(orExpr)
         .order("created_at", { ascending: false })
-        .limit(5);
-      relatedCases = (matched as typeof relatedCases) ?? [];
+        .limit(8);
+      relatedCases = (matched as CaseRow[]) ?? [];
     }
+
+    // 计分：按命中关键词数量挑选最相关的"候选案例"
+    const scoreCase = (c: CaseRow) => {
+      const hay = `${c.title}\n${c.summary ?? ""}`.toLowerCase();
+      return cleanedKw.reduce((n, k) => n + (hay.includes(k.toLowerCase()) ? 1 : 0), 0);
+    };
+    const candidateCase: CaseRow | null = relatedCases.length
+      ? [...relatedCases].sort((a, b) => scoreCase(b) - scoreCase(a))[0]
+      : null;
 
     // 下载附件图片
     let imageDataUrl: string | null = null;
@@ -121,6 +122,8 @@ Deno.serve(async (req) => {
     const systemPrompt = `你是大学学分材料核验助手。
 
 【认定范围参考】本科生创新实践学分的认定范围包括：科研成果（论文）、知识产权、科研训练（科研项目 / 大创项目）、学科竞赛、职业技能证书、创业实践、文体竞赛、第二课堂等。
+
+【参考依据】只以"历史人工通过案例库"作为佐证依据；不要把学校规则库作为唯一标准。
 
 你需要做两类工作：
 
@@ -156,8 +159,8 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
         custom_keywords: custom,
         attachment: attachmentNote,
       },
-      candidate_rule: candidate
-        ? { id: candidate.id, name: candidate.name, credit: candidate.credit }
+      candidate_case: candidateCase
+        ? { title: candidateCase.title, awarded_credit: candidateCase.awarded_credit }
         : null,
       reference_cases: relatedCases.map((c) => ({
         title: c.title,
@@ -230,7 +233,7 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
     }
     const result = JSON.parse(call.function.arguments);
 
-    // 用 AI 从图片中识别到的真实属性重新匹配规则（防止学生选高分关键词配低级别证书）
+    // 用 AI 从图片中识别到的真实属性重新匹配案例（防止学生选高分关键词配低级别证书）
     const detected = {
       project: result.detected_project as string | null,
       achievement: result.detected_achievement as string | null,
@@ -238,26 +241,26 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
       identity: result.detected_identity as string | null,
     };
     const hasDetection = !!(detected.project || detected.achievement || detected.level);
-    const detectedRule = hasDetection
-      ? rules?.find((r) => {
-          const dims = [
-            [r.project, detected.project],
-            [r.achievement, detected.achievement],
-            [r.level, detected.level],
-            [r.identity, detected.identity],
-          ] as const;
-          // 规则中非空的维度必须与 detected 完全一致；规则中为空的维度跳过
-          return dims.every(([rv, dv]) => !rv || (dv && (dv === rv || dv.includes(rv as string) || (rv as string).includes(dv))));
-        }) ?? null
+    // 在 relatedCases 中按 detected 关键词再次评分，得到 detectedCase
+    const detectedTokens = [detected.project, detected.achievement, detected.level, detected.identity]
+      .filter((x): x is string => !!x && x.length > 0);
+    const detectedCase: CaseRow | null = (hasDetection && relatedCases.length)
+      ? [...relatedCases].sort((a, b) => {
+          const ha = `${a.title}\n${a.summary ?? ""}`.toLowerCase();
+          const hb = `${b.title}\n${b.summary ?? ""}`.toLowerCase();
+          const sa = detectedTokens.reduce((n, t) => n + (ha.includes(t.toLowerCase()) ? 1 : 0), 0);
+          const sb = detectedTokens.reduce((n, t) => n + (hb.includes(t.toLowerCase()) ? 1 : 0), 0);
+          return sb - sa;
+        })[0]
       : null;
 
-    // 优先使用 detected 匹配的规则；若 detected 与学生关键词派生的 candidate 不一致，强制走人工复核
-    const effectiveRule = detectedRule ?? candidate;
-    const detectedMismatch = hasDetection && candidate && detectedRule && detectedRule.id !== candidate.id;
+    // 优先使用 detected 匹配的案例；若与学生关键词派生的 candidateCase 不一致，强制走人工复核
+    const effectiveCase = detectedCase ?? candidateCase;
+    const detectedMismatch = hasDetection && candidateCase && detectedCase && detectedCase.id !== candidateCase.id;
 
     let nextStatus: string;
     if (detectedMismatch) {
-      // 学生选的关键词与图片识别结果对应不同规则 → 不能自动通过
+      // 学生选的关键词与图片识别结果对应不同案例 → 不能自动通过
       nextStatus = result.recommendation === "reject" ? "rejected_by_ai" : "pending_review";
     } else if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "auto_approved";
@@ -267,8 +270,9 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
       nextStatus = "pending_review";
     }
 
-    const matchedRuleId = effectiveRule?.id ?? null;
-    const suggestedCredit = effectiveRule?.credit ?? null;
+    // 不再指向 rules 表；ai_matched_rule_id 写 null
+    const matchedRuleId: string | null = null;
+    const suggestedCredit = effectiveCase?.awarded_credit ?? null;
 
     await admin.from("application_reviews").insert({
       application_id,

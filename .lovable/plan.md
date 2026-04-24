@@ -1,47 +1,72 @@
-## 问题
+## 学生端申请流程调整
 
-点击侧边栏进入页面后，难以识别"当前在哪个页面"，原因有两点：
+### 目标
+1. 学生端"直接搜索"和"关键词导航"的内容**只来自案例库**（cases），不再使用 rules 表/keywords 表作为来源。
+2. 图片证明材料改为**必填**。
+3. 取消"必须匹配到学分规则"的提交校验，只要满足"选择/自定义至少一个关键词" + "上传了图片" 即可提交并进入 AI 初审。
+4. 后端 AI 初审：**佐证材料只来自案例库**，不再以 rules 作为命中目标。
 
-1. **侧边栏激活态不够显眼**：`SidebarMenuButton` 是 shadcn 默认按钮容器，它自带的 hover/背景样式会把内部 `NavLink` 的 `isActive` 样式（淡淡的 `bg-primary/10` + 3px 左侧条）覆盖或弱化，视觉上几乎看不出区别。
-2. **顶部没有当前页面标题**：header 只显示"学分认证系统"这一固定文字，没有当前路由的名称作参考。
+### 前端改动 — `src/pages/student/Apply.tsx`
 
-## 修改方案（保持现有配色与基础样式不变）
+**数据来源（仅案例库）**
+- 移除 `rules` 表加载逻辑；移除 `keywords` 表加载逻辑（关键词库展示）。
+- 改为初始化时从 `cases` 表加载（取最新若干百条，含 title/summary/awarded_credit），统一映射为现有 `Rule` 结构（`source: "case"`），用于：
+  - 关键词导航的四级维度选项（来自 `parseCaseKeywords(summary)` 解析的 project/achievement/level/identity）
+  - 直接搜索结果（替代原 ruleMatches + caseMatches，统一为 cases）
+  - 热门关键词（按 cases 中 achievement 频次）
+  - 自定义关键词建议库（用 cases 中出现的关键词聚合后展示，而非 keywords 表）
 
-### 1. 强化侧边栏激活项（`src/components/AppLayout.tsx`）
-在不更换配色（仍用 `primary`）的前提下，让激活项更明显：
-- 用 `SidebarMenuButton` 自身的 `isActive` 属性来驱动激活样式，而不是仅靠内部 `NavLink` 的 className（避免被父级按钮样式覆盖）。
-- 激活态样式微调：
-  - 背景从 `bg-primary/10` 改为略深的 `bg-primary/15`
-  - 文字保持 `text-primary font-medium`
-  - 保留左侧 3px `bg-primary` 竖条作为强指示
-  - 图标在激活时也变为 `text-primary`
-- 非激活项保持现状（`text-sidebar-foreground` + `hover:bg-muted`）。
-- 折叠态（icon-only）下，左侧竖条同样可见，便于在迷你模式识别当前项。
+**关键词导航**
+- `nextOptions` 维度选项与 `filteredRules` 全部基于 cases 派生数据。
+- "已选规则卡"展示的"预计学分"改为"参考学分"，注明"来自相似案例平均，仅供参考"。
 
-实现要点：用 `useLocation()` 计算 `isActive`，传给 `SidebarMenuButton` 的 `isActive` prop，同时给 `NavLink` 加 `data-active` 配合样式。
+**图片证明材料 → 必填**
+- 步骤 4 标题描述：`PDF / 图片，必须上传，单个文件 ≤ 10 MB`。
+- 文件类型限制为图片（`accept="image/*"`），描述同步：`仅支持 JPG / PNG / WEBP 等图片格式，最大 10 MB`（按用户原话"图片证明材料"理解为限图片；如保留 PDF，会在技术细节里说明）。
+- `checklist` 中"已上传证明材料"去掉 `optional`，改为必填项；准备清单中显示"必填"标识。
+- `submit()` 增加校验：`if (!file) return toast({ title: "请上传图片证明材料", variant: "destructive" })`。
 
-### 2. 顶部 header 显示当前页面名（`src/components/AppLayout.tsx`）
-- 根据当前路径，在三套菜单（admin / teacher / student）+ 少量额外路由（如 `/apply`、`/my-applications`、`/reviews`、`/admin/*` 详情页）中查找匹配项的 `title`。
-- 在 header 中"学分认证系统"右侧加一个分隔符 `·` 和当前页面名（`text-muted-foreground`，不抢主标题视觉）。
-- 移动端窄屏自动隐藏（`hidden sm:inline`），避免拥挤。
+**取消"必须匹配学分规则"的限制**
+- 修改 `src/lib/schemas.ts` 的 `applySchema`：
+  - 移除/不再使用 `rule_id`（保留为可选 nullable，但不强制 uuid）。
+  - 保留"至少 1 个关键词"约束。
+- `submit()` 中删除/忽略 `rule_id` 校验路径（`selectedRule?.id` 不再传入 schema 校验）。
+- 顶部 `STEPS` 文案微调：
+  - 步骤 1：`选择关键词` / `从案例库搜索或导航`
+  - 步骤 3：改为 `上传材料`（必填）
+  - 步骤 4 文案对应保持"提交审核"。
+- "申请说明"卡片标题描述改为：`可选。可补充活动详情；提交不强制要求填写`。
 
-### 3.（可选小增强）页面内 `PageHeader` 兜底
-现有 `PageHeader` 组件已存在。检查目前几个主要路由页面是否都使用了它；若有遗漏的页面没有标题，会在后续单独补全（本次不在范围内，仅做记录）。
+**已选"规则"语义**
+- 保留 `selectedRule` 仅作为关键词来源（自动把 case 派生的 4 维写入 picked），不再作为提交必备。
 
-## 不做的事
+### 后端改动 — `supabase/functions/evaluate-application/index.ts`
 
-- 不改侧边栏整体配色、宽度、折叠机制
-- 不改 `sidebar.tsx` shadcn 组件源码
-- 不引入面包屑组件库
-- 不调整路由结构
+**佐证仅来自案例库**
+- 移除从 `rules` 表加载并匹配 candidate 的逻辑。
+- `candidate` / `detectedRule` / `effectiveRule` / `matched_rule_id` / `suggestedCredit` 全部改为基于 cases：
+  - 用学生关键词在 cases 中按 title/summary ilike 匹配，作为 `candidate_case`，建议学分 = 该 case 的 `awarded_credit`。
+  - AI 返回的 detected_* 同样在 cases 中再次匹配，得到 `detected_case`。
+  - `matched_rule_id` 写入 `null`（applications.ai_matched_rule_id 字段保留为 null，因为不再指向 rules）。
+  - `ai_suggested_credit` 取自匹配到的 case `awarded_credit`，无匹配则为 null。
+- `relatedCases` 逻辑保留并加强（仍然作为 reference_cases 传入 prompt）。
+- 系统提示词中"认定范围参考"保留，但删除/弱化"匹配规则"措辞，强调"以历史通过案例为参考"。
+- 自动通过 / 拒绝 / 转人工的判定阈值不变。
 
-## 涉及文件
+**说明**：因 `applications.ai_matched_rule_id` 是非外键的 uuid 列，写 null 不影响 schema；无需数据库迁移。
 
-- `src/components/AppLayout.tsx`（唯一修改文件）
+### 准备清单（侧栏）更新
+- 项 1：`已选择/添加关键词`（合并原"规则" + "关键词"，因为不再要求规则）。
+- 项 2：`已上传图片证明材料`（必填，去掉"推荐"）。
+- 项 3：`申请说明`（可选）。
+- 完成度计算同步调整。
 
-## 验收
+### 不变项
+- 教师端 / 管理员端 UI 与逻辑不变。
+- 数据库 schema 不变；rules / keywords 表仍由管理员维护，仅学生端不再展示作为搜索源。
+- AI 详情页面对教师展示的 `ai_matched_rule_id` 字段，匹配为空时 UI 已能容错（之前 case 来源也是 null，无需额外改动；如发现详情页强依赖会一并兜底）。
 
-- 进入任一菜单项后：侧边栏对应项有明显的浅色背景 + 左侧竖条 + 主色文字/图标
-- 顶部 header 显示当前页面名称（桌面端）
-- 折叠侧边栏到 icon 模式时，仍能通过左侧竖条+图标主色识别当前项
-- 现有配色（primary/sidebar 颜色变量）未变更
+### 文件清单
+- `src/pages/student/Apply.tsx` — 数据源切换为 cases、文件必填、提交校验调整、文案。
+- `src/lib/schemas.ts` — `applySchema` 移除 rule_id 强校验。
+- `supabase/functions/evaluate-application/index.ts` — 佐证与建议学分仅基于 cases。

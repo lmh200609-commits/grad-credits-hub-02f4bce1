@@ -91,9 +91,9 @@ const formatBytes = (n: number) => {
 };
 
 const STEPS = [
-  { label: "选择规则", description: "搜索或导航匹配" },
-  { label: "填写说明", description: "描述成果详情" },
-  { label: "上传材料", description: "证书 / 截图（可选）" },
+  { label: "选择关键词", description: "从案例库搜索或导航" },
+  { label: "填写说明", description: "可选，描述成果详情" },
+  { label: "上传图片", description: "证书 / 截图（必填）" },
   { label: "提交审核", description: "进入审核流程" },
 ];
 
@@ -122,20 +122,33 @@ const ApplyPage = () => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const rulesRes = await supabase
-        .from("rules")
-        .select("id, name, project, achievement, level, identity, credit, description")
-        .eq("active", true);
-      const baseRules: Rule[] = ((rulesRes.data as any[]) ?? []).map((r) => ({ ...r, source: "rule" as const }));
+      // 学生端数据源：仅来自案例库（cases）
+      const casesRes = await supabase
+        .from("cases")
+        .select("id, title, summary, awarded_credit")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      const baseRules: Rule[] = ((casesRes.data as any[]) ?? []).map((c) => {
+        const kw = parseCaseKeywords(c.summary ?? "");
+        return {
+          id: `case:${c.id}`,
+          name: c.title,
+          project: kw.project ?? null,
+          achievement: kw.achievement ?? c.title,
+          level: kw.level ?? null,
+          identity: kw.identity ?? null,
+          credit: Number(c.awarded_credit ?? 0),
+          description: "来自案例库（教师人工通过沉淀）",
+          source: "case" as const,
+        };
+      });
       setRules(baseRules);
-      const kwRes = await supabase
-        .from("keywords")
-        .select("keyword")
-        .eq("active", true)
-        .order("usage_count", { ascending: false })
-        .order("keyword", { ascending: true })
-        .limit(1000);
-      setLibraryKeywords(((kwRes.data as { keyword: string }[]) ?? []).map((r) => r.keyword));
+      // 关键词建议库：来自案例库的四维关键词聚合
+      const kwSet = new Set<string>();
+      baseRules.forEach((r) => {
+        DIMS.forEach((d) => { const v = (r as any)[d]; if (v) kwSet.add(String(v)); });
+      });
+      setLibraryKeywords(Array.from(kwSet).sort());
       setLoading(false);
     })();
   }, []);
@@ -178,7 +191,7 @@ const ApplyPage = () => {
     return Array.from(set).sort();
   }, [filteredRules, nextDim]);
 
-  const ruleMatches = useMemo(() => {
+  const searchMatches = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
     return rules.filter((r) =>
@@ -189,37 +202,6 @@ const ApplyPage = () => {
       || (r.identity ?? "").toLowerCase().includes(q)
     ).slice(0, 8);
   }, [rules, search]);
-
-  const [caseMatches, setCaseMatches] = useState<Rule[]>([]);
-  useEffect(() => {
-    const q = search.trim();
-    if (!q) { setCaseMatches([]); return; }
-    const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from("cases")
-        .select("id, title, summary, awarded_credit")
-        .or(`title.ilike.%${q}%,summary.ilike.%${q}%`)
-        .limit(8);
-      const mapped: Rule[] = ((data as any[]) ?? []).map((c) => {
-        const kw = parseCaseKeywords(c.summary ?? "");
-        return {
-          id: `case:${c.id}`,
-          name: c.title,
-          project: kw.project ?? null,
-          achievement: kw.achievement ?? c.title,
-          level: kw.level ?? null,
-          identity: kw.identity ?? null,
-          credit: Number(c.awarded_credit ?? 0),
-          description: "来自案例库（教师人工通过沉淀）",
-          source: "case" as const,
-        };
-      });
-      setCaseMatches(mapped);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  const searchMatches = useMemo(() => [...ruleMatches, ...caseMatches], [ruleMatches, caseMatches]);
 
   // 热门关键词（按 achievement 频次）
   const hotKeywords = useMemo(() => {
@@ -273,12 +255,9 @@ const ApplyPage = () => {
   // 完成度
   const stepsDone = useMemo(() => {
     let n = 0;
-    if (selectedRule || DIMS.some((d) => picked[d])) n = Math.max(n, 1);
-    if (
-      DIMS.some((d) => picked[d]) ||
-      customKeywords.length > 0 ||
-      description.trim().length > 0
-    ) n = Math.max(n, 2);
+    const hasKw = DIMS.some((d) => picked[d]) || customKeywords.length > 0;
+    if (hasKw) n = Math.max(n, 1);
+    if (description.trim().length > 0) n = Math.max(n, 2);
     if (file) n = Math.max(n, 3);
     return n;
   }, [selectedRule, picked, customKeywords, description, file]);
@@ -307,7 +286,7 @@ const ApplyPage = () => {
     const selected_keywords = DIMS.map((d) => picked[d]).filter(Boolean) as string[];
     const parsed = applySchema.safeParse({
       description, selected_keywords, custom_keywords: customKeywords,
-      rule_id: selectedRule?.id ?? null,
+      rule_id: null,
     });
     if (!parsed.success) {
       const msg = parsed.error.issues[0]?.message ?? "请检查表单";
@@ -315,6 +294,12 @@ const ApplyPage = () => {
       return toast({ title: msg, variant: "destructive" });
     }
     setDescError(null);
+    if (!file) {
+      return toast({ title: "请上传图片证明材料", variant: "destructive" });
+    }
+    if (!file.type.startsWith("image/")) {
+      return toast({ title: "证明材料必须为图片格式", variant: "destructive" });
+    }
     if (fileTooBig) return toast({ title: "文件不能超过 10MB", variant: "destructive" });
     setSubmitting(true);
     try {
@@ -373,10 +358,9 @@ const ApplyPage = () => {
   );
 
   const checklist = [
-    { ok: !!selectedRule || DIMS.some((d) => picked[d]), label: "已选择/匹配规则" },
     { ok: DIMS.some((d) => picked[d]) || customKeywords.length > 0, label: "已选择/添加关键词" },
+    { ok: !!file, label: "已上传图片证明材料" },
     { ok: descLen > 0, label: `申请说明（当前 ${descLen} 字）`, optional: true },
-    { ok: !!file, label: "已上传证明材料（推荐）", optional: true },
   ];
 
   return (
@@ -411,9 +395,9 @@ const ApplyPage = () => {
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <StepBadge n={1} />
-                  <CardTitle className="text-base">智能匹配规则</CardTitle>
+                  <CardTitle className="text-base">从案例库匹配关键词</CardTitle>
                 </div>
-                <CardDescription>支持直接搜索或四级关键词导航</CardDescription>
+                <CardDescription>所有候选内容均来自历史通过案例库</CardDescription>
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="search">
@@ -474,7 +458,7 @@ const ApplyPage = () => {
                       </div>
                     )}
                     {search && searchMatches.length === 0 && (
-                      <p className="text-xs text-muted-foreground">未匹配到规则，可切换到「关键词导航」逐级查找。</p>
+                      <p className="text-xs text-muted-foreground">案例库中未匹配，可切换到「关键词导航」逐级查找，或使用自定义关键词。</p>
                     )}
                   </TabsContent>
 
@@ -523,7 +507,7 @@ const ApplyPage = () => {
                     {DIMS.some((d) => picked[d]) && (
                       <div className="space-y-2">
                         <p className="text-xs text-muted-foreground">
-                          匹配到 {filteredRules.length} 条规则{filteredRules.length > 0 ? "，点击选择：" : ""}
+                          匹配到 {filteredRules.length} 条案例{filteredRules.length > 0 ? "，点击选择关键词：" : ""}
                         </p>
                         {filteredRules.slice(0, 20).map((r) => (
                           <button key={r.id} type="button" onClick={() => chooseRule(r)}
@@ -546,7 +530,7 @@ const ApplyPage = () => {
                           </button>
                         ))}
                         {filteredRules.length === 0 && (
-                          <p className="text-sm text-muted-foreground">没有匹配的规则，请回退或使用自定义关键词补充说明</p>
+                          <p className="text-sm text-muted-foreground">案例库中没有匹配项，可回退或使用自定义关键词补充</p>
                         )}
                       </div>
                     )}
@@ -561,7 +545,7 @@ const ApplyPage = () => {
                 <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">已选规则</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">已选关键词组合（来自案例库）</p>
                       <h3 className="mt-1 truncate text-lg font-semibold">
                         {selectedRule.achievement ?? selectedRule.name}
                       </h3>
@@ -580,7 +564,7 @@ const ApplyPage = () => {
                     </div>
                     <div className="text-right">
                       <div className="text-3xl font-bold text-primary">+{selectedRule.credit}</div>
-                      <div className="text-xs text-muted-foreground">预计学分</div>
+                      <div className="text-xs text-muted-foreground">参考学分（仅供参考）</div>
                       <Button size="sm" variant="ghost" onClick={reset} className="mt-2">
                         <RefreshCw className="mr-1 h-3 w-3" />换一个
                       </Button>
@@ -667,7 +651,7 @@ const ApplyPage = () => {
                   <StepBadge n={3} />
                   <CardTitle className="text-base">申请说明</CardTitle>
                 </div>
-                <CardDescription>可选。简要描述活动 / 成果（不超过 2000 字），也可仅靠关键词提交</CardDescription>
+                <CardDescription>可选。可补充活动详情；提交不强制要求填写</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
@@ -724,15 +708,15 @@ const ApplyPage = () => {
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <StepBadge n={4} />
-                  <CardTitle className="text-base">证明材料</CardTitle>
+                  <CardTitle className="text-base">证明材料 <span className="ml-1 text-xs font-normal text-destructive">必填</span></CardTitle>
                 </div>
-                <CardDescription>PDF / 图片，可选，单个文件 ≤ 10MB</CardDescription>
+                <CardDescription>仅支持 JPG / PNG / WEBP 等图片格式，必须上传，单个文件 ≤ 10MB</CardDescription>
               </CardHeader>
               <CardContent>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="application/pdf,image/*"
+                  accept="image/*"
                   className="hidden"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
@@ -750,7 +734,7 @@ const ApplyPage = () => {
                   >
                     <Upload className="h-8 w-8 text-muted-foreground" />
                     <p className="text-sm font-medium">拖拽文件到此处，或点击上传</p>
-                    <p className="text-xs text-muted-foreground">支持 PDF、JPG、PNG 等，最大 10 MB</p>
+                    <p className="text-xs text-muted-foreground">仅支持图片格式（JPG / PNG / WEBP 等），最大 10 MB</p>
                   </button>
                 ) : (
                   <div className="flex items-center gap-3 rounded-md border p-3">
