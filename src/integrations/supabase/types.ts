@@ -235,6 +235,42 @@ export type Database = {
           },
         ]
       }
+      cases_backup_20260424: {
+        Row: {
+          awarded_credit: number | null
+          created_at: string | null
+          created_by: string | null
+          id: string | null
+          notes: string | null
+          rule_id: string | null
+          summary: string | null
+          title: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          awarded_credit?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          notes?: string | null
+          rule_id?: string | null
+          summary?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          awarded_credit?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          notes?: string | null
+          rule_id?: string | null
+          summary?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       certificate_types: {
         Row: {
           active: boolean
@@ -289,6 +325,60 @@ export type Database = {
         }
         Relationships: []
       }
+      certificate_types_backup_20260424: {
+        Row: {
+          active: boolean | null
+          category: string | null
+          created_at: string | null
+          description: string | null
+          id: string | null
+          identity: string | null
+          keywords: string[] | null
+          last_synced_at: string | null
+          level: string | null
+          name: string | null
+          occurrence_count: number | null
+          source_case_ids: string[] | null
+          source_rule_ids: string[] | null
+          typical_credit: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          identity?: string | null
+          keywords?: string[] | null
+          last_synced_at?: string | null
+          level?: string | null
+          name?: string | null
+          occurrence_count?: number | null
+          source_case_ids?: string[] | null
+          source_rule_ids?: string[] | null
+          typical_credit?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          identity?: string | null
+          keywords?: string[] | null
+          last_synced_at?: string | null
+          level?: string | null
+          name?: string | null
+          occurrence_count?: number | null
+          source_case_ids?: string[] | null
+          source_rule_ids?: string[] | null
+          typical_credit?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       keywords: {
         Row: {
           active: boolean
@@ -322,6 +412,42 @@ export type Database = {
           source?: string | null
           updated_at?: string
           usage_count?: number
+        }
+        Relationships: []
+      }
+      keywords_backup_20260424: {
+        Row: {
+          active: boolean | null
+          category: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string | null
+          keyword: string | null
+          source: string | null
+          updated_at: string | null
+          usage_count: number | null
+        }
+        Insert: {
+          active?: boolean | null
+          category?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          keyword?: string | null
+          source?: string | null
+          updated_at?: string | null
+          usage_count?: number | null
+        }
+        Update: {
+          active?: boolean | null
+          category?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          keyword?: string | null
+          source?: string | null
+          updated_at?: string | null
+          usage_count?: number | null
         }
         Relationships: []
       }
@@ -421,6 +547,36 @@ export type Database = {
         }
         Relationships: []
       }
+      rule_library_backup_20260424: {
+        Row: {
+          active: boolean | null
+          content: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string | null
+          rule_no: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          content?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          rule_no?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          content?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          rule_no?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       rules: {
         Row: {
           achievement: string | null
@@ -469,6 +625,57 @@ export type Database = {
           name?: string
           project?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      rules_backup_20260424: {
+        Row: {
+          achievement: string | null
+          active: boolean | null
+          category: string | null
+          created_at: string | null
+          created_by: string | null
+          credit: number | null
+          description: string | null
+          id: string | null
+          identity: string | null
+          keywords: string[] | null
+          level: string | null
+          name: string | null
+          project: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          achievement?: string | null
+          active?: boolean | null
+          category?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          credit?: number | null
+          description?: string | null
+          id?: string | null
+          identity?: string | null
+          keywords?: string[] | null
+          level?: string | null
+          name?: string | null
+          project?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          achievement?: string | null
+          active?: boolean | null
+          category?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          credit?: number | null
+          description?: string | null
+          id?: string | null
+          identity?: string | null
+          keywords?: string[] | null
+          level?: string | null
+          name?: string | null
+          project?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
