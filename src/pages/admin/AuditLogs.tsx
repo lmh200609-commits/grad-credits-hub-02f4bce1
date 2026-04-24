@@ -42,6 +42,9 @@ type AuditLog = {
 const ACTION_LABEL: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   import_users: { label: "批量导入", variant: "default" },
   delete_user: { label: "删除用户", variant: "destructive" },
+  bulk_delete_users: { label: "批量删除", variant: "destructive" },
+  reset_password: { label: "重置密码", variant: "secondary" },
+  bulk_reset_password: { label: "批量重置密码", variant: "secondary" },
   role_change: { label: "角色变更", variant: "secondary" },
   rule_create: { label: "规则新增", variant: "default" },
   rule_update: { label: "规则更新", variant: "secondary" },
