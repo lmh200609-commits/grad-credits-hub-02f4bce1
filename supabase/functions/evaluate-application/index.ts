@@ -148,6 +148,8 @@ B. 从图片中实际识别的属性（detected_*）：无论关键词写什么�
 
 reasoning 中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；图片实际识别：项目=…，成果=…，级别=…，身份=…；结论：…」`;
 
+// 同时输出 reasoning_short：≤60 字的一句话结论，给学生看，避免暴露内部核验细节，重点说明"是否通过/为什么"。
+
     const userPayload = {
       student: {
         name: studentProfile?.full_name ?? "未知",
