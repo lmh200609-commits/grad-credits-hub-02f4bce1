@@ -191,7 +191,7 @@ const ApplyPage = () => {
     return Array.from(set).sort();
   }, [filteredRules, nextDim]);
 
-  const ruleMatches = useMemo(() => {
+  const searchMatches = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
     return rules.filter((r) =>
@@ -202,37 +202,6 @@ const ApplyPage = () => {
       || (r.identity ?? "").toLowerCase().includes(q)
     ).slice(0, 8);
   }, [rules, search]);
-
-  const [caseMatches, setCaseMatches] = useState<Rule[]>([]);
-  useEffect(() => {
-    const q = search.trim();
-    if (!q) { setCaseMatches([]); return; }
-    const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from("cases")
-        .select("id, title, summary, awarded_credit")
-        .or(`title.ilike.%${q}%,summary.ilike.%${q}%`)
-        .limit(8);
-      const mapped: Rule[] = ((data as any[]) ?? []).map((c) => {
-        const kw = parseCaseKeywords(c.summary ?? "");
-        return {
-          id: `case:${c.id}`,
-          name: c.title,
-          project: kw.project ?? null,
-          achievement: kw.achievement ?? c.title,
-          level: kw.level ?? null,
-          identity: kw.identity ?? null,
-          credit: Number(c.awarded_credit ?? 0),
-          description: "来自案例库（教师人工通过沉淀）",
-          source: "case" as const,
-        };
-      });
-      setCaseMatches(mapped);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  const searchMatches = useMemo(() => [...ruleMatches, ...caseMatches], [ruleMatches, caseMatches]);
 
   // 热门关键词（按 achievement 频次）
   const hotKeywords = useMemo(() => {
