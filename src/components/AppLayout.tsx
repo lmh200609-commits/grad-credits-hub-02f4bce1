@@ -10,7 +10,7 @@ import AiAssistant from "@/components/AiAssistant";
 import StaffAiAssistant from "@/components/StaffAiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
-  Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags,
+  Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags, History,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -19,6 +19,7 @@ const adminItems: Item[] = [
   { title: "数据看板", url: "/admin/dashboard", icon: BarChart3 },
   { title: "复核中心", url: "/admin/review", icon: Inbox },
   { title: "全部审核", url: "/reviews", icon: ClipboardCheck },
+  { title: "提交记录", url: "/submissions", icon: History },
   { title: "学分排名", url: "/admin/credits", icon: Trophy },
   { title: "规则库", url: "/admin/rules", icon: BookOpen },
   { title: "关键词库", url: "/admin/keywords", icon: Tags },
@@ -32,6 +33,7 @@ const adminItems: Item[] = [
 const teacherItems: Item[] = [
   { title: "工作台", url: "/", icon: LayoutDashboard },
   { title: "待审核", url: "/reviews", icon: ClipboardCheck },
+  { title: "提交记录", url: "/submissions", icon: History },
   { title: "学生管理", url: "/teacher/students", icon: Users },
 ];
 
