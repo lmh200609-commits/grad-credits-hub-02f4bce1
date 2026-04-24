@@ -53,12 +53,13 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
   const [results, setResults] = useState<Array<{ user_id: string; ok: boolean; label: string; password?: string; error?: string }> | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setSearch(""); setDept(ALL); setMajor(ALL); setKlass(ALL);
-    setSelected(new Set()); setResults(null);
+    setSelected(new Set()); setResults(null); setConfirmText("");
     (async () => {
       setLoading(true);
       const [roles, profiles] = await Promise.all([
@@ -124,6 +125,7 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
     const { data, error } = await supabase.functions.invoke(fnName, { body: { user_ids: ids } });
     setSubmitting(false);
     setConfirmOpen(false);
+    setConfirmText("");
     if (error || (data as { error?: string })?.error) {
       toast.error((data as { error?: string })?.error ?? error?.message ?? "操作失败");
       return;
@@ -293,11 +295,24 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
                 : `将把 ${selected.size} 个账号的密码重置为默认值（学号 + 身份证后 6 位）。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {mode === "delete" && selected.size > 10 && (
+            <div className="space-y-2">
+              <p className="text-sm text-destructive">
+                即将删除 <span className="font-semibold">{selected.size}</span> 个账号（&gt; 10）。请在下方输入 <span className="font-mono font-semibold">DELETE</span> 以确认。
+              </p>
+              <Input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="输入 DELETE 以解锁删除按钮"
+                autoFocus
+              />
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => { e.preventDefault(); execute(); }}
-              disabled={submitting}
+              disabled={submitting || (mode === "delete" && selected.size > 10 && confirmText !== "DELETE")}
               className={mode === "delete" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
             >
               {submitting ? "执行中…" : "确认"}
