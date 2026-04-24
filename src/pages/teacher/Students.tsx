@@ -15,11 +15,11 @@ import {
 import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { resetPasswordSchema } from "@/lib/schemas";
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import BulkUserDialog from "@/components/BulkUserDialog";
 
 const PAGE_SIZE = 50;
 
@@ -42,11 +42,11 @@ const Students = () => {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState<string>(ALL);
   const [major, setMajor] = useState<string>(ALL);
+  const [klass, setKlass] = useState<string>(ALL);
   const [page, setPage] = useState(0);
   const [resetTarget, setResetTarget] = useState<Profile | null>(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [pwError, setPwError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -76,45 +76,40 @@ const Students = () => {
     () => Array.from(new Set(rows.map((r) => r.major).filter(Boolean) as string[])).sort(),
     [rows],
   );
+  const classes = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.class_name).filter(Boolean) as string[])).sort(),
+    [rows],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (dept !== ALL && r.department !== dept) return false;
       if (major !== ALL && r.major !== major) return false;
+      if (klass !== ALL && r.class_name !== klass) return false;
       if (!q) return true;
       return [r.full_name, r.student_no, r.phone, r.class_name]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q));
     });
-  }, [rows, search, dept, major]);
+  }, [rows, search, dept, major, klass]);
 
-  useEffect(() => { setPage(0); }, [search, dept, major]);
+  useEffect(() => { setPage(0); }, [search, dept, major, klass]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
-
-  const openReset = (p: Profile) => {
-    setResetTarget(p);
-    setNewPassword("");
-    setPwError(null);
-  };
 
   const submitReset = async () => {
     if (!resetTarget) return;
-    const parsed = resetPasswordSchema.safeParse({ password: newPassword });
-    if (!parsed.success) {
-      setPwError(parsed.error.issues[0]?.message ?? "密码不合规");
-      return;
-    }
     setResetting(true);
     const { data, error } = await supabase.functions.invoke("reset-password", {
-      body: { user_id: resetTarget.user_id, new_password: newPassword },
+      body: { user_id: resetTarget.user_id },
     });
     setResetting(false);
     if (error || (data as { error?: string })?.error) {
       toast.error("重置失败", { description: (data as { error?: string })?.error ?? error?.message });
       return;
     }
-    toast.success(`已重置 ${resetTarget.full_name ?? "学生"} 的密码`);
+    const pwd = (data as { password?: string })?.password;
+    toast.success(`已重置 ${resetTarget.full_name ?? "学生"} 的密码：${pwd ?? ""}`, { duration: 8000 });
     setResetTarget(null);
   };
 
