@@ -11,7 +11,7 @@ type Msg = { role: "user" | "assistant" | "system"; content: string };
 const SYSTEM_PROMPT = `你是「学分认定规则问答助手」，仅服务于学生关于学分认定规则的咨询。
 
 【严格行为约束】
-1. 你只能依据下方「检索到的规则」「相关案例」「证书类型字典」「我的学分汇总」作答，禁止编造任何规则、学分数、级别、条件、申请记录。
+1. 你只能依据下方「检索到的规则」「相关案例」「证书类型字典」「我的学分汇总」作答，禁止编造任何规则、学分数、级别、条件、申请记录。案例库（cases）与规则库（rules）同为合法依据，案例库优先用于解释相似情形——若仅有案例命中，应基于案例给出参考结论，并明确告知"以下结论来自历史相似案例，最终学分以教师复核为准"。
 2. 若提供的资料不足以回答问题，必须明确说"无法判断"或"数据库中暂无相关记录"，并引导用户补充关键信息（如证书全称、级别、获奖等级、参与角色等）。
 3. 你不是审批员，不做最终学分判定。回答中可以说"建议参考 X 学分"，但禁止使用"批准/通过/已认定"等终审措辞。
 4. 拒绝闲聊和与学分认定无关的问题，统一回复："我只能回答学分认定相关问题。"
@@ -91,6 +91,35 @@ function scoreRule(query: string, rule: any): number {
   // boost keyword exact matches
   for (const kw of rule.keywords || []) {
     if (query.includes(kw)) score += 3;
+  }
+  // boost: 整词包含（用户 query 中 2~6 字中文连续片段）
+  const phrases = extractCnPhrases(query);
+  for (const p of phrases) {
+    if (fields.includes(p)) score += 5;
+  }
+  return score;
+}
+
+function extractCnPhrases(q: string): string[] {
+  const out = new Set<string>();
+  const matches = (q || "").match(/[\u4e00-\u9fa5]{2,6}/g) || [];
+  for (const m of matches) out.add(m);
+  // 英文/数字整词
+  const en = (q || "").match(/[A-Za-z0-9]{2,}/g) || [];
+  for (const m of en) out.add(m);
+  return Array.from(out);
+}
+
+function scoreCase(query: string, c: any): number {
+  const qTokens = new Set(tokenize(query));
+  if (qTokens.size === 0) return 0;
+  const fields = [c.title, c.summary, c.notes].filter(Boolean).join(" ");
+  const rTokens = tokenize(fields);
+  let score = 0;
+  for (const t of rTokens) if (qTokens.has(t)) score++;
+  const phrases = extractCnPhrases(query);
+  for (const p of phrases) {
+    if (fields.includes(p)) score += 5;
   }
   return score;
 }
@@ -216,26 +245,48 @@ Deno.serve(async (req) => {
       .slice(0, 8)
       .map((x) => x.r);
 
-    if (scored.length === 0 && !mySummary) {
-      const ans = normalizeMarkdown("## 结论\n未找到相关认定规则，无法回答。\n\n## 依据\n知识库中暂无与您问题匹配的规则。\n\n## 补充\n请补充关键信息后再试：\n- 成果/证书全称\n- 级别（校级/省级/国家级/国际级）\n- 获奖等级\n- 您的参与角色（第一作者/团队成员等）");
+    // 案例库直接打分检索（独立于 rules）
+    const { data: allCases } = await supabase
+      .from("cases")
+      .select("id,title,summary,awarded_credit,notes,rule_id")
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const scoredCases = (allCases || [])
+      .map((c) => ({ c, s: scoreCase(query, c) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 5)
+      .map((x) => x.c);
+
+    if (scored.length === 0 && scoredCases.length === 0 && !mySummary) {
+      const ans = normalizeMarkdown("## 结论\n未找到相关认定规则或案例，无法回答。\n\n## 依据\n知识库与案例库中暂无与您问题匹配的内容。\n\n## 补充\n请补充关键信息后再试：\n- 成果/证书全称\n- 级别（校级/省级/国家级/国际级）\n- 获奖等级\n- 您的参与角色（第一作者/团队成员等）");
       return new Response(JSON.stringify({
         answer: ans, sections: toSections(ans), meta: { polished: false },
         matched_rules: [], matched_cases_count: 0,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // 合并：通过 rules 关联回带的案例 + 独立打分命中的案例（去重）
     const ruleIds = scored.map((r) => r.id);
-    const { data: cases } = ruleIds.length
+    const { data: linkedCases } = ruleIds.length
       ? await supabase
           .from("cases")
-          .select("title,summary,awarded_credit,notes,rule_id")
+          .select("id,title,summary,awarded_credit,notes,rule_id")
           .in("rule_id", ruleIds)
           .limit(5)
       : { data: [] as any[] };
+    const seen = new Set<string>();
+    const cases = [...scoredCases, ...((linkedCases as any[]) || [])].filter((c) => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id); return true;
+    }).slice(0, 8);
 
-    const rulesText = scored.map((r, i) =>
-      `【规则${i + 1}】${r.name}\n  类别：${r.category || "-"} | 身份：${r.identity || "-"} | 级别：${r.level || "-"} | 获奖等级：${r.achievement || "-"} | 项目：${r.project || "-"}\n  学分：${r.credit}\n  关键词：${(r.keywords || []).join("、") || "-"}\n  说明：${r.description || "-"}`
-    ).join("\n\n");
+    const rulesText = scored.length > 0
+      ? scored.map((r, i) =>
+          `【规则${i + 1}】${r.name}\n  类别：${r.category || "-"} | 身份：${r.identity || "-"} | 级别：${r.level || "-"} | 获奖等级：${r.achievement || "-"} | 项目：${r.project || "-"}\n  学分：${r.credit}\n  关键词：${(r.keywords || []).join("、") || "-"}\n  说明：${r.description || "-"}`
+        ).join("\n\n")
+      : "（规则库未直接命中，请优先依据下方「相关案例」作答）";
 
     const casesText = (cases && cases.length > 0)
       ? cases.map((c, i) => `【案例${i + 1}】${c.title}\n  认定学分：${c.awarded_credit ?? "-"}\n  摘要：${c.summary}\n  备注：${c.notes || "-"}`).join("\n\n")
