@@ -38,12 +38,11 @@ Deno.serve(async (req) => {
     });
     if (!isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
 
-    const { user_id, new_password } = await req.json();
-    if (!user_id || typeof new_password !== "string" || new_password.length < 6) {
-      return json({ error: "user_id 和 new_password (≥6 位) 必填" }, 400);
+    const { user_id } = await req.json();
+    if (!user_id || typeof user_id !== "string") {
+      return json({ error: "user_id 必填" }, 400);
     }
 
-    // 教师仅可重置 student 角色账号
     if (!isAdmin) {
       const { data: targetIsStudent } = await admin.rpc("has_role", {
         _user_id: user_id,
@@ -52,10 +51,31 @@ Deno.serve(async (req) => {
       if (!targetIsStudent) return json({ error: "教师仅可重置学生密码" }, 403);
     }
 
-    const { error } = await admin.auth.admin.updateUserById(user_id, { password: new_password });
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("full_name, student_no, id_card, email")
+      .eq("user_id", user_id)
+      .maybeSingle();
+
+    const prefix = (profile?.student_no && profile.student_no.trim()) || (profile?.email ? profile.email.split("@")[0] : "user");
+    const tail = profile?.id_card && profile.id_card.length >= 6 ? profile.id_card.slice(-6) : "000000";
+    let password = `${prefix}${tail}`;
+    if (password.length < 8) password = (password + "00000000").slice(0, 8);
+
+    const { error } = await admin.auth.admin.updateUserById(user_id, { password });
     if (error) return json({ error: error.message }, 500);
 
-    return json({ success: true });
+    const label = profile?.full_name || profile?.student_no || profile?.email || user_id;
+    await admin.from("audit_logs").insert({
+      action: "reset_password",
+      actor_id: callerId,
+      target_ids: [user_id],
+      target_labels: [label],
+      affected_count: 1,
+      success_count: 1,
+    }).then(() => {}, () => {});
+
+    return json({ success: true, password });
   } catch (e) {
     console.error("reset-password error:", e);
     return json({ error: (e as Error).message }, 500);
