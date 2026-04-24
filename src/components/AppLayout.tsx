@@ -63,7 +63,7 @@ const AppSidebar = () => {
                       className={({ isActive }) =>
                         `relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted ${
                           isActive
-                            ? "bg-background font-semibold text-foreground"
+                            ? "bg-primary/10 font-medium text-primary before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-primary"
                             : "text-sidebar-foreground"
                         }`
                       }
