@@ -17,7 +17,6 @@ import ReviewHub from "./pages/admin/ReviewHub.tsx";
 import Credits from "./pages/admin/Credits.tsx";
 import UsersManage from "./pages/admin/UsersManage.tsx";
 import AuditLogs from "./pages/admin/AuditLogs.tsx";
-import AiStressTest from "./pages/admin/AiStressTest.tsx";
 import Reviews from "./pages/Reviews.tsx";
 import Apply from "./pages/student/Apply.tsx";
 import MyApplications from "./pages/student/MyApplications.tsx";
@@ -48,7 +47,6 @@ const App = () => (
             <Route path="/admin/keywords" element={<RoleRoute role="admin"><Keywords /></RoleRoute>} />
             <Route path="/admin/cases" element={<RoleRoute role="admin"><Cases /></RoleRoute>} />
             <Route path="/admin/audit-logs" element={<RoleRoute role="admin"><AuditLogs /></RoleRoute>} />
-            <Route path="/admin/ai-stress-test" element={<RoleRoute role="admin"><AiStressTest /></RoleRoute>} />
             <Route path="/apply" element={<RoleRoute role="student"><Apply /></RoleRoute>} />
             <Route path="/reviews" element={<ProtectedRoute><Reviews /></ProtectedRoute>} />
             <Route path="/my-applications" element={<RoleRoute role="student"><MyApplications /></RoleRoute>} />
