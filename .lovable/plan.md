@@ -1,47 +1,62 @@
-## 改动一：关键词库默认收起
+## 需求拆解
 
-文件：`src/pages/student/Apply.tsx`
+1. **AI 初审不通过直接告知学生**：学生端不再脱敏 `rejected_by_ai`，显示"系统未通过"+**简短理由**；并提供"申请人工复核"按钮。
+2. **AI 理由分长短两版**：
+   - **学生端**：只看简短重点（一句话，≤60 字）。
+   - **教师/管理员端**：保留完整 `ai_reasoning`，包含一致性、相关性、真实性、姓名匹配、识别细节、结论等全部内容。
+3. **AI 终态不再需要教师二次确认**：`auto_approved` / `rejected_by_ai` 都是最终结果。教师/管理员端不强制处理每条；仅当学生主动转人工时才进入"待复核"。
+4. **教师/管理员仅"自主复核"权**：保留随时查看任意申请，但默认 Tab 为"待复核"。
+5. **二次人工复核醒目标记**：申请已存在 teacher/admin 复核记录后再次进入 `pending_review` 时，在审核列表行 + 详情顶部用红色 Badge 标注"⚠ 第 N 次人工复核（学生再次申诉）"。
+6. **学生侧审核记录统一显示"教师复核"**：`teacher_review` 与 `admin_review` 在学生视角都渲染为"教师复核"。
+7. **我的申请新增"申请名字"列**：以 `custom_keywords[0]` → `selected_keywords` 拼接 → 截断 `description` 为后备，例："英语四级"、"第二课堂"。
+8. **驳回的最终学分=0**：`rejected` / `rejected_by_ai` 在列表/详情显示 `0`（仅显示层处理，不改库）。
 
-把"自定义关键词"卡片中第 621–643 行的「关键词库（往届人工通过沉淀）」整块用 `Collapsible` 包裹：
+## 技术实现
 
-- 触发器一行：`BookOpen` 图标 + 文案「关键词库（共 N 个，点击展开作为参考）」+ 右侧 `ChevronRight` / `ChevronDown` 图标，整行可点击。
-- 默认 `open=false`，不点击则保持收起，节省版面。
-- 展开后展示 chips 列表（保留现有 `slice(0, 20)` 的 + 添加交互），点击 chip 仍是一键加入自定义关键词；并把上限从 20 提升到 40 + 一句"仅供参考"提示。
-- 使用项目内已有的 `@/components/ui/collapsible`（Radix），无需新增依赖。
+### 数据库
 
-不影响 step 完成度逻辑、不影响提交校验。
+**新增字段** `applications.ai_reasoning_short text`（可空），保存 AI 给学生看的一句话简版理由。
+- 通过迁移工具添加，无 RLS 改动。
+- 不删除 `ai_reasoning`（教师/管理员仍读它）。
 
-## 改动二：AI 助手对"挑战杯"等词检索失败
+### Edge Function
 
-根因（已用 SQL 验证）：
-- "挑战杯"在 `cases` 表（案例库）多条记录里出现，但 `rules` 表里没有任何规则名称/keywords 包含"挑战杯"。
-- 现有 `ask-credit-assistant` 仅对 `rules` 做打分，case 只在命中 rule 后通过 `rule_id` 回带，导致输入"挑战杯"完全检索不到任何上下文，触发"未找到相关认定规则"兜底。
-- 另外，中文 tokenizer 把句子切成单字，案例库里的"挑战杯"不会按整词参与打分。
+**`supabase/functions/evaluate-application/index.ts`**
+- AI tool schema 增加 `reasoning_short: string`（≤60 字，结论导向，给学生看）。
+- system prompt 追加要求：同时输出 `reasoning`（详细，给教师）和 `reasoning_short`（一句话，重点是为什么不通过/通过，给学生）。
+- `applications.update` 同时写入 `ai_reasoning_short`。
 
-文件：`supabase/functions/ask-credit-assistant/index.ts`
+### 学生端
 
-调整检索流程（仅服务端，不动前端调用方式）：
+**`src/components/StatusBadge.tsx`**
+- 学生 MAP：`rejected_by_ai` → "系统未通过"（danger 样式）；`auto_approved` → "已通过"（success 样式）；其余仍为"审核中"。
 
-1. **新增 cases 直接打分检索**：
-   - 加载 `cases.title, summary, awarded_credit, notes, rule_id`（限制 500 条）。
-   - 复用 `scoreRule` 思路新增 `scoreCase(query, c)`：把 `title + summary + notes` 拼成字段串做 token 计数；额外做"整词包含"加分——遍历用户原始 query 中的 2~6 字中文连续片段（用正则 `/[\u4e00-\u9fa5]{2,6}/g` 抽取，如"挑战杯"），若片段在 case 文本中出现则 `score += 5`。同样的整词包含加分也加到 `scoreRule`，让"挑战杯/三创赛/英语四级"这类整词命中 keywords/description 时大幅加权。
-   - 取案例 top 5。
+**`src/pages/student/MyApplications.tsx`**
+- `select` 增加 `custom_keywords, selected_keywords, ai_reasoning_short`。
+- 新增"申请名字"列：`getAppTitle(row)` = `custom_keywords[0]` ?? `selected_keywords.join(" · ")` ?? `description.slice(0,20)`。
+- "最终学分"列：`rejected` / `rejected_by_ai` → 显示 `0`。
 
-2. **合并上下文**：
-   - 当 rules 命中为空但 cases 命中非空时，**不再返回兜底"未找到相关认定规则"**，改为基于案例库构造回答上下文，并在 system 提示里说明"以下为相关历史案例，可据此解释，但需明确告知学生这是案例参考、最终学分以教师复核为准"。
-   - 当 rules 与 cases 都命中：把两者一并写入 RAG 上下文（保留现有 `===== 检索到的规则 =====` + `===== 相关案例 =====` 结构，案例段落用新打分结果，去掉只能跟 `rule_id` 关联的限制）。
-   - 兜底（rules+cases 都为 0 命中）仍返回原"未找到"提示。
+**`src/pages/ApplicationDetail.tsx`**（学生视角）
+- 当 `status === "rejected_by_ai"`：显示红色卡片，标题"系统未通过"，正文使用 `ai_reasoning_short`（无则降级为 `ai_reasoning` 截前 60 字），并提供"申请人工复核"按钮（复用 `requestManualReview`，对学生开放）。
+- 若已有教师/管理员 review 记录后申请重新回到 `pending_review`，按钮文案改为"申请二次人工复核"。
+- 审核记录中 `admin_review` 在学生 audience 渲染为"教师复核"。
+- 学生最终学分显示：`rejected*` → `0`。
+- 学生看不到 `ai_reasoning`（详细版）卡片。
 
-3. **学生端数据源对齐**（次要）：在 SYSTEM_PROMPT 里增加一句"案例库（cases）与规则库（rules）同为合法依据，案例库优先用于解释相似情形"，使回答口径与申请页"仅来自案例库"的设定一致。
+### 教师 / 管理员端
 
-不改动调用方式、返回结构，前端 `AiAssistant.tsx` 无需修改。
+**`src/pages/Reviews.tsx`**
+- 默认 Tab 改为 `pending_review`。
+- 批量取出当前页申请的 `application_reviews`（仅 `teacher_review`/`admin_review`）做计数；若 `pending_review` 行的人工复核次数 ≥ 1，显示 `<Badge variant="destructive">⚠ 第 N 次复核</Badge>`（N = 已有人工复核数 + 1）。
+- 列表中 `rejected*` 行的"建议学分"列显示 `0`。
 
-## 验证
+**`src/pages/ApplicationDetail.tsx`**（教师/管理员视角）
+- 顶部状态徽章旁：若属于二次及以上复核，显示红色 Badge"⚠ 第 N 次人工复核（学生再次申诉）"。
+- "系统核验结果"卡片继续展示完整 `ai_reasoning`（不改）。
+- 复核操作不变。
 
-- 申请页：进入 `/apply`，"自定义关键词"卡片中"关键词库"那一行默认折叠，点击后展开 chips，再次点击收起。
-- 助手：在悬浮窗输入"挑战杯"应能给出基于案例的「结论 / 依据 / 补充」三段答复，引用类似"挑战杯…国家级一等奖…10 学分"的案例。
+## 不做的事
 
-## 涉及文件
-
-- `src/pages/student/Apply.tsx`
-- `supabase/functions/ask-credit-assistant/index.ts`
+- 不修改 `rejected_by_ai` 的 `final_credit` 数据（仍为 `null`），仅显示层处理为 0。
+- 不重命名 `admin_review` 数据，仅学生端渲染时改字。
+- 不引入新 status 枚举值。
