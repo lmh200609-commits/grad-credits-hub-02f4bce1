@@ -17,22 +17,6 @@ const WELCOME: Msg = {
 };
 
 const KEYWORD_CHIPS = ["成果类型", "名称", "级别", "等级/角色", "补充信息"];
-const HINT_KEYWORDS = [
-  "级别", "等级", "获奖", "作者", "参赛", "国家级", "省级", "校级", "国际级",
-  "一等奖", "二等奖", "三等奖", "竞赛", "证书", "论文", "专利",
-];
-
-const needsHint = (text: string): boolean => {
-  const t = text.trim();
-  if (t.length < 10) return true;
-  return !HINT_KEYWORDS.some((kw) => t.includes(kw));
-};
-
-const HINT_MSG: Msg = {
-  role: "assistant",
-  content:
-    "💡 信息可能不足，建议补充【级别】【获奖等级/参与角色】【成果全称】，例如：\n竞赛 + XX 比赛 + 省级 + 一等奖 + 第一作者。",
-};
 
 const AiAssistant = () => {
   const [open, setOpen] = useState(false);
@@ -58,10 +42,6 @@ const AiAssistant = () => {
     try {
       // strip welcome message before sending; cap to last 20
       const history = next.filter((m) => m !== WELCOME).slice(-20);
-      const hint = needsHint(text);
-      if (hint) {
-        setMessages((prev) => [...prev, HINT_MSG]);
-      }
       const { data, error } = await supabase.functions.invoke("ask-credit-assistant", {
         body: { messages: history },
       });
