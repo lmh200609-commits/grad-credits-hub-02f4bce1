@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Copy } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 type Profile = {
   user_id: string;
@@ -41,6 +42,8 @@ type Props = {
 const ALL = "__all__";
 
 export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Props) {
+  const { user } = useAuth();
+  const selfId = user?.id ?? null;
   const [rows, setRows] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -88,10 +91,17 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
   const toggleAll = () => {
     const next = new Set(selected);
     if (allSelected) filtered.forEach((r) => next.delete(r.user_id));
-    else filtered.forEach((r) => next.add(r.user_id));
+    else filtered.forEach((r) => {
+      if (mode === "delete" && r.user_id === selfId) return;
+      next.add(r.user_id);
+    });
     setSelected(next);
   };
   const toggleOne = (id: string) => {
+    if (mode === "delete" && id === selfId) {
+      toast.error("不能删除当前登录账号");
+      return;
+    }
     const next = new Set(selected);
     if (next.has(id)) next.delete(id); else next.add(id);
     setSelected(next);
@@ -100,6 +110,11 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
   const execute = async () => {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
+    if (mode === "delete" && selfId && ids.includes(selfId)) {
+      toast.error("不能删除当前登录账号，请先取消勾选自己的账号");
+      setConfirmOpen(false);
+      return;
+    }
     if (ids.length > 200) {
       toast.error("单次最多 200 条，请分批操作");
       return;
@@ -231,8 +246,17 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
                       <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">无匹配账号</TableCell></TableRow>
                     ) : filtered.map((r) => (
                       <TableRow key={r.user_id}>
-                        <TableCell><Checkbox checked={selected.has(r.user_id)} onCheckedChange={() => toggleOne(r.user_id)} /></TableCell>
-                        <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
+                        <TableCell>
+                          <Checkbox
+                            checked={selected.has(r.user_id)}
+                            disabled={mode === "delete" && r.user_id === selfId}
+                            onCheckedChange={() => toggleOne(r.user_id)}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {r.full_name ?? "—"}
+                          {r.user_id === selfId && <span className="ml-2 text-xs text-muted-foreground">（当前登录）</span>}
+                        </TableCell>
                         <TableCell>{r.student_no ?? "—"}</TableCell>
                         <TableCell>{r.department ?? "—"}</TableCell>
                         {role === "student" && <TableCell>{r.major ?? "—"}</TableCell>}
