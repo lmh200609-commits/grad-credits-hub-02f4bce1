@@ -243,6 +243,41 @@ const ApplyPage = () => {
     setCustomInput("");
   };
   const removeCustomKeyword = (k: string) => setCustomKeywords(customKeywords.filter((x) => x !== k));
+
+  // 智能推荐：根据 customInput + 已选关键词 + 申请说明，对关键词库打分排序
+  const recommendedKeywords = useMemo(() => {
+    const candidates = libraryKeywords.filter((k) => !customKeywords.includes(k));
+    if (candidates.length === 0) return [] as Array<{ k: string; s: number }>;
+    const ctxParts: string[] = [];
+    if (customInput.trim()) ctxParts.push(customInput.trim());
+    DIMS.forEach((d) => { if (picked[d]) ctxParts.push(String(picked[d])); });
+    customKeywords.forEach((k) => ctxParts.push(k));
+    if (description.trim()) ctxParts.push(description.trim());
+    const ctx = ctxParts.join(" ").toLowerCase();
+    if (!ctx) {
+      // 无输入时按出现频次（achievement 越热门越靠前）兜底
+      return candidates.slice(0, 8).map((k) => ({ k, s: 0 }));
+    }
+    // 抽取中文 2~6 字片段 + 英文/数字整词作为查询片段
+    const phrases = new Set<string>();
+    (ctx.match(/[\u4e00-\u9fa5]{2,6}/g) || []).forEach((p) => phrases.add(p));
+    (ctx.match(/[a-z0-9]{2,}/g) || []).forEach((p) => phrases.add(p));
+    const scored = candidates.map((k) => {
+      const lk = k.toLowerCase();
+      let s = 0;
+      // 整词包含（双向）
+      phrases.forEach((p) => {
+        if (lk.includes(p)) s += 5;
+        else if (p.length >= 2 && ctx.includes(lk) && lk.length >= 2) s += 3;
+      });
+      // 单字共现
+      const kChars = new Set(lk.match(/[\u4e00-\u9fa5]|[a-z0-9]+/g) || []);
+      kChars.forEach((c) => { if (ctx.includes(c)) s += 1; });
+      return { k, s };
+    }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 8);
+    return scored;
+  }, [libraryKeywords, customKeywords, customInput, picked, description]);
+
   const insertCustomTemplate = () => {
     ["项目=", "成果=", "级别=", "身份="].forEach((p) => {
       if (!customKeywords.some((x) => x.startsWith(p))) setCustomKeywords((prev) => [...prev, p]);
@@ -621,6 +656,36 @@ const ApplyPage = () => {
                   </div>
                 )}
                 {libraryKeywords.length > 0 && (
+                  <>
+                  {recommendedKeywords.length > 0 && (
+                    <div className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                          <Wand2 className="h-3.5 w-3.5" />
+                          <span>智能推荐（根据您的输入自动匹配 Top {recommendedKeywords.length}）</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-[11px] text-primary hover:underline"
+                          onClick={() => recommendedKeywords.forEach((r) => addCustomKeyword(r.k))}
+                        >
+                          一键全部加入
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {recommendedKeywords.map(({ k }) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => addCustomKeyword(k)}
+                            className="rounded-full border border-primary/40 bg-background px-2 py-0.5 text-xs text-primary transition hover:bg-primary hover:text-primary-foreground"
+                          >
+                            + {k}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <Collapsible className="rounded-md border border-dashed bg-muted/30">
                     <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">
                       <span className="flex items-center gap-1.5">
@@ -648,6 +713,7 @@ const ApplyPage = () => {
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
+                  </>
                 )}
               </CardContent>
             </Card>
