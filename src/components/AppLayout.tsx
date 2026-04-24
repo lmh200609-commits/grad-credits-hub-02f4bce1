@@ -72,15 +72,15 @@ const AppSidebar = () => {
                 const active = isItemActive(it.url);
                 return (
                   <SidebarMenuItem key={it.url} className="flex-1">
-                    <SidebarMenuButton asChild tooltip={it.title} isActive={active}>
+                    <SidebarMenuButton asChild tooltip={it.title}>
                       <NavLink
                         to={it.url}
                         end={it.url === "/"}
                         className={
-                          `relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted ${
+                          `relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
                             active
                               ? "bg-primary/15 font-medium text-primary hover:bg-primary/15 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-primary"
-                              : "text-sidebar-foreground"
+                              : ""
                           }`
                         }
                       >
