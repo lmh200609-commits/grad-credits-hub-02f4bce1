@@ -91,9 +91,9 @@ const formatBytes = (n: number) => {
 };
 
 const STEPS = [
-  { label: "选择规则", description: "搜索或导航匹配" },
-  { label: "填写说明", description: "描述成果详情" },
-  { label: "上传材料", description: "证书 / 截图（可选）" },
+  { label: "选择关键词", description: "从案例库搜索或导航" },
+  { label: "填写说明", description: "可选，描述成果详情" },
+  { label: "上传图片", description: "证书 / 截图（必填）" },
   { label: "提交审核", description: "进入审核流程" },
 ];
 
@@ -122,20 +122,33 @@ const ApplyPage = () => {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const rulesRes = await supabase
-        .from("rules")
-        .select("id, name, project, achievement, level, identity, credit, description")
-        .eq("active", true);
-      const baseRules: Rule[] = ((rulesRes.data as any[]) ?? []).map((r) => ({ ...r, source: "rule" as const }));
+      // 学生端数据源：仅来自案例库（cases）
+      const casesRes = await supabase
+        .from("cases")
+        .select("id, title, summary, awarded_credit")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      const baseRules: Rule[] = ((casesRes.data as any[]) ?? []).map((c) => {
+        const kw = parseCaseKeywords(c.summary ?? "");
+        return {
+          id: `case:${c.id}`,
+          name: c.title,
+          project: kw.project ?? null,
+          achievement: kw.achievement ?? c.title,
+          level: kw.level ?? null,
+          identity: kw.identity ?? null,
+          credit: Number(c.awarded_credit ?? 0),
+          description: "来自案例库（教师人工通过沉淀）",
+          source: "case" as const,
+        };
+      });
       setRules(baseRules);
-      const kwRes = await supabase
-        .from("keywords")
-        .select("keyword")
-        .eq("active", true)
-        .order("usage_count", { ascending: false })
-        .order("keyword", { ascending: true })
-        .limit(1000);
-      setLibraryKeywords(((kwRes.data as { keyword: string }[]) ?? []).map((r) => r.keyword));
+      // 关键词建议库：来自案例库的四维关键词聚合
+      const kwSet = new Set<string>();
+      baseRules.forEach((r) => {
+        DIMS.forEach((d) => { const v = (r as any)[d]; if (v) kwSet.add(String(v)); });
+      });
+      setLibraryKeywords(Array.from(kwSet).sort());
       setLoading(false);
     })();
   }, []);
