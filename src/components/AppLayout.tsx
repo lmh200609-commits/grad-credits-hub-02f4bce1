@@ -63,13 +63,20 @@ const AppSidebar = () => {
                       className={({ isActive }) =>
                         `relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted ${
                           isActive
-                            ? "bg-primary/10 font-medium text-primary before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-primary"
+                            ? "is-active bg-primary/15 font-bold text-primary ring-1 ring-primary/30 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[4px] before:rounded-r before:bg-primary"
                             : "text-sidebar-foreground"
                         }`
                       }
                     >
-                      <it.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-                      {!collapsed && <span className="truncate">{it.title}</span>}
+                      <it.icon
+                        className="h-4 w-4 shrink-0 transition-colors [.is-active_&]:text-primary [.is-active_&]:scale-110"
+                        strokeWidth={1.75}
+                      />
+                      {!collapsed && (
+                        <span className="truncate [.is-active_&]:tracking-wide [.is-active_&]:text-primary">
+                          {it.title}
+                        </span>
+                      )}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
