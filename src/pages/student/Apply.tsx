@@ -133,7 +133,8 @@ const ApplyPage = () => {
         .select("keyword")
         .eq("active", true)
         .order("usage_count", { ascending: false })
-        .limit(30);
+        .order("keyword", { ascending: true })
+        .limit(1000);
       setLibraryKeywords(((kwRes.data as { keyword: string }[]) ?? []).map((r) => r.keyword));
       setLoading(false);
     })();
@@ -273,14 +274,18 @@ const ApplyPage = () => {
   const stepsDone = useMemo(() => {
     let n = 0;
     if (selectedRule || DIMS.some((d) => picked[d])) n = Math.max(n, 1);
-    if (description.trim().length >= 10) n = Math.max(n, 2);
+    if (
+      DIMS.some((d) => picked[d]) ||
+      customKeywords.length > 0 ||
+      description.trim().length > 0
+    ) n = Math.max(n, 2);
     if (file) n = Math.max(n, 3);
     return n;
-  }, [selectedRule, picked, description, file]);
+  }, [selectedRule, picked, customKeywords, description, file]);
   const currentStep = stepsDone; // 0..3 → 当前活跃步
 
   const descLen = description.trim().length;
-  const descTone = descLen < 10 ? "danger" : descLen < 50 ? "warning" : "success";
+  const descTone = descLen === 0 ? "warning" : descLen < 50 ? "warning" : "success";
   const descPct = Math.min(100, (descLen / 100) * 100);
 
   const missingHints = useMemo(() => {
