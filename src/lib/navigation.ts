@@ -1,13 +1,13 @@
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library,
   Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags,
+  type LucideIcon,
 } from "lucide-react";
-import type { ComponentType } from "react";
 
 export type NavItem = {
   title: string;
   url: string;
-  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  icon: LucideIcon;
   /** Extra path prefixes that should also mark this item as active. */
   matchPrefixes?: string[];
 };
