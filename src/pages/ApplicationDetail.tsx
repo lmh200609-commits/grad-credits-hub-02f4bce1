@@ -489,10 +489,18 @@ const ApplicationDetail = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">
-                      {r.action === "ai_evaluation" ? "系统核验" : r.action === "teacher_review" ? "教师复核" : "管理员复核"}
+                      {r.action === "ai_evaluation"
+                        ? "系统核验"
+                        : isReviewer
+                          ? (r.action === "teacher_review" ? "教师复核" : "管理员复核")
+                          : "教师复核"}
                     </Badge>
                     <StatusBadge status={r.decision as any} audience={isReviewer ? "staff" : "student"} />
-                    {r.credit != null && <span className="text-muted-foreground">学分 {r.credit}</span>}
+                    {(r.credit != null || r.decision === "rejected" || r.decision === "rejected_by_ai") && (
+                      <span className="text-muted-foreground">
+                        学分 {r.decision === "rejected" || r.decision === "rejected_by_ai" ? 0 : r.credit}
+                      </span>
+                    )}
                     {isReviewer && r.confidence != null && (
                       <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>
                     )}
