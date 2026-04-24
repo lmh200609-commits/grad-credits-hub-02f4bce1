@@ -344,6 +344,45 @@ const ApplicationDetail = () => {
           </CardContent>
         </Card>
 
+        {/* 学生视角：系统未通过简短结论 + 申请人工复核 */}
+        {!isReviewer && app.status === "rejected_by_ai" && (
+          <Card className="border-destructive">
+            <CardHeader>
+              <CardTitle className="text-base text-destructive">系统未通过</CardTitle>
+              <CardDescription>
+                若你认为材料没有问题，可申请教师人工复核
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="rounded bg-destructive/10 p-3 text-sm">
+                {studentShortReason || "材料未通过系统核验。"}
+              </p>
+              <Button onClick={requestManualReview} variant="outline">
+                申请人工复核
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 学生视角：教师已复核且学生仍有异议时申请二次复核 */}
+        {!isReviewer &&
+          (app.status === "approved" || app.status === "rejected") &&
+          manualReviewCount >= 1 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">仍有异议？</CardTitle>
+              <CardDescription>
+                你可以申请二次人工复核，教师将再次审阅
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={requestManualReview} variant="outline">
+                申请二次人工复核
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {isReviewer && libraryRefs.length > 0 && (
           <Card>
             <CardHeader>
