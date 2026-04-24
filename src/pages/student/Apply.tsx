@@ -651,7 +651,7 @@ const ApplyPage = () => {
                   <StepBadge n={3} />
                   <CardTitle className="text-base">申请说明</CardTitle>
                 </div>
-                <CardDescription>可选。简要描述活动 / 成果（不超过 2000 字），也可仅靠关键词提交</CardDescription>
+                <CardDescription>可选。可补充活动详情；提交不强制要求填写</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
@@ -708,15 +708,15 @@ const ApplyPage = () => {
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <StepBadge n={4} />
-                  <CardTitle className="text-base">证明材料</CardTitle>
+                  <CardTitle className="text-base">证明材料 <span className="ml-1 text-xs font-normal text-destructive">必填</span></CardTitle>
                 </div>
-                <CardDescription>PDF / 图片，可选，单个文件 ≤ 10MB</CardDescription>
+                <CardDescription>仅支持 JPG / PNG / WEBP 等图片格式，必须上传，单个文件 ≤ 10MB</CardDescription>
               </CardHeader>
               <CardContent>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="application/pdf,image/*"
+                  accept="image/*"
                   className="hidden"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
@@ -734,7 +734,7 @@ const ApplyPage = () => {
                   >
                     <Upload className="h-8 w-8 text-muted-foreground" />
                     <p className="text-sm font-medium">拖拽文件到此处，或点击上传</p>
-                    <p className="text-xs text-muted-foreground">支持 PDF、JPG、PNG 等，最大 10 MB</p>
+                    <p className="text-xs text-muted-foreground">仅支持图片格式（JPG / PNG / WEBP 等），最大 10 MB</p>
                   </button>
                 ) : (
                   <div className="flex items-center gap-3 rounded-md border p-3">
