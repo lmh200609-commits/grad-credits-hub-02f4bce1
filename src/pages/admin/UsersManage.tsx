@@ -6,23 +6,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { resetPasswordSchema } from "@/lib/schemas";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
+import BulkUserDialog from "@/components/BulkUserDialog";
 
 const PAGE_SIZE = 50;
 
@@ -42,6 +41,8 @@ const TITLES: Record<string, { title: string; desc: string }> = {
   teachers: { title: "教师管理", desc: "查看教师信息并重置密码" },
 };
 
+const ALL = "__all__";
+
 const UsersManage = () => {
   const { role: roleParam } = useParams<{ role: string }>();
   const role = roleParam === "teachers" ? "teacher" : "student";
@@ -53,13 +54,15 @@ const UsersManage = () => {
   const [credits, setCredits] = useState<Map<string, { total: number; count: number }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch);
+  const [dept, setDept] = useState(ALL);
+  const [major, setMajor] = useState(ALL);
+  const [klass, setKlass] = useState(ALL);
   const [resetTarget, setResetTarget] = useState<Profile | null>(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [pwError, setPwError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [page, setPage] = useState(0);
+  const [bulkMode, setBulkMode] = useState<"delete" | "reset" | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -87,41 +90,39 @@ const UsersManage = () => {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [role]);
   useEffect(() => { setSearch(sp.get("search") ?? ""); }, [sp]);
 
+  const departments = useMemo(() => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(), [rows]);
+  const majors = useMemo(() => Array.from(new Set(rows.map((r) => r.major).filter(Boolean) as string[])).sort(), [rows]);
+  const classes = useMemo(() => Array.from(new Set(rows.map((r) => r.class_name).filter(Boolean) as string[])).sort(), [rows]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      [r.full_name, r.student_no, r.email, r.class_name, r.department, r.major]
-        .filter(Boolean)
-        .some((v) => v!.toLowerCase().includes(q)),
-    );
-  }, [rows, search]);
+    return rows.filter((r) => {
+      if (dept !== ALL && r.department !== dept) return false;
+      if (role === "student" && major !== ALL && r.major !== major) return false;
+      if (role === "student" && klass !== ALL && r.class_name !== klass) return false;
+      if (!q) return true;
+      return [r.full_name, r.student_no, r.email, r.phone, r.class_name, r.department, r.major]
+        .filter(Boolean).some((v) => v!.toLowerCase().includes(q));
+    });
+  }, [rows, search, dept, major, klass, role]);
 
-  useEffect(() => { setPage(0); }, [search, role]);
+  useEffect(() => { setPage(0); }, [search, role, dept, major, klass]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const resetPassword = async () => {
     if (!resetTarget) return;
-    const parsed = resetPasswordSchema.safeParse({ password: newPassword });
-    if (!parsed.success) {
-      const msg = parsed.error.issues[0]?.message ?? "密码不合规";
-      setPwError(msg);
-      toast.error(msg);
-      return;
-    }
-    setPwError(null);
     setResetting(true);
     const { data, error } = await supabase.functions.invoke("reset-password", {
-      body: { user_id: resetTarget.user_id, new_password: parsed.data.password },
+      body: { user_id: resetTarget.user_id },
     });
     setResetting(false);
     if (error || (data as { error?: string })?.error) {
       toast.error((data as { error?: string })?.error ?? error?.message ?? "重置失败");
       return;
     }
-    toast.success(`已为 ${resetTarget.full_name ?? resetTarget.email} 重置密码`);
+    const pwd = (data as { password?: string })?.password;
+    toast.success(`已为 ${resetTarget.full_name ?? resetTarget.email} 重置为默认密码：${pwd ?? ""}`, { duration: 8000 });
     setResetTarget(null);
-    setNewPassword("");
   };
 
   const deleteAccount = async () => {
@@ -147,10 +148,51 @@ const UsersManage = () => {
 
         <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            <Input placeholder="搜索姓名 / 学号或工号 / 手机号 / 班级 / 院系" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <div className="flex items-center text-sm text-muted-foreground">
-              共 {filtered.length} / {rows.length}
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="min-w-[260px] flex-1"
+                placeholder={role === "student" ? "搜索姓名 / 学号 / 手机号 / 班级 / 院系" : "搜索姓名 / 工号 / 手机号 / 院系"}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Button variant="outline" onClick={() => setBulkMode("reset")}>批量重置密码</Button>
+              {role === "student" && (
+                <Button variant="destructive" onClick={() => setBulkMode("delete")}>批量删除账号</Button>
+              )}
+              {role === "teacher" && (
+                <Button variant="destructive" onClick={() => setBulkMode("delete")}>批量删除账号</Button>
+              )}
+            </div>
+            <div className="grid gap-2 md:grid-cols-4">
+              <Select value={dept} onValueChange={setDept}>
+                <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>全部院系</SelectItem>
+                  {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {role === "student" && (
+                <>
+                  <Select value={major} onValueChange={setMajor}>
+                    <SelectTrigger><SelectValue placeholder="专业" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>全部专业</SelectItem>
+                      {majors.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={klass} onValueChange={setKlass}>
+                    <SelectTrigger><SelectValue placeholder="班级" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>全部班级</SelectItem>
+                      {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+              <div className="flex items-center text-sm text-muted-foreground">
+                共 {filtered.length} / {rows.length}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -194,7 +236,7 @@ const UsersManage = () => {
                       </TableCell>
                     )}
                     <TableCell className="space-x-2 text-right">
-                      <Button variant="outline" size="sm" onClick={() => { setResetTarget(r); setNewPassword(""); setPwError(null); }}>
+                      <Button variant="outline" size="sm" onClick={() => setResetTarget(r)}>
                         重置密码
                       </Button>
                       <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(r)}>
@@ -213,25 +255,22 @@ const UsersManage = () => {
         </Card>
       </div>
 
-      <Dialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>重置密码 — {resetTarget?.full_name ?? resetTarget?.student_no ?? "用户"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="np">新密码（至少 8 位，包含字母和数字）</Label>
-            <Input id="np" type="text" value={newPassword} onChange={(e) => { setNewPassword(e.target.value); if (pwError) setPwError(null); }} placeholder="例如：Abc12345" aria-invalid={!!pwError} />
-            {pwError && <p className="text-xs text-destructive">{pwError}</p>}
-            <p className="text-xs text-muted-foreground">请通过安全渠道告知用户新密码，并提醒尽快修改</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResetTarget(null)}>取消</Button>
-            <Button onClick={resetPassword} disabled={resetting}>
+      <AlertDialog open={!!resetTarget} onOpenChange={(o) => !o && !resetting && setResetTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认重置密码</AlertDialogTitle>
+            <AlertDialogDescription>
+              将把 <span className="font-semibold text-foreground">{resetTarget?.full_name ?? resetTarget?.student_no ?? resetTarget?.email ?? "该用户"}</span> 的密码重置为默认密码（学号 + 身份证后 6 位，缺失则补 0）。请通过安全渠道告知用户。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); resetPassword(); }} disabled={resetting}>
               {resetting ? "重置中…" : "确认重置"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && !deleting && setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -253,6 +292,16 @@ const UsersManage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {bulkMode && (
+        <BulkUserDialog
+          open={!!bulkMode}
+          mode={bulkMode}
+          role={role as "student" | "teacher"}
+          onClose={() => setBulkMode(null)}
+          onDone={() => load()}
+        />
+      )}
     </AppLayout>
   );
 };

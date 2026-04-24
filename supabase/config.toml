@@ -35,3 +35,9 @@ verify_jwt = false
 
 [functions.polish-answer]
 verify_jwt = false
+
+[functions.bulk-reset-password]
+verify_jwt = false
+
+[functions.bulk-delete-users]
+verify_jwt = false
