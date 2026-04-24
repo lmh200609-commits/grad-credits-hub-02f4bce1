@@ -61,19 +61,19 @@ const AppSidebar = () => {
                       to={it.url}
                       end
                       className={({ isActive }) =>
-                        `group/navlink relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted ${
+                        `relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted ${
                           isActive
-                            ? "bg-primary/15 font-bold text-primary ring-1 ring-primary/30 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[4px] before:rounded-r before:bg-primary"
+                            ? "is-active bg-primary/15 font-bold text-primary ring-1 ring-primary/30 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[4px] before:rounded-r before:bg-primary"
                             : "text-sidebar-foreground"
                         }`
                       }
                     >
                       <it.icon
-                        className="h-4 w-4 shrink-0 transition-colors group-[.active]/navlink:text-primary group-aria-[current=page]/navlink:text-primary"
+                        className="h-4 w-4 shrink-0 transition-colors [.is-active_&]:text-primary [.is-active_&]:scale-110"
                         strokeWidth={1.75}
                       />
                       {!collapsed && (
-                        <span className="truncate tracking-wide group-aria-[current=page]/navlink:text-primary">
+                        <span className="truncate [.is-active_&]:tracking-wide [.is-active_&]:text-primary">
                           {it.title}
                         </span>
                       )}
