@@ -21,7 +21,7 @@ export const applySchema = z.object({
     .or(z.literal("")),
   selected_keywords: z.array(z.string()).default([]),
   custom_keywords: z.array(z.string()).default([]),
-  rule_id: z.string().uuid("请先匹配到一条学分规则").optional().nullable(),
+  rule_id: z.string().optional().nullable(),
 }).refine(
   (v) => (v.selected_keywords?.length ?? 0) + (v.custom_keywords?.length ?? 0) > 0,
   { message: "请至少选择或填写一个关键词", path: ["selected_keywords"] },
