@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import TablePagination from "@/components/TablePagination";
@@ -45,8 +46,9 @@ const ReviewsList = () => {
   const [total, setTotal] = useState(0);
   const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
   const [loading, setLoading] = useState(true);
-  const initial = params.get("status") && FILTERS[params.get("status")!] ? params.get("status")! : "all";
+  const initial = params.get("status") && FILTERS[params.get("status")!] ? params.get("status")! : "pending_review";
   const [tab, setTab] = useState(initial);
+  const [reviewCounts, setReviewCounts] = useState<Map<string, number>>(new Map());
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -108,6 +110,24 @@ const ReviewsList = () => {
     } else {
       setProfiles(new Map());
     }
+
+    // 统计每个申请已发生的人工复核次数（teacher_review / admin_review）
+    const appIds = list.map((r) => r.id);
+    if (appIds.length) {
+      const { data: rvs } = await supabase
+        .from("application_reviews")
+        .select("application_id, action")
+        .in("application_id", appIds)
+        .in("action", ["teacher_review", "admin_review"]);
+      const cm = new Map<string, number>();
+      (rvs ?? []).forEach((r: any) => {
+        cm.set(r.application_id, (cm.get(r.application_id) ?? 0) + 1);
+      });
+      setReviewCounts(cm);
+    } else {
+      setReviewCounts(new Map());
+    }
+
     setLoading(false);
   }, [tab, page, debounced]);
 
@@ -170,13 +190,23 @@ const ReviewsList = () => {
                   <TableRow><TableCell colSpan={7}><EmptyState title="暂无记录" description="切换筛选标签或等待新申请" /></TableCell></TableRow>
                 ) : rows.map((r) => {
                   const p = profiles.get(r.student_id);
+                  const prev = reviewCounts.get(r.id) ?? 0;
+                  const isReReview = r.status === "pending_review" && prev >= 1;
+                  const rejectedDisplay = r.status === "rejected" || r.status === "rejected_by_ai";
                   return (
                     <TableRow key={r.id}>
                       <TableCell>{p?.full_name ?? "—"} <span className="text-xs text-muted-foreground">{p?.student_no}</span></TableCell>
                       <TableCell className="max-w-xs truncate">{r.description}</TableCell>
-                      <TableCell>{r.final_credit ?? r.ai_suggested_credit ?? "—"}</TableCell>
+                      <TableCell>{rejectedDisplay ? 0 : (r.final_credit ?? r.ai_suggested_credit ?? "—")}</TableCell>
                       <TableCell>{r.ai_confidence != null ? `${(Number(r.ai_confidence) * 100).toFixed(0)}%` : "—"}</TableCell>
-                      <TableCell><StatusBadge status={r.status} /></TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <StatusBadge status={r.status} />
+                          {isReReview && (
+                            <Badge variant="destructive">⚠ 第 {prev + 1} 次复核</Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-xs">{new Date(r.submitted_at).toLocaleString()}</TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" onClick={() => navigate(`/applications/${r.id}`)}>查看</Button>
