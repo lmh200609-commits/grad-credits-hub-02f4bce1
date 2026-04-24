@@ -817,6 +817,13 @@ export type Database = {
       }
     }
     Functions: {
+      dedupe_keywords: {
+        Args: never
+        Returns: {
+          deleted_count: number
+          merged_count: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -824,6 +831,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      normalize_keyword: { Args: { s: string }; Returns: string }
       refresh_certificate_types: { Args: never; Returns: number }
     }
     Enums: {
