@@ -80,6 +80,7 @@ export type Database = {
           ai_confidence: number | null
           ai_matched_rule_id: string | null
           ai_reasoning: string | null
+          ai_reasoning_short: string | null
           ai_suggested_credit: number | null
           created_at: string
           custom_keywords: string[]
@@ -100,6 +101,7 @@ export type Database = {
           ai_confidence?: number | null
           ai_matched_rule_id?: string | null
           ai_reasoning?: string | null
+          ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
           created_at?: string
           custom_keywords?: string[]
@@ -120,6 +122,7 @@ export type Database = {
           ai_confidence?: number | null
           ai_matched_rule_id?: string | null
           ai_reasoning?: string | null
+          ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
           created_at?: string
           custom_keywords?: string[]

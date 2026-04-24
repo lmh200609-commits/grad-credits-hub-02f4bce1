@@ -146,7 +146,9 @@ B. 从图片中实际识别的属性（detected_*）：无论关键词写什么�
 - 模糊/缺文件/无法判断 → review, confidence 0.4~0.7
 - 无附件 → 默认 review
 
-reasoning 中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；图片实际识别：项目=…，成果=…，级别=…，身份=…；结论：…」`;
+reasoning 中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；图片实际识别：项目=…，成果=…，级别=…，身份=…；结论：…」
+
+另外必须输出 reasoning_short：一句话（≤60 字），给学生看，只点出"是否通过 / 关键不通过原因"，不要暴露内部核验维度名称。例：「证书级别与所选关键词不一致」「材料清晰，已通过」「图片与申请主题无关」。`;
 
     const userPayload = {
       student: {
@@ -207,8 +209,9 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
                   confidence: { type: "number" },
                   recommendation: { type: "string", enum: ["approve", "review", "reject"] },
                   reasoning: { type: "string" },
+                  reasoning_short: { type: "string", description: "一句话给学生看的简短结论，≤60 字" },
                 },
-                required: ["consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok", "detected_project", "detected_achievement", "detected_level", "detected_identity", "confidence", "recommendation", "reasoning"],
+                required: ["consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok", "detected_project", "detected_achievement", "detected_level", "detected_identity", "confidence", "recommendation", "reasoning", "reasoning_short"],
                 additionalProperties: false,
               },
             },
@@ -295,6 +298,9 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
         ai_suggested_credit: suggestedCredit,
         ai_confidence: result.confidence,
         ai_reasoning: result.reasoning,
+        ai_reasoning_short: typeof result.reasoning_short === "string"
+          ? result.reasoning_short.slice(0, 80)
+          : null,
         final_credit: isAutoApproved ? suggestedCredit : null,
         reviewed_at: isAutoApproved ? new Date().toISOString() : null,
       })
