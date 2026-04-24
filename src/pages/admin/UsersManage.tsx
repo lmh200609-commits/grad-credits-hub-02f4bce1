@@ -148,10 +148,51 @@ const UsersManage = () => {
 
         <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            <Input placeholder="搜索姓名 / 学号或工号 / 手机号 / 班级 / 院系" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <div className="flex items-center text-sm text-muted-foreground">
-              共 {filtered.length} / {rows.length}
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="min-w-[260px] flex-1"
+                placeholder={role === "student" ? "搜索姓名 / 学号 / 手机号 / 班级 / 院系" : "搜索姓名 / 工号 / 手机号 / 院系"}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Button variant="outline" onClick={() => setBulkMode("reset")}>批量重置密码</Button>
+              {role === "student" && (
+                <Button variant="destructive" onClick={() => setBulkMode("delete")}>批量删除账号</Button>
+              )}
+              {role === "teacher" && (
+                <Button variant="destructive" onClick={() => setBulkMode("delete")}>批量删除账号</Button>
+              )}
+            </div>
+            <div className="grid gap-2 md:grid-cols-4">
+              <Select value={dept} onValueChange={setDept}>
+                <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>全部院系</SelectItem>
+                  {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {role === "student" && (
+                <>
+                  <Select value={major} onValueChange={setMajor}>
+                    <SelectTrigger><SelectValue placeholder="专业" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>全部专业</SelectItem>
+                      {majors.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={klass} onValueChange={setKlass}>
+                    <SelectTrigger><SelectValue placeholder="班级" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>全部班级</SelectItem>
+                      {classes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+              <div className="flex items-center text-sm text-muted-foreground">
+                共 {filtered.length} / {rows.length}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -195,7 +236,7 @@ const UsersManage = () => {
                       </TableCell>
                     )}
                     <TableCell className="space-x-2 text-right">
-                      <Button variant="outline" size="sm" onClick={() => { setResetTarget(r); setNewPassword(""); setPwError(null); }}>
+                      <Button variant="outline" size="sm" onClick={() => setResetTarget(r)}>
                         重置密码
                       </Button>
                       <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(r)}>
@@ -214,25 +255,22 @@ const UsersManage = () => {
         </Card>
       </div>
 
-      <Dialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>重置密码 — {resetTarget?.full_name ?? resetTarget?.student_no ?? "用户"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="np">新密码（至少 8 位，包含字母和数字）</Label>
-            <Input id="np" type="text" value={newPassword} onChange={(e) => { setNewPassword(e.target.value); if (pwError) setPwError(null); }} placeholder="例如：Abc12345" aria-invalid={!!pwError} />
-            {pwError && <p className="text-xs text-destructive">{pwError}</p>}
-            <p className="text-xs text-muted-foreground">请通过安全渠道告知用户新密码，并提醒尽快修改</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResetTarget(null)}>取消</Button>
-            <Button onClick={resetPassword} disabled={resetting}>
+      <AlertDialog open={!!resetTarget} onOpenChange={(o) => !o && !resetting && setResetTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认重置密码</AlertDialogTitle>
+            <AlertDialogDescription>
+              将把 <span className="font-semibold text-foreground">{resetTarget?.full_name ?? resetTarget?.student_no ?? resetTarget?.email ?? "该用户"}</span> 的密码重置为默认密码（学号 + 身份证后 6 位，缺失则补 0）。请通过安全渠道告知用户。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); resetPassword(); }} disabled={resetting}>
               {resetting ? "重置中…" : "确认重置"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && !deleting && setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -254,6 +292,16 @@ const UsersManage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {bulkMode && (
+        <BulkUserDialog
+          open={!!bulkMode}
+          mode={bulkMode}
+          role={role as "student" | "teacher"}
+          onClose={() => setBulkMode(null)}
+          onDone={() => load()}
+        />
+      )}
     </AppLayout>
   );
 };
