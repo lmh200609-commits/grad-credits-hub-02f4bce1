@@ -262,11 +262,19 @@ const ApplicationDetail = () => {
 
   const requestManualReview = async () => {
     if (!app) return;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("applications")
       .update({ status: "pending_review" })
-      .eq("id", app.id);
+      .eq("id", app.id)
+      .select("id, status");
     if (error) return toast({ title: "申请失败", description: error.message, variant: "destructive" });
+    if (!data || data.length === 0) {
+      return toast({
+        title: "申请未生效",
+        description: "可能没有权限发起复核，请联系管理员",
+        variant: "destructive",
+      });
+    }
     toast({ title: "已转人工复核", description: "教师将尽快处理" });
     load();
   };
