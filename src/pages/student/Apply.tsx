@@ -133,7 +133,8 @@ const ApplyPage = () => {
         .select("keyword")
         .eq("active", true)
         .order("usage_count", { ascending: false })
-        .limit(30);
+        .order("keyword", { ascending: true })
+        .limit(1000);
       setLibraryKeywords(((kwRes.data as { keyword: string }[]) ?? []).map((r) => r.keyword));
       setLoading(false);
     })();
@@ -273,14 +274,18 @@ const ApplyPage = () => {
   const stepsDone = useMemo(() => {
     let n = 0;
     if (selectedRule || DIMS.some((d) => picked[d])) n = Math.max(n, 1);
-    if (description.trim().length >= 10) n = Math.max(n, 2);
+    if (
+      DIMS.some((d) => picked[d]) ||
+      customKeywords.length > 0 ||
+      description.trim().length > 0
+    ) n = Math.max(n, 2);
     if (file) n = Math.max(n, 3);
     return n;
-  }, [selectedRule, picked, description, file]);
+  }, [selectedRule, picked, customKeywords, description, file]);
   const currentStep = stepsDone; // 0..3 → 当前活跃步
 
   const descLen = description.trim().length;
-  const descTone = descLen < 10 ? "danger" : descLen < 50 ? "warning" : "success";
+  const descTone = descLen === 0 ? "warning" : descLen < 50 ? "warning" : "success";
   const descPct = Math.min(100, (descLen / 100) * 100);
 
   const missingHints = useMemo(() => {
@@ -326,7 +331,7 @@ const ApplyPage = () => {
         .from("applications")
         .insert({
           student_id: user!.id,
-          description: parsed.data.description,
+          description: parsed.data.description ?? "",
           selected_keywords: parsed.data.selected_keywords,
           custom_keywords: parsed.data.custom_keywords,
           file_path: filePath,
@@ -369,8 +374,8 @@ const ApplyPage = () => {
 
   const checklist = [
     { ok: !!selectedRule || DIMS.some((d) => picked[d]), label: "已选择/匹配规则" },
-    { ok: descLen >= 10, label: `申请说明 ≥ 10 字（当前 ${descLen}）` },
-    { ok: customKeywords.length > 0 || DIMS.filter((d) => picked[d]).length >= 2, label: "关键词已补充" },
+    { ok: DIMS.some((d) => picked[d]) || customKeywords.length > 0, label: "已选择/添加关键词" },
+    { ok: descLen > 0, label: `申请说明（当前 ${descLen} 字）`, optional: true },
     { ok: !!file, label: "已上传证明材料（推荐）", optional: true },
   ];
 
@@ -662,7 +667,7 @@ const ApplyPage = () => {
                   <StepBadge n={3} />
                   <CardTitle className="text-base">申请说明</CardTitle>
                 </div>
-                <CardDescription>详细描述你的活动 / 成果（10-2000 字），可使用模板快速开始</CardDescription>
+                <CardDescription>可选。简要描述活动 / 成果（不超过 2000 字），也可仅靠关键词提交</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
@@ -686,17 +691,15 @@ const ApplyPage = () => {
                   <div className="flex items-center justify-between text-xs">
                     <span className={cn(
                       "font-medium",
-                      descTone === "danger" && "text-danger",
                       descTone === "warning" && "text-warning",
                       descTone === "success" && "text-success",
                     )}>
-                      {descLen < 10 ? "信息不足" : descLen < 50 ? "可继续补充" : "信息充足"}
+                      {descLen === 0 ? "未填写（可选）" : descLen < 50 ? "可继续补充" : "信息充足"}
                     </span>
                     <span className="text-muted-foreground">{description.length}/2000</span>
                   </div>
                   <Progress value={descPct} className={cn(
                     "h-1.5",
-                    descTone === "danger" && "[&>div]:bg-danger",
                     descTone === "warning" && "[&>div]:bg-warning",
                     descTone === "success" && "[&>div]:bg-success",
                   )} />
