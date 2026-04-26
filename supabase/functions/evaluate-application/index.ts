@@ -544,6 +544,42 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
 
     // 系统通过时直接落实学分，无需教师确认；教师仍可在详情页修改
     const isAutoApproved = nextStatus === "auto_approved";
+
+    // 备份本次更新前的 AI 评估结果到 ai_previous_snapshot，便于一键回滚
+    const prevSnapshot = {
+      taken_at: new Date().toISOString(),
+      status: app.status,
+      ai_confidence: app.ai_confidence,
+      ai_reasoning: app.ai_reasoning,
+      ai_reasoning_short: app.ai_reasoning_short,
+      ai_suggested_credit: app.ai_suggested_credit,
+      ai_check_consistency: app.ai_check_consistency,
+      ai_check_relevance: app.ai_check_relevance,
+      ai_check_authenticity: app.ai_check_authenticity,
+      ai_check_name_match: app.ai_check_name_match,
+      ai_check_identity_match: app.ai_check_identity_match,
+      ai_check_logic: app.ai_check_logic,
+      ai_check_completeness: app.ai_check_completeness,
+      ai_identity_mismatch: app.ai_identity_mismatch,
+      ai_logic_issue: app.ai_logic_issue,
+      ai_blank_fields: app.ai_blank_fields,
+      ai_detected_project: app.ai_detected_project,
+      ai_detected_achievement: app.ai_detected_achievement,
+      ai_detected_level: app.ai_detected_level,
+      ai_detected_identity: app.ai_detected_identity,
+      ai_detected_student_no: app.ai_detected_student_no,
+      ai_detected_school: app.ai_detected_school,
+      ai_override_note: app.ai_override_note,
+      review_source: app.review_source,
+    };
+    // 仅在已经存在过一轮 AI 结果时才保留快照（首轮无需备份）
+    const hasPreviousResult =
+      app.ai_confidence != null ||
+      app.ai_reasoning != null ||
+      app.ai_check_consistency != null ||
+      app.status === "rejected_by_ai" ||
+      app.status === "auto_approved";
+
     await admin
       .from("applications")
       .update({
@@ -575,6 +611,9 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
         review_source: nextStatus === "pending_review" ? "ai_uncertain" : null,
         final_credit: isAutoApproved ? suggestedCredit : null,
         reviewed_at: isAutoApproved ? new Date().toISOString() : null,
+        ai_last_error: null,
+        ai_last_attempt_at: new Date().toISOString(),
+        ai_previous_snapshot: hasPreviousResult ? prevSnapshot : null,
       })
       .eq("id", application_id);
 
@@ -587,7 +626,9 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     });
   } catch (e) {
     console.error("evaluate error:", e);
-    return json({ error: (e as Error).message }, 500);
+    const msg = (e as Error).message;
+    await writeFailure(admin, application_id, msg);
+    return json({ error: msg, retryable: true }, 500);
   }
 });
 
