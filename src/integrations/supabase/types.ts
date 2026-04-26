@@ -77,8 +77,12 @@ export type Database = {
       }
       applications: {
         Row: {
+          ai_blank_fields: string | null
           ai_check_authenticity: boolean | null
+          ai_check_completeness: boolean | null
           ai_check_consistency: boolean | null
+          ai_check_identity_match: boolean | null
+          ai_check_logic: boolean | null
           ai_check_name_match: boolean | null
           ai_check_relevance: boolean | null
           ai_confidence: number | null
@@ -86,6 +90,10 @@ export type Database = {
           ai_detected_identity: string | null
           ai_detected_level: string | null
           ai_detected_project: string | null
+          ai_detected_school: string | null
+          ai_detected_student_no: string | null
+          ai_identity_mismatch: string | null
+          ai_logic_issue: string | null
           ai_matched_rule_id: string | null
           ai_override_note: string | null
           ai_reasoning: string | null
@@ -108,8 +116,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_blank_fields?: string | null
           ai_check_authenticity?: boolean | null
+          ai_check_completeness?: boolean | null
           ai_check_consistency?: boolean | null
+          ai_check_identity_match?: boolean | null
+          ai_check_logic?: boolean | null
           ai_check_name_match?: boolean | null
           ai_check_relevance?: boolean | null
           ai_confidence?: number | null
@@ -117,6 +129,10 @@ export type Database = {
           ai_detected_identity?: string | null
           ai_detected_level?: string | null
           ai_detected_project?: string | null
+          ai_detected_school?: string | null
+          ai_detected_student_no?: string | null
+          ai_identity_mismatch?: string | null
+          ai_logic_issue?: string | null
           ai_matched_rule_id?: string | null
           ai_override_note?: string | null
           ai_reasoning?: string | null
@@ -139,8 +155,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_blank_fields?: string | null
           ai_check_authenticity?: boolean | null
+          ai_check_completeness?: boolean | null
           ai_check_consistency?: boolean | null
+          ai_check_identity_match?: boolean | null
+          ai_check_logic?: boolean | null
           ai_check_name_match?: boolean | null
           ai_check_relevance?: boolean | null
           ai_confidence?: number | null
@@ -148,6 +168,10 @@ export type Database = {
           ai_detected_identity?: string | null
           ai_detected_level?: string | null
           ai_detected_project?: string | null
+          ai_detected_school?: string | null
+          ai_detected_student_no?: string | null
+          ai_identity_mismatch?: string | null
+          ai_logic_issue?: string | null
           ai_matched_rule_id?: string | null
           ai_override_note?: string | null
           ai_reasoning?: string | null
