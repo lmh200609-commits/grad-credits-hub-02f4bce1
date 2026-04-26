@@ -348,15 +348,19 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       if (!aiResp.ok) {
         const t = await aiResp.text();
         console.error("Qwen gateway error:", aiResp.status, t);
-        if (aiResp.status === 429) return json({ error: "系统繁忙，请稍后再试" }, 429);
-        return json({ error: `系统核验失败: ${t.slice(0, 200)}` }, 500);
+        const msg = aiResp.status === 429
+          ? "系统繁忙，AI 模型限流，请稍后重试"
+          : `AI 模型调用失败：${t.slice(0, 200)}`;
+        await writeFailure(admin, application_id, msg);
+        return json({ error: msg, retryable: true }, aiResp.status === 429 ? 429 : 500);
       }
       const aiJson = await aiResp.json();
       const msg = aiJson.choices?.[0]?.message;
       const calls = msg?.tool_calls ?? [];
       if (!calls.length) {
         console.error("Qwen unexpected payload:", JSON.stringify(aiJson).slice(0, 500));
-        return json({ error: "系统返回格式错误" }, 500);
+        await writeFailure(admin, application_id, "AI 模型返回了空 tool_calls");
+        return json({ error: "系统返回格式错误", retryable: true }, 500);
       }
       messages.push(msg);
 
