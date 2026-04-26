@@ -236,65 +236,141 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       userContent.push({ type: "image_url", image_url: { url: imageDataUrl } });
     }
 
-    const aiResp = await fetch(
-      "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    const tools = [
       {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("DASHSCOPE_API_KEY")}`,
-          "Content-Type": "application/json",
+        type: "function",
+        function: {
+          name: "web_search",
+          description: "联网检索辅助核实赛事 / 证书 / 期刊 / 颁发单位真伪。最多调用 2 次。",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string", description: "中文检索关键词" } },
+            required: ["query"],
+          },
         },
-        body: JSON.stringify({
-          model: "qwen3-vl-32b-thinking",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
-          ],
-          tools: [{
-            type: "function",
-            function: {
-              name: "submit_evaluation",
-              description: "提交材料核验结果",
-              parameters: {
-                type: "object",
-                properties: {
-                  consistency_ok: { type: "boolean", description: "材料是否与关键词一致（含级别/身份精确匹配）" },
-                  relevance_ok: { type: "boolean", description: "图片是否与申请相关" },
-                  authenticity_ok: { type: "boolean", description: "是否无篡改/AI 生成痕迹" },
-                  name_match_ok: { type: ["boolean", "null"], description: "姓名是否匹配，无附件时为 null" },
-                  detected_project: { type: ["string", "null"], description: "图片中实际识别到的项目大类" },
-                  detected_achievement: { type: ["string", "null"], description: "图片中实际识别到的成果细类" },
-                  detected_level: { type: ["string", "null"], description: "图片中实际识别到的级别" },
-                  detected_identity: { type: ["string", "null"], description: "图片中实际识别到的身份" },
-                  confidence: { type: "number" },
-                  recommendation: { type: "string", enum: ["approve", "review", "reject"] },
-                  reasoning: { type: "string" },
-                  reasoning_short: { type: "string", description: "一句话给学生看的简短结论，≤60 字" },
-                },
-                required: ["consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok", "detected_project", "detected_achievement", "detected_level", "detected_identity", "confidence", "recommendation", "reasoning", "reasoning_short"],
-                additionalProperties: false,
-              },
-            },
-          }],
-          tool_choice: { type: "function", function: { name: "submit_evaluation" } },
-        }),
       },
-    );
+      {
+        type: "function",
+        function: {
+          name: "submit_evaluation",
+          description: "提交材料核验结果",
+          parameters: {
+            type: "object",
+            properties: {
+              consistency_ok: { type: "boolean" },
+              relevance_ok: { type: "boolean" },
+              authenticity_ok: { type: "boolean" },
+              name_match_ok: { type: ["boolean", "null"] },
+              identity_match_ok: { type: ["boolean", "null"], description: "学号/姓名/院系/班级/身份证/学校 与账号是否一致" },
+              identity_mismatch_detail: { type: ["string", "null"] },
+              logic_ok: { type: ["boolean", "null"] },
+              logic_issue_detail: { type: ["string", "null"] },
+              completeness_ok: { type: ["boolean", "null"] },
+              blank_fields_detail: { type: ["string", "null"] },
+              detected_project: { type: ["string", "null"] },
+              detected_achievement: { type: ["string", "null"] },
+              detected_level: { type: ["string", "null"] },
+              detected_identity: { type: ["string", "null"] },
+              detected_student_no: { type: ["string", "null"] },
+              detected_school: { type: ["string", "null"] },
+              confidence: { type: "number" },
+              recommendation: { type: "string", enum: ["approve", "review", "reject"] },
+              reasoning: { type: "string" },
+              reasoning_short: { type: "string", description: "一句话给学生看，≤60 字" },
+            },
+            required: [
+              "consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok",
+              "identity_match_ok", "identity_mismatch_detail",
+              "logic_ok", "logic_issue_detail",
+              "completeness_ok", "blank_fields_detail",
+              "detected_project", "detected_achievement", "detected_level", "detected_identity",
+              "detected_student_no", "detected_school",
+              "confidence", "recommendation", "reasoning", "reasoning_short",
+            ],
+            additionalProperties: false,
+          },
+        },
+      },
+    ];
 
-    if (!aiResp.ok) {
-      const t = await aiResp.text();
-      console.error("Qwen gateway error:", aiResp.status, t);
-      if (aiResp.status === 429) return json({ error: "系统繁忙，请稍后再试" }, 429);
-      return json({ error: `系统核验失败: ${t.slice(0, 200)}` }, 500);
+    const messages: any[] = [
+      { role: "system", content: fullSystemPrompt },
+      { role: "user", content: userContent },
+    ];
+
+    let result: any = null;
+    let websearchCount = 0;
+    const MAX_WEBSEARCH = 2;
+    const MAX_ROUNDS = 4;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const forceSubmit = websearchCount >= MAX_WEBSEARCH || round === MAX_ROUNDS - 1;
+      const aiResp = await fetch(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${Deno.env.get("DASHSCOPE_API_KEY")}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "qwen3-vl-32b-thinking",
+            messages,
+            tools,
+            tool_choice: forceSubmit
+              ? { type: "function", function: { name: "submit_evaluation" } }
+              : "auto",
+          }),
+        },
+      );
+      if (!aiResp.ok) {
+        const t = await aiResp.text();
+        console.error("Qwen gateway error:", aiResp.status, t);
+        if (aiResp.status === 429) return json({ error: "系统繁忙，请稍后再试" }, 429);
+        return json({ error: `系统核验失败: ${t.slice(0, 200)}` }, 500);
+      }
+      const aiJson = await aiResp.json();
+      const msg = aiJson.choices?.[0]?.message;
+      const calls = msg?.tool_calls ?? [];
+      if (!calls.length) {
+        console.error("Qwen unexpected payload:", JSON.stringify(aiJson).slice(0, 500));
+        return json({ error: "系统返回格式错误" }, 500);
+      }
+      messages.push(msg);
+
+      let submitted = false;
+      for (const call of calls) {
+        const fname = call.function?.name;
+        if (fname === "submit_evaluation") {
+          try { result = JSON.parse(call.function.arguments); }
+          catch { return json({ error: "系统返回格式错误（无法解析评估结果）" }, 500); }
+          submitted = true;
+          break;
+        }
+        if (fname === "web_search") {
+          let q = "";
+          try { q = JSON.parse(call.function.arguments)?.query ?? ""; } catch { /* ignore */ }
+          let toolResult = "";
+          if (websearchCount >= MAX_WEBSEARCH) {
+            toolResult = "（已达联网检索次数上限，请基于已有材料给出判定）";
+          } else if (!q.trim()) {
+            toolResult = "（检索关键词为空）";
+          } else {
+            websearchCount++;
+            console.log("[evaluate] web_search:", q);
+            toolResult = await webSearch(q);
+          }
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: toolResult.slice(0, 1500),
+          });
+        }
+      }
+      if (submitted) break;
     }
 
-    const aiJson = await aiResp.json();
-    const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
-    if (!call) {
-      console.error("Qwen unexpected payload:", JSON.stringify(aiJson).slice(0, 500));
-      return json({ error: "系统返回格式错误" }, 500);
-    }
-    const result = JSON.parse(call.function.arguments);
+    if (!result) return json({ error: "系统未能完成核验，请重试" }, 500);
 
     // ---- 服务端硬规则：纠正 AI 自相矛盾 / 兜底中文化 ----
     const overrideNotes: string[] = [];
