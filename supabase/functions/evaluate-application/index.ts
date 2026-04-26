@@ -32,7 +32,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   // 提到 try 外，以便 catch 中也能写 ai_last_error
-  let admin: ReturnType<typeof createClient> | null = null;
+  // 用 any 避免 SupabaseClient 类型推断把后续 .from(...) 收窄为 never
+  let admin: any = null;
   let application_id: string | null = null;
 
   try {
