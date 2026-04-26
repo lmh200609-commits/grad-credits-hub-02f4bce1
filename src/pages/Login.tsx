@@ -78,7 +78,36 @@ const Login = () => {
 
   const quickLogin = async (account: string) => {
     setQuickBusy(account);
-    const { error } = await signIn(accountToEmail(account), QUICK_PASSWORD);
+    let { error } = await signIn(accountToEmail(account), QUICK_PASSWORD);
+
+    // 账号不存在/密码不对 → 自动调 dev-seed 补齐后重试一次
+    if (error) {
+      toast({ title: "账号未就绪，正在自动补齐…", description: account });
+      try {
+        const { data, error: fnErr } = await supabase.functions.invoke("dev-seed", { body: {} });
+        if (fnErr) throw fnErr;
+        const results: { email: string; status: string }[] = data?.results ?? [];
+        const map: Record<string, AccountStatus> = {};
+        for (const a of [...QUICK_ACCOUNTS, ...QUICK_STUDENTS]) {
+          const r = results.find((x) => x.email === accountToEmail(a.account));
+          map[a.account] = !r ? "pending" : r.status.startsWith("create failed") ? "failed" : "ready";
+        }
+        setStatuses(map);
+        if (map[account] !== "ready") {
+          throw new Error("账号补齐失败，请稍后再试");
+        }
+        ({ error } = await signIn(accountToEmail(account), QUICK_PASSWORD));
+      } catch (e) {
+        setQuickBusy(null);
+        toast({
+          title: "快捷登录失败",
+          description: (e as Error).message ?? "无法自动补齐账号",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setQuickBusy(null);
     if (error) {
       toast({ title: "快捷登录失败", description: "请稍后再试或联系管理员", variant: "destructive" });
