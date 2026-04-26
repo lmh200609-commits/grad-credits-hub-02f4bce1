@@ -9,6 +9,24 @@ const corsHeaders = {
 
 const HIGH_CONFIDENCE = 0.85;
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
+const DEFAULT_SCHOOL = "长春财经学院";
+const SCHOOL_ALIASES: string[] = ["长春财经学院", "长财", "ccufe", "changchun university of finance"];
+
+/** 简易联网检索：用 r.jina.ai 抓取 DuckDuckGo HTML 摘要，无需新 secret。 */
+async function webSearch(query: string): Promise<string> {
+  try {
+    const url = `https://r.jina.ai/https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0" } });
+    clearTimeout(t);
+    if (!r.ok) return `（联网检索失败，HTTP ${r.status}）`;
+    const txt = await r.text();
+    return txt.slice(0, 1500);
+  } catch (e) {
+    return `（联网检索异常：${(e as Error).message}）`;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
