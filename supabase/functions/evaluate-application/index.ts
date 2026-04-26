@@ -270,6 +270,26 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (result.relevance_ok === false) failedChecks.push("图片相关性");
     if (result.authenticity_ok === false) failedChecks.push("真实性");
     if (result.name_match_ok === false) failedChecks.push("姓名匹配");
+    if (result.identity_match_ok === false) failedChecks.push("身份核验");
+    if (result.logic_ok === false)          failedChecks.push("逻辑性核验");
+    if (result.completeness_ok === false)   failedChecks.push("材料完整性");
+
+    // 学校兜底：detected_school 非空且不属于默认学校族 → 强制身份不符
+    const detSchool = (result.detected_school ?? "").toString().trim().toLowerCase();
+    if (detSchool && detSchool !== "未识别") {
+      const ok = SCHOOL_ALIASES.some((a) => detSchool.includes(a.toLowerCase()));
+      if (!ok) {
+        if (result.identity_match_ok !== false) {
+          result.identity_match_ok = false;
+          const note = `材料学校『${result.detected_school}』不属于长春财经学院`;
+          result.identity_mismatch_detail = result.identity_mismatch_detail
+            ? `${result.identity_mismatch_detail}；${note}`
+            : note;
+          if (!failedChecks.includes("身份核验")) failedChecks.push("身份核验");
+          overrideNotes.push(`服务端校验：${note}，已强制改判为「驳回」。`);
+        }
+      }
+    }
 
     if (failedChecks.length > 0) {
       // 任一核验失败 → 强制驳回 + 高置信
