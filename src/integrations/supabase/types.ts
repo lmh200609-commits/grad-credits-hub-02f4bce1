@@ -77,8 +77,17 @@ export type Database = {
       }
       applications: {
         Row: {
+          ai_check_authenticity: boolean | null
+          ai_check_consistency: boolean | null
+          ai_check_name_match: boolean | null
+          ai_check_relevance: boolean | null
           ai_confidence: number | null
+          ai_detected_achievement: string | null
+          ai_detected_identity: string | null
+          ai_detected_level: string | null
+          ai_detected_project: string | null
           ai_matched_rule_id: string | null
+          ai_override_note: string | null
           ai_reasoning: string | null
           ai_reasoning_short: string | null
           ai_suggested_credit: number | null
@@ -90,6 +99,7 @@ export type Database = {
           final_review_note: string | null
           final_reviewer_id: string | null
           id: string
+          review_source: string | null
           reviewed_at: string | null
           selected_keywords: string[]
           status: Database["public"]["Enums"]["application_status"]
@@ -98,8 +108,17 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_check_authenticity?: boolean | null
+          ai_check_consistency?: boolean | null
+          ai_check_name_match?: boolean | null
+          ai_check_relevance?: boolean | null
           ai_confidence?: number | null
+          ai_detected_achievement?: string | null
+          ai_detected_identity?: string | null
+          ai_detected_level?: string | null
+          ai_detected_project?: string | null
           ai_matched_rule_id?: string | null
+          ai_override_note?: string | null
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
@@ -111,6 +130,7 @@ export type Database = {
           final_review_note?: string | null
           final_reviewer_id?: string | null
           id?: string
+          review_source?: string | null
           reviewed_at?: string | null
           selected_keywords?: string[]
           status?: Database["public"]["Enums"]["application_status"]
@@ -119,8 +139,17 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_check_authenticity?: boolean | null
+          ai_check_consistency?: boolean | null
+          ai_check_name_match?: boolean | null
+          ai_check_relevance?: boolean | null
           ai_confidence?: number | null
+          ai_detected_achievement?: string | null
+          ai_detected_identity?: string | null
+          ai_detected_level?: string | null
+          ai_detected_project?: string | null
           ai_matched_rule_id?: string | null
+          ai_override_note?: string | null
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
@@ -132,6 +161,7 @@ export type Database = {
           final_review_note?: string | null
           final_reviewer_id?: string | null
           id?: string
+          review_source?: string | null
           reviewed_at?: string | null
           selected_keywords?: string[]
           status?: Database["public"]["Enums"]["application_status"]
