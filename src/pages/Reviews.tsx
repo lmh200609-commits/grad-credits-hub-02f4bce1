@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ReviewSourceBadge, ConfidenceBadge } from "@/components/AiVerdictCard";
 import { Badge } from "@/components/ui/badge";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
@@ -24,6 +25,7 @@ type Row = {
   final_credit: number | null;
   submitted_at: string;
   student_id: string;
+  review_source: string | null;
 };
 
 type ProfileLite = { user_id: string; full_name: string | null; student_no: string | null };
@@ -52,6 +54,7 @@ const ReviewsList = () => {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "ai_uncertain" | "student_appeal">("all");
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 50;
 
@@ -67,8 +70,10 @@ const ReviewsList = () => {
     return () => clearTimeout(t);
   }, [search]);
 
-  // 切换 tab/搜索时回到第 0 页
-  useEffect(() => { setPage(0); }, [tab, debounced]);
+  // 切换 tab/搜索/来源筛选时回到第 0 页
+  useEffect(() => { setPage(0); }, [tab, debounced, sourceFilter]);
+  // 切换出"待复核"时清空来源筛选
+  useEffect(() => { if (tab !== "pending_review") setSourceFilter("all"); }, [tab]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,9 +93,12 @@ const ReviewsList = () => {
 
     let q = supabase
       .from("applications")
-      .select("id, description, status, ai_suggested_credit, ai_confidence, final_credit, submitted_at, student_id", { count: "exact" })
+      .select("id, description, status, ai_suggested_credit, ai_confidence, final_credit, submitted_at, student_id, review_source", { count: "exact" })
       .order("submitted_at", { ascending: false });
     if (FILTERS[tab].length) q = q.in("status", FILTERS[tab] as any);
+    if (sourceFilter !== "all" && tab === "pending_review") {
+      q = q.eq("review_source", sourceFilter);
+    }
     if (studentIds) q = q.in("student_id", studentIds);
     const from = page * PAGE_SIZE;
     const { data, count } = await q.range(from, from + PAGE_SIZE - 1);
@@ -129,7 +137,7 @@ const ReviewsList = () => {
     }
 
     setLoading(false);
-  }, [tab, page, debounced]);
+  }, [tab, page, debounced, sourceFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -170,6 +178,25 @@ const ReviewsList = () => {
             <TabsTrigger value="finished">人工已完成</TabsTrigger>
           </TabsList>
         </Tabs>
+        {tab === "pending_review" && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">复核来源：</span>
+            {([
+              ["all", "全部"],
+              ["ai_uncertain", "AI 转人工"],
+              ["student_appeal", "学生申诉"],
+            ] as const).map(([k, label]) => (
+              <Button
+                key={k}
+                size="sm"
+                variant={sourceFilter === k ? "default" : "outline"}
+                onClick={() => setSourceFilter(k)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        )}
         <Card>
           <CardHeader><CardTitle className="text-base">共 {total} 条 · {tabLabel[tab] ?? tab}</CardTitle></CardHeader>
           <CardContent>
@@ -198,10 +225,19 @@ const ReviewsList = () => {
                       <TableCell>{p?.full_name ?? "—"} <span className="text-xs text-muted-foreground">{p?.student_no}</span></TableCell>
                       <TableCell className="max-w-xs truncate">{r.description}</TableCell>
                       <TableCell>{rejectedDisplay ? 0 : (r.final_credit ?? r.ai_suggested_credit ?? "—")}</TableCell>
-                      <TableCell>{r.ai_confidence != null ? `${(Number(r.ai_confidence) * 100).toFixed(0)}%` : "—"}</TableCell>
+                      <TableCell>
+                        <ConfidenceBadge
+                          status={r.status}
+                          confidence={r.ai_confidence}
+                          reviewSource={r.review_source}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1">
                           <StatusBadge status={r.status} />
+                          {r.status === "pending_review" && (
+                            <ReviewSourceBadge source={r.review_source} />
+                          )}
                           {isReReview && (
                             <Badge variant="destructive">⚠ 第 {prev + 1} 次复核</Badge>
                           )}

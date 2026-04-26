@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
+import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
 import { ArrowLeft, Check, X, FileDown, ImageIcon } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
@@ -33,6 +34,16 @@ type App = {
   final_credit: number | null;
   final_review_note: string | null;
   submitted_at: string;
+  review_source?: string | null;
+  ai_check_consistency?: boolean | null;
+  ai_check_relevance?: boolean | null;
+  ai_check_authenticity?: boolean | null;
+  ai_check_name_match?: boolean | null;
+  ai_detected_project?: string | null;
+  ai_detected_achievement?: string | null;
+  ai_detected_level?: string | null;
+  ai_detected_identity?: string | null;
+  ai_override_note?: string | null;
 };
 type Review = {
   id: string; action: string; decision: string; credit: number | null;
@@ -264,7 +275,7 @@ const ApplicationDetail = () => {
     if (!app) return;
     const { data, error } = await supabase
       .from("applications")
-      .update({ status: "pending_review" })
+      .update({ status: "pending_review", review_source: "student_appeal" })
       .eq("id", app.id)
       .select("id, status");
     if (error) return toast({ title: "申请失败", description: error.message, variant: "destructive" });
@@ -288,6 +299,9 @@ const ApplicationDetail = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft /></Button>
           <h1 className="text-2xl font-bold">申请详情</h1>
           <StatusBadge status={app.status} audience={isReviewer ? "staff" : "student"} />
+          {isReviewer && app.status === "pending_review" && (
+            <ReviewSourceBadge source={app.review_source ?? null} />
+          )}
           {isReviewer && isReReview && (
             <Badge variant="destructive" className="ml-1">
               ⚠ 第 {reReviewIndex} 次人工复核（学生再次申诉）
@@ -455,25 +469,29 @@ const ApplicationDetail = () => {
         {isReviewer && (
           app.ai_reasoning ||
           app.ai_suggested_credit != null ||
-          app.ai_matched_rule_id ||
           app.ai_confidence != null ||
           app.status === "rejected_by_ai" ||
-          app.status === "auto_approved"
+          app.status === "auto_approved" ||
+          app.ai_check_consistency != null
         ) && (
-          <Card className={app.status === "rejected_by_ai" ? "border-destructive" : ""}>
-            <CardHeader>
-              <CardTitle className="text-base">系统核验结果</CardTitle>
-              <CardDescription>
-                建议匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
-              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">
-                {app.ai_reasoning || "系统未给出详细理由。"}
-              </p>
-            </CardContent>
-          </Card>
+          <AiVerdictCard
+            app={{
+              status: app.status,
+              ai_confidence: app.ai_confidence,
+              ai_reasoning: app.ai_reasoning,
+              ai_suggested_credit: app.ai_suggested_credit,
+              ai_check_consistency: app.ai_check_consistency ?? null,
+              ai_check_relevance: app.ai_check_relevance ?? null,
+              ai_check_authenticity: app.ai_check_authenticity ?? null,
+              ai_check_name_match: app.ai_check_name_match ?? null,
+              ai_detected_project: app.ai_detected_project ?? null,
+              ai_detected_achievement: app.ai_detected_achievement ?? null,
+              ai_detected_level: app.ai_detected_level ?? null,
+              ai_detected_identity: app.ai_detected_identity ?? null,
+              ai_override_note: app.ai_override_note ?? null,
+              review_source: app.review_source ?? null,
+            }}
+          />
         )}
 
         {isReviewer && app.status !== "pending_ai" && (

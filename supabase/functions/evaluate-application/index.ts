@@ -125,30 +125,34 @@ Deno.serve(async (req) => {
 
 【参考依据】只以"历史人工通过案例库"作为佐证依据；不要把学校规则库作为唯一标准。
 
+【语言要求 — 必须严格遵守】
+- 所有字段值（含 reasoning、reasoning_short、detected_*）必须使用简体中文。
+- 禁止输出 "null"、"N/A"、"none" 等英文占位符；无法识别时一律写「未识别」。
+- 如必须引用英文缩写（如 SCI、ACM、CET），请用括号附中文解释，例如「ACM（国际大学生程序设计竞赛）」。
+
 你需要做两类工作：
 
-A. 四项核验：
+A. 四项核验（输出 4 个布尔字段 + name_match_ok 可为 null）：
 1. 材料与关键词一致性：图片/文件展示的内容（证书名称、奖项、级别、身份）是否与学生选择的关键词完全一致。**关键：级别、身份、奖项等级有任何差异都算不一致**。例如学生选"国家级一等奖"但图片是"省级三等奖"，即使都是竞赛类，consistency_ok 也必须 = false。
 2. 是否无关图片：图片是否完全与申请主题无关。
 3. 篡改 / AI 生成痕迹：是否有明显 PS、拼接、AI 生成痕迹。
-4. 姓名匹配：图片中姓名是否与学生姓名一致。
+4. 姓名匹配：图片中姓名是否与学生姓名一致；图片中无姓名信息则填 null。
 
-B. 从图片中实际识别的属性（detected_*）：无论关键词写什么，基于图片真实内容填写：
+B. 从图片中实际识别的属性（detected_*，全部用中文，无法识别填「未识别」）：
 - detected_project：项目大类（科研成果/知识产权/科研训练/学科竞赛/职业技能证书/创业实践/文体竞赛/第二课堂等）
-- detected_achievement：成果细类（如"论文"、"专利"、"大创项目"、"英语"等）
-- detected_level：级别（如"国家级一等奖"、"省级二等奖"、"校级"、"六级"、"SCI"等）
-- detected_identity：身份（如"第一作者"、"主持人"、"第一参与人"等），无概念填 null
-无附件或无法识别时填 null。
+- detected_achievement：成果细类（如"论文"、"专利"、"大创项目"、"英语等级证书"等）
+- detected_level：级别（如"国家级一等奖"、"省级二等奖"、"校级"、"六级"等）
+- detected_identity：身份（如"第一作者"、"主持人"、"第一参与人"等）
 
-判定规则：
-- 四项都没问题且 detected_* 与关键词的级别/身份/成果一致 → approve, confidence≥0.85
-- consistency_ok=false（含 detected 与关键词不符）或明显造假 → reject, confidence≥0.85
-- 模糊/缺文件/无法判断 → review, confidence 0.4~0.7
-- 无附件 → 默认 review
+【判定规则 — 必须严格遵守，否则视为输出错误】
+- 全部四项核验通过且 detected_* 与关键词的级别/身份/成果一致 → recommendation="approve"，confidence ∈ [0.85, 0.98]。
+- 任一核验项为 false（含 consistency_ok / relevance_ok / authenticity_ok / name_match_ok=false）或明显造假 → 必须 recommendation="reject"，confidence ∈ [0.85, 0.98]。**禁止在任一核验失败的情况下输出 review。**
+- 仅在"图片模糊到无法判断 / 信息缺失 / 同名同姓无法甄别 / 无可视觉核验的附件"时才能输出 recommendation="review"，且 confidence 必须 ∈ [0.40, 0.70]。**review 严禁出现 confidence ≥ 0.80 的情况，否则属于自相矛盾。**
+- 无附件 → 默认 review，confidence ∈ [0.40, 0.55]。
 
-reasoning 中文，结构：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；图片实际识别：项目=…，成果=…，级别=…，身份=…；结论：…」
+reasoning 字段为详细中文说明，结构固定为：「材料一致性：…；图片相关性：…；真实性：…；姓名匹配：…；图片实际识别：项目=…，成果=…，级别=…，身份=…；结论：…」。每段不少于 8 字，禁止只写"是/否"。
 
-另外必须输出 reasoning_short：一句话（≤60 字），给学生看，只点出"是否通过 / 关键不通过原因"，不要暴露内部核验维度名称。例：「证书级别与所选关键词不一致」「材料清晰，已通过」「图片与申请主题无关」。`;
+reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 / 关键不通过原因"，不要暴露内部核验维度名称。例：「证书级别与所选关键词不一致」「材料清晰，已通过」「图片与申请主题无关」。`;
 
     const userPayload = {
       student: {
@@ -236,6 +240,73 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
     }
     const result = JSON.parse(call.function.arguments);
 
+    // ---- 服务端硬规则：纠正 AI 自相矛盾 / 兜底中文化 ----
+    const overrideNotes: string[] = [];
+    const sanitize = (v: unknown): string | null => {
+      if (v === null || v === undefined) return null;
+      const s = String(v).trim();
+      if (!s) return null;
+      // 把英文占位符统一改写为「未识别」
+      if (/^(null|none|n\/a|undefined|unknown|无)$/i.test(s)) return "未识别";
+      return s;
+    };
+    result.detected_project = sanitize(result.detected_project);
+    result.detected_achievement = sanitize(result.detected_achievement);
+    result.detected_level = sanitize(result.detected_level);
+    result.detected_identity = sanitize(result.detected_identity);
+    if (typeof result.reasoning === "string") {
+      result.reasoning = result.reasoning
+        .replace(/=\s*null/gi, "=未识别")
+        .replace(/=\s*none/gi, "=未识别")
+        .replace(/\bnull\b/g, "未识别");
+    }
+    if (typeof result.reasoning_short === "string") {
+      result.reasoning_short = result.reasoning_short
+        .replace(/\bnull\b/g, "未识别");
+    }
+
+    const failedChecks: string[] = [];
+    if (result.consistency_ok === false) failedChecks.push("材料一致性");
+    if (result.relevance_ok === false) failedChecks.push("图片相关性");
+    if (result.authenticity_ok === false) failedChecks.push("真实性");
+    if (result.name_match_ok === false) failedChecks.push("姓名匹配");
+
+    if (failedChecks.length > 0) {
+      // 任一核验失败 → 强制驳回 + 高置信
+      if (result.recommendation !== "reject") {
+        const orig = result.recommendation;
+        overrideNotes.push(
+          `AI 原判定为「${orig}」，但核验项「${failedChecks.join("、")}」未通过，已强制改判为「驳回」。`,
+        );
+        result.recommendation = "reject";
+      }
+      const c = Number(result.confidence ?? 0);
+      if (!(c >= 0.85)) {
+        overrideNotes.push(`AI 置信度 ${(c * 100).toFixed(0)}% 与"明确不通过"不一致，已上调至 90%。`);
+        result.confidence = 0.9;
+      }
+    } else if (result.recommendation === "review") {
+      // review 不允许高置信度（自相矛盾）
+      const c = Number(result.confidence ?? 0.5);
+      if (c > 0.7) {
+        overrideNotes.push(`AI 给出"需人工复核"但置信度 ${(c * 100).toFixed(0)}% 偏高，已下调至 70%（不确定不应高置信）。`);
+        result.confidence = 0.7;
+      }
+      if (c < 0.4) {
+        result.confidence = 0.4;
+      }
+    } else if (result.recommendation === "approve") {
+      // approve 但无可视觉核验的附件 → 降级 review
+      if (!imageDataUrl) {
+        overrideNotes.push(`无可视觉核验的图片附件，已由「通过」降级为「需人工复核」。`);
+        result.recommendation = "review";
+        result.confidence = Math.min(Number(result.confidence ?? 0.6), 0.65);
+      } else {
+        const c = Number(result.confidence ?? 0);
+        if (c < 0.85) result.confidence = 0.85;
+      }
+    }
+
     // 用 AI 从图片中识别到的真实属性重新匹配案例（防止学生选高分关键词配低级别证书）
     const detected = {
       project: result.detected_project as string | null,
@@ -260,6 +331,12 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
     // 优先使用 detected 匹配的案例；若与学生关键词派生的 candidateCase 不一致，强制走人工复核
     const effectiveCase = detectedCase ?? candidateCase;
     const detectedMismatch = hasDetection && candidateCase && detectedCase && detectedCase.id !== candidateCase.id;
+
+    // 把 override notes 拼接到 reasoning 末尾，便于教师查看为什么被改判
+    if (overrideNotes.length) {
+      const tag = `\n\n【系统强制改判】${overrideNotes.join(" ")}`;
+      result.reasoning = (result.reasoning ?? "") + tag;
+    }
 
     let nextStatus: string;
     if (detectedMismatch) {
@@ -301,6 +378,16 @@ reasoning 中文，结构：「材料一致性：…；图片相关性：…；�
         ai_reasoning_short: typeof result.reasoning_short === "string"
           ? result.reasoning_short.slice(0, 80)
           : null,
+        ai_check_consistency:  typeof result.consistency_ok  === "boolean" ? result.consistency_ok  : null,
+        ai_check_relevance:    typeof result.relevance_ok    === "boolean" ? result.relevance_ok    : null,
+        ai_check_authenticity: typeof result.authenticity_ok === "boolean" ? result.authenticity_ok : null,
+        ai_check_name_match:   typeof result.name_match_ok   === "boolean" ? result.name_match_ok   : null,
+        ai_detected_project:     result.detected_project     ?? null,
+        ai_detected_achievement: result.detected_achievement ?? null,
+        ai_detected_level:       result.detected_level       ?? null,
+        ai_detected_identity:    result.detected_identity    ?? null,
+        ai_override_note: overrideNotes.length ? overrideNotes.join(" ") : null,
+        review_source: nextStatus === "pending_review" ? "ai_uncertain" : null,
         final_credit: isAutoApproved ? suggestedCredit : null,
         reviewed_at: isAutoApproved ? new Date().toISOString() : null,
       })
