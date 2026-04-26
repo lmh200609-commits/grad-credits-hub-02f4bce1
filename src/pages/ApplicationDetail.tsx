@@ -549,6 +549,66 @@ const ApplicationDetail = () => {
           </Card>
         )}
 
+        {isReviewer && ((app as any).ai_last_error || (app as any).ai_previous_snapshot) && (
+          <Card className={(app as any).ai_last_error ? "border-destructive" : ""}>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                {(app as any).ai_last_error ? (
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                ) : (
+                  <Undo2 className="h-4 w-4 text-muted-foreground" />
+                )}
+                AI 审核维护
+              </CardTitle>
+              {(app as any).ai_last_attempt_at && (
+                <CardDescription>
+                  最近一次 AI 调用时间：
+                  {new Date((app as any).ai_last_attempt_at).toLocaleString()}
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(app as any).ai_last_error && (
+                <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                  <div className="font-medium text-destructive">AI 审核未完成</div>
+                  <div className="mt-1 whitespace-pre-wrap text-foreground">
+                    {(app as any).ai_last_error}
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={retryAiEvaluation}
+                  disabled={retrying || rollingBack}
+                >
+                  <RefreshCw className={`mr-1 h-4 w-4 ${retrying ? "animate-spin" : ""}`} />
+                  {retrying ? "正在重试…" : "一键重试 AI 审核"}
+                </Button>
+                {(app as any).ai_previous_snapshot && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={rollbackAiSnapshot}
+                    disabled={retrying || rollingBack}
+                  >
+                    <Undo2 className="mr-1 h-4 w-4" />
+                    {rollingBack ? "回滚中…" : "回滚到上次审核结果"}
+                  </Button>
+                )}
+              </div>
+              {(app as any).ai_previous_snapshot?.taken_at && (
+                <div className="text-xs text-muted-foreground">
+                  上次结果备份于
+                  {" "}
+                  {new Date((app as any).ai_previous_snapshot.taken_at).toLocaleString()}
+                  ，状态「{(app as any).ai_previous_snapshot.status ?? "—"}」
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {isReviewer && (
           app.ai_reasoning ||
           app.ai_suggested_credit != null ||
