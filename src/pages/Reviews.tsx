@@ -225,10 +225,19 @@ const ReviewsList = () => {
                       <TableCell>{p?.full_name ?? "—"} <span className="text-xs text-muted-foreground">{p?.student_no}</span></TableCell>
                       <TableCell className="max-w-xs truncate">{r.description}</TableCell>
                       <TableCell>{rejectedDisplay ? 0 : (r.final_credit ?? r.ai_suggested_credit ?? "—")}</TableCell>
-                      <TableCell>{r.ai_confidence != null ? `${(Number(r.ai_confidence) * 100).toFixed(0)}%` : "—"}</TableCell>
+                      <TableCell>
+                        <ConfidenceBadge
+                          status={r.status}
+                          confidence={r.ai_confidence}
+                          reviewSource={r.review_source}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1">
                           <StatusBadge status={r.status} />
+                          {r.status === "pending_review" && (
+                            <ReviewSourceBadge source={r.review_source} />
+                          )}
                           {isReReview && (
                             <Badge variant="destructive">⚠ 第 {prev + 1} 次复核</Badge>
                           )}
