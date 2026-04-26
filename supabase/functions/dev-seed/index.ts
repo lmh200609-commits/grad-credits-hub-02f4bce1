@@ -25,6 +25,17 @@ const SEEDS: Seed[] = [
   { student_no: "2024003", full_name: "王芳", role: "student", department: "外国语学院", major: "英语", class_name: "英语2401" },
   { student_no: "T001", full_name: "张老师", role: "teacher", department: "计算机学院" },
   { student_no: "A001", full_name: "测试管理员", role: "admin" },
+  // 额外 10 个测试学生账号（一键登录用）
+  { student_no: "S2024101", full_name: "赵子轩", role: "student", department: "计算机学院", major: "软件工程", class_name: "软工2401" },
+  { student_no: "S2024102", full_name: "钱思雨", role: "student", department: "计算机学院", major: "计算机科学", class_name: "计科2401" },
+  { student_no: "S2024103", full_name: "孙浩然", role: "student", department: "外国语学院", major: "英语", class_name: "英语2401" },
+  { student_no: "S2024104", full_name: "周梦琪", role: "student", department: "经济管理学院", major: "金融学", class_name: "金融2401" },
+  { student_no: "S2024105", full_name: "吴佳怡", role: "student", department: "经济管理学院", major: "市场营销", class_name: "营销2401" },
+  { student_no: "S2024106", full_name: "郑俊杰", role: "student", department: "机械工程学院", major: "机械设计", class_name: "机设2401" },
+  { student_no: "S2024107", full_name: "王雨欣", role: "student", department: "法学院", major: "法学", class_name: "法学2401" },
+  { student_no: "S2024108", full_name: "冯志强", role: "student", department: "电子信息学院", major: "电子信息工程", class_name: "电信2401" },
+  { student_no: "S2024109", full_name: "陈语桐", role: "student", department: "艺术学院", major: "视觉传达", class_name: "视传2401" },
+  { student_no: "S2024110", full_name: "褚思源", role: "student", department: "计算机学院", major: "人工智能", class_name: "AI2401" },
 ];
 
 const PASSWORD = "Test1234";
