@@ -77,9 +77,16 @@ Deno.serve(async (req) => {
 
     const { data: studentProfile } = await admin
       .from("profiles")
-      .select("full_name, student_no")
+      .select("full_name, student_no, department, class_name, id_card")
       .eq("user_id", app.student_id)
       .single();
+
+    const maskIdCard = (id: string | null | undefined) => {
+      if (!id) return null;
+      const s = String(id).trim();
+      if (s.length < 10) return s;
+      return `${s.slice(0, 6)}********${s.slice(-4)}`;
+    };
 
     const selected: string[] = app.selected_keywords ?? [];
     const custom: string[] = app.custom_keywords ?? [];
