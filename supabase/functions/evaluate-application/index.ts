@@ -28,8 +28,29 @@ async function webSearch(query: string): Promise<string> {
   }
 }
 
+/** 把本次 AI 评估失败的原因写入 applications，便于前端显示并提供重试入口。 */
+async function writeFailure(adminClient: any, appId: string | null, message: string) {
+  if (!adminClient || !appId) return;
+  try {
+    await adminClient
+      .from("applications")
+      .update({
+        ai_last_error: String(message).slice(0, 500),
+        ai_last_attempt_at: new Date().toISOString(),
+      })
+      .eq("id", appId);
+  } catch (e) {
+    console.error("[evaluate] writeFailure error:", e);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // 提到 try 外，以便 catch 中也能写 ai_last_error
+  // 用 any 避免 SupabaseClient 类型推断把后续 .from(...) 收窄为 never
+  let admin: any = null;
+  let application_id: string | null = null;
 
   try {
     // ---- AuthN: verify caller JWT ----
@@ -49,10 +70,11 @@ Deno.serve(async (req) => {
     }
     const callerId = claimsData.claims.sub as string;
 
-    const { application_id } = await req.json();
+    const body = await req.json();
+    application_id = body?.application_id ?? null;
     if (!application_id) return json({ error: "application_id required" }, 400);
 
-    const admin = createClient(
+    admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
@@ -326,15 +348,19 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       if (!aiResp.ok) {
         const t = await aiResp.text();
         console.error("Qwen gateway error:", aiResp.status, t);
-        if (aiResp.status === 429) return json({ error: "系统繁忙，请稍后再试" }, 429);
-        return json({ error: `系统核验失败: ${t.slice(0, 200)}` }, 500);
+        const msg = aiResp.status === 429
+          ? "系统繁忙，AI 模型限流，请稍后重试"
+          : `AI 模型调用失败：${t.slice(0, 200)}`;
+        await writeFailure(admin, application_id, msg);
+        return json({ error: msg, retryable: true }, aiResp.status === 429 ? 429 : 500);
       }
       const aiJson = await aiResp.json();
       const msg = aiJson.choices?.[0]?.message;
       const calls = msg?.tool_calls ?? [];
       if (!calls.length) {
         console.error("Qwen unexpected payload:", JSON.stringify(aiJson).slice(0, 500));
-        return json({ error: "系统返回格式错误" }, 500);
+        await writeFailure(admin, application_id, "AI 模型返回了空 tool_calls");
+        return json({ error: "系统返回格式错误", retryable: true }, 500);
       }
       messages.push(msg);
 
@@ -370,7 +396,10 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       if (submitted) break;
     }
 
-    if (!result) return json({ error: "系统未能完成核验，请重试" }, 500);
+    if (!result) {
+      await writeFailure(admin, application_id, "AI 模型未在限定轮次内返回评估结果");
+      return json({ error: "系统未能完成核验，请重试", retryable: true }, 500);
+    }
 
     // ---- 服务端硬规则：纠正 AI 自相矛盾 / 兜底中文化 ----
     const overrideNotes: string[] = [];
@@ -519,6 +548,42 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
 
     // 系统通过时直接落实学分，无需教师确认；教师仍可在详情页修改
     const isAutoApproved = nextStatus === "auto_approved";
+
+    // 备份本次更新前的 AI 评估结果到 ai_previous_snapshot，便于一键回滚
+    const prevSnapshot = {
+      taken_at: new Date().toISOString(),
+      status: app.status,
+      ai_confidence: app.ai_confidence,
+      ai_reasoning: app.ai_reasoning,
+      ai_reasoning_short: app.ai_reasoning_short,
+      ai_suggested_credit: app.ai_suggested_credit,
+      ai_check_consistency: app.ai_check_consistency,
+      ai_check_relevance: app.ai_check_relevance,
+      ai_check_authenticity: app.ai_check_authenticity,
+      ai_check_name_match: app.ai_check_name_match,
+      ai_check_identity_match: app.ai_check_identity_match,
+      ai_check_logic: app.ai_check_logic,
+      ai_check_completeness: app.ai_check_completeness,
+      ai_identity_mismatch: app.ai_identity_mismatch,
+      ai_logic_issue: app.ai_logic_issue,
+      ai_blank_fields: app.ai_blank_fields,
+      ai_detected_project: app.ai_detected_project,
+      ai_detected_achievement: app.ai_detected_achievement,
+      ai_detected_level: app.ai_detected_level,
+      ai_detected_identity: app.ai_detected_identity,
+      ai_detected_student_no: app.ai_detected_student_no,
+      ai_detected_school: app.ai_detected_school,
+      ai_override_note: app.ai_override_note,
+      review_source: app.review_source,
+    };
+    // 仅在已经存在过一轮 AI 结果时才保留快照（首轮无需备份）
+    const hasPreviousResult =
+      app.ai_confidence != null ||
+      app.ai_reasoning != null ||
+      app.ai_check_consistency != null ||
+      app.status === "rejected_by_ai" ||
+      app.status === "auto_approved";
+
     await admin
       .from("applications")
       .update({
@@ -550,6 +615,9 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
         review_source: nextStatus === "pending_review" ? "ai_uncertain" : null,
         final_credit: isAutoApproved ? suggestedCredit : null,
         reviewed_at: isAutoApproved ? new Date().toISOString() : null,
+        ai_last_error: null,
+        ai_last_attempt_at: new Date().toISOString(),
+        ai_previous_snapshot: hasPreviousResult ? prevSnapshot : null,
       })
       .eq("id", application_id);
 
@@ -562,7 +630,9 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     });
   } catch (e) {
     console.error("evaluate error:", e);
-    return json({ error: (e as Error).message }, 500);
+    const msg = (e as Error).message;
+    await writeFailure(admin, application_id, msg);
+    return json({ error: msg, retryable: true }, 500);
   }
 });
 

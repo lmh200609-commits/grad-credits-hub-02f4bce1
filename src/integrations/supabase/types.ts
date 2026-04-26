@@ -93,9 +93,12 @@ export type Database = {
           ai_detected_school: string | null
           ai_detected_student_no: string | null
           ai_identity_mismatch: string | null
+          ai_last_attempt_at: string | null
+          ai_last_error: string | null
           ai_logic_issue: string | null
           ai_matched_rule_id: string | null
           ai_override_note: string | null
+          ai_previous_snapshot: Json | null
           ai_reasoning: string | null
           ai_reasoning_short: string | null
           ai_suggested_credit: number | null
@@ -132,9 +135,12 @@ export type Database = {
           ai_detected_school?: string | null
           ai_detected_student_no?: string | null
           ai_identity_mismatch?: string | null
+          ai_last_attempt_at?: string | null
+          ai_last_error?: string | null
           ai_logic_issue?: string | null
           ai_matched_rule_id?: string | null
           ai_override_note?: string | null
+          ai_previous_snapshot?: Json | null
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
@@ -171,9 +177,12 @@ export type Database = {
           ai_detected_school?: string | null
           ai_detected_student_no?: string | null
           ai_identity_mismatch?: string | null
+          ai_last_attempt_at?: string | null
+          ai_last_error?: string | null
           ai_logic_issue?: string | null
           ai_matched_rule_id?: string | null
           ai_override_note?: string | null
+          ai_previous_snapshot?: Json | null
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null

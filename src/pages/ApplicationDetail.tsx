@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, X, FileDown, ImageIcon } from "lucide-react";
+import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 
@@ -290,6 +290,89 @@ const ApplicationDetail = () => {
     load();
   };
 
+  const [retrying, setRetrying] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
+
+  const retryAiEvaluation = async () => {
+    if (!app) return;
+    setRetrying(true);
+    try {
+      // 重新触发前先把 status 复位到 pending_ai，便于学生与教师在列表中识别
+      await supabase
+        .from("applications")
+        .update({ status: "pending_ai", ai_last_error: null })
+        .eq("id", app.id);
+      const { data, error } = await supabase.functions.invoke("evaluate-application", {
+        body: { application_id: app.id },
+      });
+      if (error || (data as any)?.error) {
+        toast({
+          title: "重试失败",
+          description: (data as any)?.error || error?.message || "请稍后再试",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "已完成新一轮 AI 审核" });
+      }
+    } catch (e: any) {
+      toast({ title: "重试失败", description: e?.message ?? "网络异常", variant: "destructive" });
+    } finally {
+      setRetrying(false);
+      load();
+    }
+  };
+
+  const rollbackAiSnapshot = async () => {
+    if (!app) return;
+    const snap = (app as any).ai_previous_snapshot;
+    if (!snap || typeof snap !== "object") {
+      return toast({ title: "没有可回滚的历史结果", variant: "destructive" });
+    }
+    setRollingBack(true);
+    try {
+      const { error } = await supabase
+        .from("applications")
+        .update({
+          status: snap.status ?? "pending_review",
+          ai_confidence: snap.ai_confidence ?? null,
+          ai_reasoning: snap.ai_reasoning ?? null,
+          ai_reasoning_short: snap.ai_reasoning_short ?? null,
+          ai_suggested_credit: snap.ai_suggested_credit ?? null,
+          ai_check_consistency: snap.ai_check_consistency ?? null,
+          ai_check_relevance: snap.ai_check_relevance ?? null,
+          ai_check_authenticity: snap.ai_check_authenticity ?? null,
+          ai_check_name_match: snap.ai_check_name_match ?? null,
+          ai_check_identity_match: snap.ai_check_identity_match ?? null,
+          ai_check_logic: snap.ai_check_logic ?? null,
+          ai_check_completeness: snap.ai_check_completeness ?? null,
+          ai_identity_mismatch: snap.ai_identity_mismatch ?? null,
+          ai_logic_issue: snap.ai_logic_issue ?? null,
+          ai_blank_fields: snap.ai_blank_fields ?? null,
+          ai_detected_project: snap.ai_detected_project ?? null,
+          ai_detected_achievement: snap.ai_detected_achievement ?? null,
+          ai_detected_level: snap.ai_detected_level ?? null,
+          ai_detected_identity: snap.ai_detected_identity ?? null,
+          ai_detected_student_no: snap.ai_detected_student_no ?? null,
+          ai_detected_school: snap.ai_detected_school ?? null,
+          ai_override_note: snap.ai_override_note ?? null,
+          review_source: snap.review_source ?? null,
+          ai_previous_snapshot: null,
+          ai_last_error: null,
+        })
+        .eq("id", app.id);
+      if (error) throw error;
+      toast({
+        title: "已回滚到上一轮 AI 结果",
+        description: snap.taken_at ? `备份时间：${new Date(snap.taken_at).toLocaleString()}` : undefined,
+      });
+    } catch (e: any) {
+      toast({ title: "回滚失败", description: e?.message ?? "未知错误", variant: "destructive" });
+    } finally {
+      setRollingBack(false);
+      load();
+    }
+  };
+
   if (!app) return <AppLayout><p>加载中…</p></AppLayout>;
 
   return (
@@ -462,6 +545,66 @@ const ApplicationDetail = () => {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isReviewer && ((app as any).ai_last_error || (app as any).ai_previous_snapshot) && (
+          <Card className={(app as any).ai_last_error ? "border-destructive" : ""}>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                {(app as any).ai_last_error ? (
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                ) : (
+                  <Undo2 className="h-4 w-4 text-muted-foreground" />
+                )}
+                AI 审核维护
+              </CardTitle>
+              {(app as any).ai_last_attempt_at && (
+                <CardDescription>
+                  最近一次 AI 调用时间：
+                  {new Date((app as any).ai_last_attempt_at).toLocaleString()}
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(app as any).ai_last_error && (
+                <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                  <div className="font-medium text-destructive">AI 审核未完成</div>
+                  <div className="mt-1 whitespace-pre-wrap text-foreground">
+                    {(app as any).ai_last_error}
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={retryAiEvaluation}
+                  disabled={retrying || rollingBack}
+                >
+                  <RefreshCw className={`mr-1 h-4 w-4 ${retrying ? "animate-spin" : ""}`} />
+                  {retrying ? "正在重试…" : "一键重试 AI 审核"}
+                </Button>
+                {(app as any).ai_previous_snapshot && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={rollbackAiSnapshot}
+                    disabled={retrying || rollingBack}
+                  >
+                    <Undo2 className="mr-1 h-4 w-4" />
+                    {rollingBack ? "回滚中…" : "回滚到上次审核结果"}
+                  </Button>
+                )}
+              </div>
+              {(app as any).ai_previous_snapshot?.taken_at && (
+                <div className="text-xs text-muted-foreground">
+                  上次结果备份于
+                  {" "}
+                  {new Date((app as any).ai_previous_snapshot.taken_at).toLocaleString()}
+                  ，状态「{(app as any).ai_previous_snapshot.status ?? "—"}」
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
