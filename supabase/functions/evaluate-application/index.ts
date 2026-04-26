@@ -332,6 +332,12 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     const effectiveCase = detectedCase ?? candidateCase;
     const detectedMismatch = hasDetection && candidateCase && detectedCase && detectedCase.id !== candidateCase.id;
 
+    // 把 override notes 拼接到 reasoning 末尾，便于教师查看为什么被改判
+    if (overrideNotes.length) {
+      const tag = `\n\n【系统强制改判】${overrideNotes.join(" ")}`;
+      result.reasoning = (result.reasoning ?? "") + tag;
+    }
+
     let nextStatus: string;
     if (detectedMismatch) {
       // 学生选的关键词与图片识别结果对应不同案例 → 不能自动通过
@@ -372,6 +378,16 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
         ai_reasoning_short: typeof result.reasoning_short === "string"
           ? result.reasoning_short.slice(0, 80)
           : null,
+        ai_check_consistency:  typeof result.consistency_ok  === "boolean" ? result.consistency_ok  : null,
+        ai_check_relevance:    typeof result.relevance_ok    === "boolean" ? result.relevance_ok    : null,
+        ai_check_authenticity: typeof result.authenticity_ok === "boolean" ? result.authenticity_ok : null,
+        ai_check_name_match:   typeof result.name_match_ok   === "boolean" ? result.name_match_ok   : null,
+        ai_detected_project:     result.detected_project     ?? null,
+        ai_detected_achievement: result.detected_achievement ?? null,
+        ai_detected_level:       result.detected_level       ?? null,
+        ai_detected_identity:    result.detected_identity    ?? null,
+        ai_override_note: overrideNotes.length ? overrideNotes.join(" ") : null,
+        review_source: nextStatus === "pending_review" ? "ai_uncertain" : null,
         final_credit: isAutoApproved ? suggestedCredit : null,
         reviewed_at: isAutoApproved ? new Date().toISOString() : null,
       })
