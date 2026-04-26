@@ -275,7 +275,7 @@ const ApplicationDetail = () => {
     if (!app) return;
     const { data, error } = await supabase
       .from("applications")
-      .update({ status: "pending_review" })
+      .update({ status: "pending_review", review_source: "student_appeal" })
       .eq("id", app.id)
       .select("id, status");
     if (error) return toast({ title: "申请失败", description: error.message, variant: "destructive" });
