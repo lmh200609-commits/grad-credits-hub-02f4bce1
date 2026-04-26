@@ -179,10 +179,41 @@ reasoning 字段为详细中文说明，结构固定为：「材料一致性：�
 
 reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 / 关键不通过原因"，不要暴露内部核验维度名称。例：「证书级别与所选关键词不一致」「材料清晰，已通过」「图片与申请主题无关」。`;
 
+    const extraPrompt = `
+
+【新增 C. 身份核验 — 必须严格执行】（输出 identity_match_ok + identity_mismatch_detail + detected_student_no + detected_school）
+- 学生账号档案 student_profile 中的 full_name / student_no / department / class_name / id_card_masked / default_school 是"真值"。
+- 如材料图片中未出现任何身份字段（学号 / 姓名 / 院系 / 班级 / 身份证 / 学校）→ identity_match_ok = true，detail = "材料未包含身份信息"。
+- 如出现任意一项 → 必须与 student_profile 严格比对：姓名不符、学号不符、院系不符、班级不符、身份证前 6 位或末 4 位不符 → identity_match_ok = false。detail 用中文写明："材料姓名'XXX'与账号'YYY'不符" 之类。
+- 学校特别规则：本系统默认学校为「${DEFAULT_SCHOOL}」。材料未写学校 → 视为一致；材料明确写了学校且不属于「${DEFAULT_SCHOOL}」/「长财」/「CCUFE」等同义表达 → identity_match_ok = false。
+- detected_student_no = 图片中识别到的学号（无则填「未识别」）。
+- detected_school = 图片中识别到的学校全称（无则填「未识别」）。
+
+【新增 D. 逻辑性核验 — 必须严格执行】（输出 logic_ok + logic_issue_detail）
+- 检测常识性 / 数值 / 时间逻辑错误，例如：CET-4/CET-6 满分均为 710，材料若 > 710 即为伪造；GPA 通常上限 4.0/4.3/5.0；名次为负数/0/大于参赛人数；颁发日期早于学生入学年份或晚于今天；证书编号格式与官方明显不符。
+- 必要时可调用 web_search 工具核实赛事 / 证书 / 期刊 / 颁发单位真伪，但必须以材料证据为主，禁止仅凭通识否定真实材料。
+- 命中 → logic_ok = false，detail 用中文写明（如「材料显示 CET-4 = 720 分，CET-4 满分仅 710 分，分数不合理」）。
+- 未命中 → logic_ok = true，detail = "未发现逻辑错误"。
+
+【新增 E. 完整性核验 — 必须严格执行】（输出 completeness_ok + blank_fields_detail）
+- 检测材料中关键字段（学校 / 院系 / 班级 / 姓名 / 学号 / 项目名 / 颁发单位）后是否出现"空白占位"：括号内为空（）()、下划线 ____、横线 ——、星号 ***、或冒号后直接换行。
+- 命中任一关键字段为空 → completeness_ok = false，detail 用中文列出空白字段，如「学校、院系」。
+- 未命中 → completeness_ok = true，detail = "关键字段均已填写"。
+
+【任一新增核验项失败 → 必须 recommendation = "reject"，confidence ∈ [0.85, 0.98]，禁止 review 或 approve。】
+
+【工具使用】可主动调用 web_search 工具（最多 2 次）辅助 D 项判断；完成全部核验后必须调用 submit_evaluation 提交结果。`;
+
+    const fullSystemPrompt = systemPrompt + extraPrompt;
+
     const userPayload = {
       student: {
         name: studentProfile?.full_name ?? "未知",
         student_no: studentProfile?.student_no ?? "未知",
+        department: studentProfile?.department ?? "未知",
+        class_name: studentProfile?.class_name ?? "未知",
+        id_card_masked: maskIdCard(studentProfile?.id_card) ?? "未提供",
+        default_school: DEFAULT_SCHOOL,
       },
       application: {
         description: app.description,
