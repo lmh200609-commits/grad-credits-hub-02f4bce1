@@ -12,6 +12,14 @@ export type AiVerdict = {
   ai_check_relevance: boolean | null;
   ai_check_authenticity: boolean | null;
   ai_check_name_match: boolean | null;
+  ai_check_identity_match: boolean | null;
+  ai_check_logic: boolean | null;
+  ai_check_completeness: boolean | null;
+  ai_identity_mismatch: string | null;
+  ai_logic_issue: string | null;
+  ai_blank_fields: string | null;
+  ai_detected_student_no: string | null;
+  ai_detected_school: string | null;
   ai_detected_project: string | null;
   ai_detected_achievement: string | null;
   ai_detected_level: string | null;
@@ -100,7 +108,9 @@ export function AiVerdictCard({ app }: { app: AiVerdict }) {
     app.ai_detected_project ||
     app.ai_detected_achievement ||
     app.ai_detected_level ||
-    app.ai_detected_identity;
+    app.ai_detected_identity ||
+    app.ai_detected_student_no ||
+    app.ai_detected_school;
 
   return (
     <Card className={app.status === "rejected_by_ai" ? "border-destructive" : ""}>
@@ -151,6 +161,27 @@ export function AiVerdictCard({ app }: { app: AiVerdict }) {
               failText="证书中姓名与申请人不一致"
               unknownText="证书中未出现姓名信息，无法判断"
             />
+            <CheckRow
+              ok={app.ai_check_identity_match}
+              label="身份信息一致性"
+              okText="材料中的学号 / 院系 / 班级 / 身份证 / 学校均与账号一致"
+              failText={app.ai_identity_mismatch || "材料中的身份信息与账号不符"}
+              unknownText="材料未包含可核验的身份信息"
+            />
+            <CheckRow
+              ok={app.ai_check_logic}
+              label="逻辑合理性"
+              okText="未发现常识性 / 数值 / 时间逻辑错误"
+              failText={app.ai_logic_issue || "材料存在逻辑性错误"}
+              unknownText="未给出判断"
+            />
+            <CheckRow
+              ok={app.ai_check_completeness}
+              label="材料完整性"
+              okText="关键字段（学校 / 院系 / 班级 / 姓名 / 学号 等）均已填写"
+              failText={app.ai_blank_fields ? `存在空白未填写字段：${app.ai_blank_fields}` : "材料存在空白未填写字段"}
+              unknownText="未给出判断"
+            />
           </div>
         </div>
 
@@ -162,6 +193,8 @@ export function AiVerdictCard({ app }: { app: AiVerdict }) {
               <div><span className="text-muted-foreground">成果细类：</span>{app.ai_detected_achievement || dash}</div>
               <div><span className="text-muted-foreground">级别：</span>{app.ai_detected_level || dash}</div>
               <div><span className="text-muted-foreground">身份：</span>{app.ai_detected_identity || dash}</div>
+              <div><span className="text-muted-foreground">学号：</span>{app.ai_detected_student_no || dash}</div>
+              <div><span className="text-muted-foreground">学校：</span>{app.ai_detected_school || dash}</div>
             </div>
           </div>
         )}
