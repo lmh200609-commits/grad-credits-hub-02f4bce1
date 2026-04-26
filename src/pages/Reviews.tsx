@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ReviewSourceBadge, ConfidenceBadge } from "@/components/AiVerdictCard";
 import { Badge } from "@/components/ui/badge";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
@@ -24,6 +25,7 @@ type Row = {
   final_credit: number | null;
   submitted_at: string;
   student_id: string;
+  review_source: string | null;
 };
 
 type ProfileLite = { user_id: string; full_name: string | null; student_no: string | null };
@@ -88,9 +90,12 @@ const ReviewsList = () => {
 
     let q = supabase
       .from("applications")
-      .select("id, description, status, ai_suggested_credit, ai_confidence, final_credit, submitted_at, student_id", { count: "exact" })
+      .select("id, description, status, ai_suggested_credit, ai_confidence, final_credit, submitted_at, student_id, review_source", { count: "exact" })
       .order("submitted_at", { ascending: false });
     if (FILTERS[tab].length) q = q.in("status", FILTERS[tab] as any);
+    if (sourceFilter !== "all" && tab === "pending_review") {
+      q = q.eq("review_source", sourceFilter);
+    }
     if (studentIds) q = q.in("student_id", studentIds);
     const from = page * PAGE_SIZE;
     const { data, count } = await q.range(from, from + PAGE_SIZE - 1);
@@ -129,7 +134,7 @@ const ReviewsList = () => {
     }
 
     setLoading(false);
-  }, [tab, page, debounced]);
+  }, [tab, page, debounced, sourceFilter]);
 
   useEffect(() => { load(); }, [load]);
 
