@@ -28,6 +28,22 @@ async function webSearch(query: string): Promise<string> {
   }
 }
 
+/** 把本次 AI 评估失败的原因写入 applications，便于前端显示并提供重试入口。 */
+async function writeFailure(adminClient: any, appId: string | null, message: string) {
+  if (!adminClient || !appId) return;
+  try {
+    await adminClient
+      .from("applications")
+      .update({
+        ai_last_error: String(message).slice(0, 500),
+        ai_last_attempt_at: new Date().toISOString(),
+      })
+      .eq("id", appId);
+  } catch (e) {
+    console.error("[evaluate] writeFailure error:", e);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
