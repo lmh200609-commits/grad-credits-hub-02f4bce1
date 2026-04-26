@@ -1,81 +1,126 @@
-# 计划
+## 用户提出的三个问题
 
-## 问题分析
+1. **学生主动申请的人工复核** 与 **AI 自己拿不准触发的人工复核** 在系统里都是 `pending_review`，教师无法一眼分辨；
+2. AI **拒绝** / **不确定 review** / **学生申诉的人工复核** 三种情况，置信度展示混在一起，看不出区别；
+3. 教师/管理员端看到的 AI 结果（`ai_reasoning` 长文）夹杂英文（null、SCI、AI 等），并且没有把四项核验拆成结构化中文呈现，不够"详细"。
 
-### 问题 1：李明的二次人工复核没有生效
-查询数据库发现：李明的申请目前 `status='rejected'`（已被管理员驳回一次），且 `application_reviews` 中只有 1 条 `admin_review` 记录——也就是说，**学生点击"申请二次人工复核"按钮根本没有把状态改成 `pending_review`**，所以教师/管理员端自然看不到。
+## 修复方案（一次解决三件事）
 
-根本原因在 `applications` 表的 RLS 策略 `apps student update own pending`：
+### A. 区分"复核来源"——加一个枚举字段，而不是新增状态
 
-```
-status = ANY (ARRAY['pending_ai', 'pending_review', 'rejected_by_ai'])
-```
-
-这条策略**没有包含 `approved` 和 `rejected`**，因此学生在教师已复核后调用 `update({ status: 'pending_review' })` 会被 RLS 静默拦截，前端虽 toast "已转人工复核" 但数据库未更新。
-
-### 问题 2：教师/管理员端缺少"提交记录"快捷浏览页
-现有 `/reviews` 是按状态分 tab 的复核列表；用户希望另有一个**纯浏览**的提交记录页：列表显示姓名/状态/关键词，点击行从底部滑出抽屉直接看详情，不离开列表。
-
----
-
-## 实施方案
-
-### 1. 修复二次复核 RLS（数据库迁移）
-
-更新 `apps student update own pending` 策略，把 `approved` 和 `rejected` 也纳入允许范围，但通过 `WITH CHECK` 限制学生只能把状态改回 `pending_review`（不能擅自改成 approved/rejected），且不能修改 `final_credit / final_review_note / final_reviewer_id` 等结论字段（保持原值）。
+避免动核心 `application_status` 枚举（涉及大量表/RLS/UI），而是在 `applications` 加一个轻量字段：
 
 ```sql
-DROP POLICY "apps student update own pending" ON public.applications;
-
-CREATE POLICY "apps student update own"
-ON public.applications FOR UPDATE TO authenticated
-USING (student_id = auth.uid())
-WITH CHECK (
-  student_id = auth.uid()
-  AND status IN ('pending_ai','pending_review','rejected_by_ai')
-);
+ALTER TABLE public.applications
+  ADD COLUMN review_source text
+  CHECK (review_source IN ('ai_uncertain','student_appeal','reviewer_recall'));
 ```
-说明：`USING` 不再限制状态以便学生可以从 `rejected/approved` 发起二次复核；`WITH CHECK` 强制目标状态必须是上述三种之一，学生无法把申请直接改成 approved。
 
-### 2. ApplicationDetail 二次复核交互修复
-- `requestManualReview` 后端如果实际未变更（受 RLS 限制时），增加判断：从返回的 data 长度或 `select()` 验证状态实际变更，失败则提示"无权限申请，请联系管理员"。
-- 教师/管理员视角下，若 `isReReview`，在审核操作卡片顶部突出显示"⚠ 学生第 N 次申诉，请重点核查"。
+含义：
+- `ai_uncertain`：AI 自己不确定，主动转人工（`evaluate-application` 写入）
+- `student_appeal`：AI 已驳回 / 已通过后，学生主动点"申请人工复核"（`requestManualReview` 写入）
+- `reviewer_recall`：教师/管理员把已结案重新打回（保留扩展位）
 
-### 3. 新增"提交记录"页（核心功能）
+写入位置：
+- `supabase/functions/evaluate-application/index.ts`：当 `nextStatus = "pending_review"` 时同时 `review_source: "ai_uncertain"`
+- `src/pages/ApplicationDetail.tsx` 的 `requestManualReview()`：写 `review_source: "student_appeal"`
 
-**路由**：`/submissions`，教师 + 管理员可见。
+UI 区分：
+- `ApplicationDetail` 顶部 badge 旁、`Reviews` 列表行内、`ReviewHub` 子计数都加一个小徽章：
+  - 🟡「AI 转人工」= `ai_uncertain`
+  - 🟠「学生申诉」= `student_appeal`
+- `Reviews.tsx` 的"待复核"Tab 顶部加两个筛选 chip：「全部待复核 / AI 转人工 / 学生申诉」。
 
-**侧边栏**：在 `adminItems` 和 `teacherItems` 中新增菜单项「提交记录」，图标用 `History`。
+### B. 置信度展示分场景区分
 
-**页面**：`src/pages/SubmissionRecords.tsx`
-- 顶部：搜索框（姓名/学号）+ 状态多选筛选（全部/待复核/已通过/已拒绝/系统未通过）+ 时间范围。
-- 列表表格：列 = 学生姓名 · 学号 / 状态徽章 / 关键词（合并 `selected_keywords` + `custom_keywords`，最多显示前 4 个 + "+N"）/ 提交时间 / 二次复核标记。
-- 行点击：打开 **Sheet（侧滑抽屉，side="bottom"）**，高度约 85vh，内容直接复用一个轻量版申请详情（说明、关键词、附件预览、AI 结论、复核记录）。
-- 抽屉底部固定按钮：「打开完整页面」跳转 `/applications/:id`、「关闭」。
-- 支持键盘 ↑/↓ 在列表行间切换，自动更新抽屉内容（快捷浏览）。
-- 列表分页 50 条/页，使用 `TablePagination`，与 `Reviews.tsx` 一致。
+服务端置信度规则（在 `evaluate-application` 的 normalize 阶段就保证）：
 
-**复用**：抽屉内详情封装为独立组件 `src/components/ApplicationDetailPanel.tsx`，只读模式（不显示复核操作表单），同时供未来其他场景复用。
+| 场景 | recommendation | confidence 区间 | 展示方式 |
+|---|---|---|---|
+| 4 项核验全部 OK，材料明确通过 | approve | 0.85–0.98 | 绿色「系统高置信通过 92%」 |
+| 任一核验失败 / 明显造假 | reject | 0.85–0.98 | 红色「系统高置信驳回 92%」 |
+| 模糊 / 缺附件 / 同名等无法判断 | review | **0.40–0.70** | 灰色「系统低置信，转人工 55%」 |
+| 学生申诉触发的人工复核 | — | **不显示 AI 置信度**，单独标「学生申诉，无 AI 置信度」 |
 
-### 技术细节
+服务端硬约束（防止再出现"review + 90%"自相矛盾）：
+- 只要任一核验项 false → 强制 `recommendation = "reject"`，`confidence = max(原值, 0.9)`；
+- `recommendation === "review"` → `confidence = min(原值, 0.7)`；
+- approve 时附件不是图片 → 降级为 review，`confidence ≤ 0.65`。
 
-| 文件 | 改动 |
-|---|---|
-| `supabase/migrations/<new>.sql` | 重建 `applications` 学生 UPDATE 策略 |
-| `src/App.tsx` | 新增 `/submissions` 路由，`RoleRoute role={["teacher","admin"]}` |
-| `src/components/AppLayout.tsx` | adminItems / teacherItems 加「提交记录」菜单 + `extraTitles` |
-| `src/pages/SubmissionRecords.tsx` | 新建列表 + 抽屉页 |
-| `src/components/ApplicationDetailPanel.tsx` | 新建只读详情面板（抽取自 ApplicationDetail 的展示部分） |
-| `src/pages/ApplicationDetail.tsx` | `requestManualReview` 增加结果校验；二次复核警示徽章已存在，确认无回归 |
+前端 `ApplicationDetail` / `SubmissionRecords` / `Reviews` 的置信度位置都按上表的颜色 + 文案展示，避免单纯一个百分比让人误解。
 
-### 不做的事
-- 不动 `Reviews.tsx` 已有的"待复核/已完成"业务流，仅做并行的浏览入口。
-- 不修改 `application_reviews` 表结构。
-- 不抽取 ApplicationDetail 的复核表单逻辑（避免引入回归）。
+### C. 让 AI 结果"全中文 + 结构化 + 详细"
 
----
+#### C1. 持久化结构化字段（不再只存一段长文）
+
+```sql
+ALTER TABLE public.applications
+  ADD COLUMN ai_check_consistency  boolean,
+  ADD COLUMN ai_check_relevance    boolean,
+  ADD COLUMN ai_check_authenticity boolean,
+  ADD COLUMN ai_check_name_match   boolean,
+  ADD COLUMN ai_detected_project     text,
+  ADD COLUMN ai_detected_achievement text,
+  ADD COLUMN ai_detected_level       text,
+  ADD COLUMN ai_detected_identity    text,
+  ADD COLUMN ai_override_note        text;  -- 服务端硬覆盖时写明原因
+```
+
+`evaluate-application` 在写 `applications` 时把 AI tool-call 的 4 个布尔 + 4 个 detected 字段一并落库，并在被服务端 normalize 强制改判时写 `ai_override_note`（例如：「AI 给出 review 但一致性=false，已强制改判为驳回」）。
+
+#### C2. Prompt 收紧 + 中文化输出
+
+在 `supabase/functions/evaluate-application/index.ts` 的 systemPrompt 里追加硬约束：
+- "所有字段、reasoning、reasoning_short **必须使用简体中文**，禁止出现 null、SCI、ACM 等英文/缩写；如必须引用英文术语，请加中文解释。无法识别就写「未识别」而不是 null。"
+- "review 表示不确定，confidence 不得 ≥ 0.8；能给出 ≥0.85 的把握必须选 approve / reject。"
+- "任一核验项 false → 必须 reject，confidence ≥ 0.85。"
+
+服务端兜底：把 detected_* 与 reasoning 中的 `"null"` / `null` 字面量替换为 `"未识别"`；把 `"SCI"` `"ACM"` 等保留但加括号中文（仅做轻量字符串处理）。
+
+#### C3. 教师/管理员端"系统核验结果"卡片改版（`src/pages/ApplicationDetail.tsx`）
+
+把现在那段灰底长文 `ai_reasoning`，重构成一张结构化卡：
+
+```
+系统核验结果                          [系统高置信驳回 92%]
+
+四项核验
+  ✓ 材料一致性     与所选关键词一致
+  ✗ 图片相关性     图片为风景，与"学科竞赛"不相关
+  ✓ 真实性         未发现篡改或 AI 生成痕迹
+  — 姓名匹配       图片中未出现姓名，无法判断
+
+图片实际识别
+  项目大类：学科竞赛
+  成果细类：未识别
+  级别：    省级三等奖
+  身份：    未识别
+
+服务端复核备注（如有）
+  AI 给出 review 但一致性=false，已强制改判为驳回。
+
+详细理由
+  （ai_reasoning 中文长文）
+```
+
+`SubmissionRecords.tsx`、`Reviews.tsx` 列表里的"AI 简短理由"也优先用 `ai_reasoning_short`（已经更短更中文）。
+
+### D. 涉及文件汇总
+
+- 迁移：新增 1 个 migration 加上 `review_source` + 4 布尔 + 4 detected + `ai_override_note` 字段（无需改枚举）
+- `supabase/functions/evaluate-application/index.ts`：prompt 收紧、normalize 后处理、写入新字段、写 `review_source='ai_uncertain'`
+- `supabase/functions/ai-eval-stress-test/index.ts`：同步 prompt（中文/置信度规则）保证压测口径一致
+- `src/integrations/supabase/types.ts`：自动同步（不手改）
+- `src/pages/ApplicationDetail.tsx`：
+  - "系统核验结果"卡片改成结构化展示
+  - `requestManualReview` 写 `review_source='student_appeal'`
+  - 顶部加来源徽章
+- `src/pages/Reviews.tsx`：加来源筛选 chip + 行内来源徽章
+- `src/pages/admin/ReviewHub.tsx`：拆分 `pending_review` 计数为 AI 转人工 / 学生申诉 两个子卡
+- `src/pages/SubmissionRecords.tsx`：AI 卡片同步成结构化展示，置信度按颜色分级
 
 ## 验收
 
-1. 登录李明账号，进入已被驳回的申请详情，点击「申请二次人工复核」→ 状态变为 `pending_review`，教师/管理员 `/reviews` 待复核 tab 出现该条并带「⚠ 第 2 次复核」徽章。
-2. 教师/管理员侧边栏出现「提交记录」，点击进入看到全量列表；点击任意行从底部滑出详情抽屉，可上下键切换；点击「打开完整页面」跳转到现有详情页。
+1. 用 `ai-eval-stress-test` 跑一遍：所有有明显问题的用例（C2/C3/C5/C7）→ `rejected_by_ai`，置信度 ≥ 90%；模糊/同名/无附件（C6/C8/C9/C10）→ `pending_review` + `review_source='ai_uncertain'`，置信度 ≤ 70%。
+2. 学生在已驳回页点"申请人工复核" → `pending_review` + `review_source='student_appeal'` + 教师列表标「学生申诉」徽章 + 不显示 AI 置信度。
+3. 教师打开任一申请详情 → "系统核验结果"四项核验、检测属性、强制改判备注、详细理由分块展示，无 `null`/英文裸词。
