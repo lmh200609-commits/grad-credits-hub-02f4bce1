@@ -17,6 +17,19 @@ const QUICK_ACCOUNTS: { label: string; account: string }[] = [
   { label: "张老师（教师）", account: "T001" },
   { label: "测试管理员", account: "A001" },
 ];
+
+const QUICK_STUDENTS: { label: string; account: string }[] = [
+  { label: "赵子轩（学生）", account: "S2024101" },
+  { label: "钱思雨（学生）", account: "S2024102" },
+  { label: "孙浩然（学生）", account: "S2024103" },
+  { label: "周梦琪（学生）", account: "S2024104" },
+  { label: "吴佳怡（学生）", account: "S2024105" },
+  { label: "郑俊杰（学生）", account: "S2024106" },
+  { label: "王雨欣（学生）", account: "S2024107" },
+  { label: "冯志强（学生）", account: "S2024108" },
+  { label: "陈语桐（学生）", account: "S2024109" },
+  { label: "褚思源（学生）", account: "S2024110" },
+];
 const QUICK_PASSWORD = "Test1234";
 
 const accountToEmail = (account: string) => `${account}@admin.local`;
@@ -114,6 +127,25 @@ const Login = () => {
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {QUICK_ACCOUNTS.map((a) => (
+                <Button
+                  key={a.account}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  disabled={!!quickBusy}
+                  onClick={() => quickLogin(a.account)}
+                >
+                  {quickBusy === a.account ? "登录中…" : a.label}
+                </Button>
+              ))}
+            </div>
+
+            <p className="mt-4 mb-2 text-center text-xs font-medium text-muted-foreground">
+              更多学生测试账号（共 10 个）
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {QUICK_STUDENTS.map((a) => (
                 <Button
                   key={a.account}
                   type="button"
