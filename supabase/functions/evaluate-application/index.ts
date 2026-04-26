@@ -274,8 +274,9 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (failedChecks.length > 0) {
       // 任一核验失败 → 强制驳回 + 高置信
       if (result.recommendation !== "reject") {
+        const orig = result.recommendation;
         overrideNotes.push(
-          `AI 原判定为「${result.recommendation}」，但核验项「${failedChecks.join("、")}」未通过，已强制改判为驳回。`,
+          `AI 原判定为「${orig}」，但核验项「${failedChecks.join("、")}」未通过，已强制改判为「驳回」。`,
         );
         result.recommendation = "reject";
       }
@@ -297,7 +298,7 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     } else if (result.recommendation === "approve") {
       // approve 但无可视觉核验的附件 → 降级 review
       if (!imageDataUrl) {
-        overrideNotes.push("无可视觉核验的图片附件，已由"通过"降级为"需人工复核"。");
+        overrideNotes.push(`无可视觉核验的图片附件，已由「通过」降级为「需人工复核」。`);
         result.recommendation = "review";
         result.confidence = Math.min(Number(result.confidence ?? 0.6), 0.65);
       } else {
