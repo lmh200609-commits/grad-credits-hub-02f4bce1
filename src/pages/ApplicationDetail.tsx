@@ -299,6 +299,9 @@ const ApplicationDetail = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft /></Button>
           <h1 className="text-2xl font-bold">申请详情</h1>
           <StatusBadge status={app.status} audience={isReviewer ? "staff" : "student"} />
+          {isReviewer && app.status === "pending_review" && (
+            <ReviewSourceBadge source={app.review_source ?? null} />
+          )}
           {isReviewer && isReReview && (
             <Badge variant="destructive" className="ml-1">
               ⚠ 第 {reReviewIndex} 次人工复核（学生再次申诉）
