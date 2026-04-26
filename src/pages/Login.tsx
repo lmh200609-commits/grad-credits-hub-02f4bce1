@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { loginSchema, type LoginInput } from "@/lib/schemas";
+import { supabase } from "@/integrations/supabase/client";
+import { Badge } from "@/components/ui/badge";
+import { RefreshCw } from "lucide-react";
 
 const QUICK_ACCOUNTS: { label: string; account: string }[] = [
   { label: "白雪（学生）", account: "2024001" },
@@ -34,11 +37,15 @@ const QUICK_PASSWORD = "Test1234";
 
 const accountToEmail = (account: string) => `${account}@admin.local`;
 
+type AccountStatus = "ready" | "pending" | "failed";
+
 const Login = () => {
   const { signIn, user, loading } = useAuth();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [quickBusy, setQuickBusy] = useState<string | null>(null);
+  const [statuses, setStatuses] = useState<Record<string, AccountStatus>>({});
+  const [checking, setChecking] = useState(false);
 
   const {
     register,
@@ -78,6 +85,50 @@ const Login = () => {
       return;
     }
     navigate("/", { replace: true });
+  };
+
+  const checkAccounts = async () => {
+    setChecking(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("dev-seed", { body: {} });
+      if (error) throw error;
+      const results: { email: string; status: string }[] = data?.results ?? [];
+      const map: Record<string, AccountStatus> = {};
+      const all = [...QUICK_ACCOUNTS, ...QUICK_STUDENTS];
+      for (const a of all) {
+        const r = results.find((x) => x.email === accountToEmail(a.account));
+        if (!r) map[a.account] = "pending";
+        else if (r.status.startsWith("create failed")) map[a.account] = "failed";
+        else map[a.account] = "ready";
+      }
+      setStatuses(map);
+      const ready = Object.values(map).filter((s) => s === "ready").length;
+      toast({ title: "检查完成", description: `${ready}/${all.length} 个账号已就绪` });
+    } catch (e) {
+      toast({
+        title: "检查失败",
+        description: (e as Error).message ?? "无法连接到 dev-seed 服务",
+        variant: "destructive",
+      });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const renderStatusBadge = (account: string) => {
+    const s = statuses[account];
+    if (!s) return null;
+    const map = {
+      ready: { label: "已就绪", variant: "default" as const },
+      pending: { label: "待创建", variant: "secondary" as const },
+      failed: { label: "失败", variant: "destructive" as const },
+    };
+    const cfg = map[s];
+    return (
+      <Badge variant={cfg.variant} className="ml-auto h-4 px-1.5 text-[10px]">
+        {cfg.label}
+      </Badge>
+    );
   };
 
   return (
@@ -125,6 +176,17 @@ const Login = () => {
             <p className="mb-2 text-center text-xs font-medium text-muted-foreground">
               测试账号一键登录（开发用，密码 {QUICK_PASSWORD}）
             </p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mb-3 w-full"
+              disabled={checking}
+              onClick={checkAccounts}
+            >
+              <RefreshCw className={`mr-2 h-3.5 w-3.5 ${checking ? "animate-spin" : ""}`} />
+              {checking ? "检查中…（同时创建缺失账号）" : "检查账号是否已创建"}
+            </Button>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {QUICK_ACCOUNTS.map((a) => (
                 <Button
@@ -136,7 +198,8 @@ const Login = () => {
                   disabled={!!quickBusy}
                   onClick={() => quickLogin(a.account)}
                 >
-                  {quickBusy === a.account ? "登录中…" : a.label}
+                  <span className="truncate">{quickBusy === a.account ? "登录中…" : a.label}</span>
+                  {renderStatusBadge(a.account)}
                 </Button>
               ))}
             </div>
@@ -155,7 +218,8 @@ const Login = () => {
                   disabled={!!quickBusy}
                   onClick={() => quickLogin(a.account)}
                 >
-                  {quickBusy === a.account ? "登录中…" : a.label}
+                  <span className="truncate">{quickBusy === a.account ? "登录中…" : a.label}</span>
+                  {renderStatusBadge(a.account)}
                 </Button>
               ))}
             </div>
