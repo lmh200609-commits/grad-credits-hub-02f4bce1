@@ -9,6 +9,24 @@ const corsHeaders = {
 
 const HIGH_CONFIDENCE = 0.85;
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
+const DEFAULT_SCHOOL = "长春财经学院";
+const SCHOOL_ALIASES: string[] = ["长春财经学院", "长财", "ccufe", "changchun university of finance"];
+
+/** 简易联网检索：用 r.jina.ai 抓取 DuckDuckGo HTML 摘要，无需新 secret。 */
+async function webSearch(query: string): Promise<string> {
+  try {
+    const url = `https://r.jina.ai/https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0" } });
+    clearTimeout(t);
+    if (!r.ok) return `（联网检索失败，HTTP ${r.status}）`;
+    const txt = await r.text();
+    return txt.slice(0, 1500);
+  } catch (e) {
+    return `（联网检索异常：${(e as Error).message}）`;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -59,9 +77,16 @@ Deno.serve(async (req) => {
 
     const { data: studentProfile } = await admin
       .from("profiles")
-      .select("full_name, student_no")
+      .select("full_name, student_no, department, class_name, id_card")
       .eq("user_id", app.student_id)
       .single();
+
+    const maskIdCard = (id: string | null | undefined) => {
+      if (!id) return null;
+      const s = String(id).trim();
+      if (s.length < 10) return s;
+      return `${s.slice(0, 6)}********${s.slice(-4)}`;
+    };
 
     const selected: string[] = app.selected_keywords ?? [];
     const custom: string[] = app.custom_keywords ?? [];
@@ -154,10 +179,41 @@ reasoning 字段为详细中文说明，结构固定为：「材料一致性：�
 
 reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 / 关键不通过原因"，不要暴露内部核验维度名称。例：「证书级别与所选关键词不一致」「材料清晰，已通过」「图片与申请主题无关」。`;
 
+    const extraPrompt = `
+
+【新增 C. 身份核验 — 必须严格执行】（输出 identity_match_ok + identity_mismatch_detail + detected_student_no + detected_school）
+- 学生账号档案 student_profile 中的 full_name / student_no / department / class_name / id_card_masked / default_school 是"真值"。
+- 如材料图片中未出现任何身份字段（学号 / 姓名 / 院系 / 班级 / 身份证 / 学校）→ identity_match_ok = true，detail = "材料未包含身份信息"。
+- 如出现任意一项 → 必须与 student_profile 严格比对：姓名不符、学号不符、院系不符、班级不符、身份证前 6 位或末 4 位不符 → identity_match_ok = false。detail 用中文写明："材料姓名'XXX'与账号'YYY'不符" 之类。
+- 学校特别规则：本系统默认学校为「${DEFAULT_SCHOOL}」。材料未写学校 → 视为一致；材料明确写了学校且不属于「${DEFAULT_SCHOOL}」/「长财」/「CCUFE」等同义表达 → identity_match_ok = false。
+- detected_student_no = 图片中识别到的学号（无则填「未识别」）。
+- detected_school = 图片中识别到的学校全称（无则填「未识别」）。
+
+【新增 D. 逻辑性核验 — 必须严格执行】（输出 logic_ok + logic_issue_detail）
+- 检测常识性 / 数值 / 时间逻辑错误，例如：CET-4/CET-6 满分均为 710，材料若 > 710 即为伪造；GPA 通常上限 4.0/4.3/5.0；名次为负数/0/大于参赛人数；颁发日期早于学生入学年份或晚于今天；证书编号格式与官方明显不符。
+- 必要时可调用 web_search 工具核实赛事 / 证书 / 期刊 / 颁发单位真伪，但必须以材料证据为主，禁止仅凭通识否定真实材料。
+- 命中 → logic_ok = false，detail 用中文写明（如「材料显示 CET-4 = 720 分，CET-4 满分仅 710 分，分数不合理」）。
+- 未命中 → logic_ok = true，detail = "未发现逻辑错误"。
+
+【新增 E. 完整性核验 — 必须严格执行】（输出 completeness_ok + blank_fields_detail）
+- 检测材料中关键字段（学校 / 院系 / 班级 / 姓名 / 学号 / 项目名 / 颁发单位）后是否出现"空白占位"：括号内为空（）()、下划线 ____、横线 ——、星号 ***、或冒号后直接换行。
+- 命中任一关键字段为空 → completeness_ok = false，detail 用中文列出空白字段，如「学校、院系」。
+- 未命中 → completeness_ok = true，detail = "关键字段均已填写"。
+
+【任一新增核验项失败 → 必须 recommendation = "reject"，confidence ∈ [0.85, 0.98]，禁止 review 或 approve。】
+
+【工具使用】可主动调用 web_search 工具（最多 2 次）辅助 D 项判断；完成全部核验后必须调用 submit_evaluation 提交结果。`;
+
+    const fullSystemPrompt = systemPrompt + extraPrompt;
+
     const userPayload = {
       student: {
         name: studentProfile?.full_name ?? "未知",
         student_no: studentProfile?.student_no ?? "未知",
+        department: studentProfile?.department ?? "未知",
+        class_name: studentProfile?.class_name ?? "未知",
+        id_card_masked: maskIdCard(studentProfile?.id_card) ?? "未提供",
+        default_school: DEFAULT_SCHOOL,
       },
       application: {
         description: app.description,
@@ -180,65 +236,141 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       userContent.push({ type: "image_url", image_url: { url: imageDataUrl } });
     }
 
-    const aiResp = await fetch(
-      "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    const tools = [
       {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("DASHSCOPE_API_KEY")}`,
-          "Content-Type": "application/json",
+        type: "function",
+        function: {
+          name: "web_search",
+          description: "联网检索辅助核实赛事 / 证书 / 期刊 / 颁发单位真伪。最多调用 2 次。",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string", description: "中文检索关键词" } },
+            required: ["query"],
+          },
         },
-        body: JSON.stringify({
-          model: "qwen3-vl-32b-thinking",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
-          ],
-          tools: [{
-            type: "function",
-            function: {
-              name: "submit_evaluation",
-              description: "提交材料核验结果",
-              parameters: {
-                type: "object",
-                properties: {
-                  consistency_ok: { type: "boolean", description: "材料是否与关键词一致（含级别/身份精确匹配）" },
-                  relevance_ok: { type: "boolean", description: "图片是否与申请相关" },
-                  authenticity_ok: { type: "boolean", description: "是否无篡改/AI 生成痕迹" },
-                  name_match_ok: { type: ["boolean", "null"], description: "姓名是否匹配，无附件时为 null" },
-                  detected_project: { type: ["string", "null"], description: "图片中实际识别到的项目大类" },
-                  detected_achievement: { type: ["string", "null"], description: "图片中实际识别到的成果细类" },
-                  detected_level: { type: ["string", "null"], description: "图片中实际识别到的级别" },
-                  detected_identity: { type: ["string", "null"], description: "图片中实际识别到的身份" },
-                  confidence: { type: "number" },
-                  recommendation: { type: "string", enum: ["approve", "review", "reject"] },
-                  reasoning: { type: "string" },
-                  reasoning_short: { type: "string", description: "一句话给学生看的简短结论，≤60 字" },
-                },
-                required: ["consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok", "detected_project", "detected_achievement", "detected_level", "detected_identity", "confidence", "recommendation", "reasoning", "reasoning_short"],
-                additionalProperties: false,
-              },
-            },
-          }],
-          tool_choice: { type: "function", function: { name: "submit_evaluation" } },
-        }),
       },
-    );
+      {
+        type: "function",
+        function: {
+          name: "submit_evaluation",
+          description: "提交材料核验结果",
+          parameters: {
+            type: "object",
+            properties: {
+              consistency_ok: { type: "boolean" },
+              relevance_ok: { type: "boolean" },
+              authenticity_ok: { type: "boolean" },
+              name_match_ok: { type: ["boolean", "null"] },
+              identity_match_ok: { type: ["boolean", "null"], description: "学号/姓名/院系/班级/身份证/学校 与账号是否一致" },
+              identity_mismatch_detail: { type: ["string", "null"] },
+              logic_ok: { type: ["boolean", "null"] },
+              logic_issue_detail: { type: ["string", "null"] },
+              completeness_ok: { type: ["boolean", "null"] },
+              blank_fields_detail: { type: ["string", "null"] },
+              detected_project: { type: ["string", "null"] },
+              detected_achievement: { type: ["string", "null"] },
+              detected_level: { type: ["string", "null"] },
+              detected_identity: { type: ["string", "null"] },
+              detected_student_no: { type: ["string", "null"] },
+              detected_school: { type: ["string", "null"] },
+              confidence: { type: "number" },
+              recommendation: { type: "string", enum: ["approve", "review", "reject"] },
+              reasoning: { type: "string" },
+              reasoning_short: { type: "string", description: "一句话给学生看，≤60 字" },
+            },
+            required: [
+              "consistency_ok", "relevance_ok", "authenticity_ok", "name_match_ok",
+              "identity_match_ok", "identity_mismatch_detail",
+              "logic_ok", "logic_issue_detail",
+              "completeness_ok", "blank_fields_detail",
+              "detected_project", "detected_achievement", "detected_level", "detected_identity",
+              "detected_student_no", "detected_school",
+              "confidence", "recommendation", "reasoning", "reasoning_short",
+            ],
+            additionalProperties: false,
+          },
+        },
+      },
+    ];
 
-    if (!aiResp.ok) {
-      const t = await aiResp.text();
-      console.error("Qwen gateway error:", aiResp.status, t);
-      if (aiResp.status === 429) return json({ error: "系统繁忙，请稍后再试" }, 429);
-      return json({ error: `系统核验失败: ${t.slice(0, 200)}` }, 500);
+    const messages: any[] = [
+      { role: "system", content: fullSystemPrompt },
+      { role: "user", content: userContent },
+    ];
+
+    let result: any = null;
+    let websearchCount = 0;
+    const MAX_WEBSEARCH = 2;
+    const MAX_ROUNDS = 4;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const forceSubmit = websearchCount >= MAX_WEBSEARCH || round === MAX_ROUNDS - 1;
+      const aiResp = await fetch(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${Deno.env.get("DASHSCOPE_API_KEY")}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "qwen3-vl-32b-thinking",
+            messages,
+            tools,
+            tool_choice: forceSubmit
+              ? { type: "function", function: { name: "submit_evaluation" } }
+              : "auto",
+          }),
+        },
+      );
+      if (!aiResp.ok) {
+        const t = await aiResp.text();
+        console.error("Qwen gateway error:", aiResp.status, t);
+        if (aiResp.status === 429) return json({ error: "系统繁忙，请稍后再试" }, 429);
+        return json({ error: `系统核验失败: ${t.slice(0, 200)}` }, 500);
+      }
+      const aiJson = await aiResp.json();
+      const msg = aiJson.choices?.[0]?.message;
+      const calls = msg?.tool_calls ?? [];
+      if (!calls.length) {
+        console.error("Qwen unexpected payload:", JSON.stringify(aiJson).slice(0, 500));
+        return json({ error: "系统返回格式错误" }, 500);
+      }
+      messages.push(msg);
+
+      let submitted = false;
+      for (const call of calls) {
+        const fname = call.function?.name;
+        if (fname === "submit_evaluation") {
+          try { result = JSON.parse(call.function.arguments); }
+          catch { return json({ error: "系统返回格式错误（无法解析评估结果）" }, 500); }
+          submitted = true;
+          break;
+        }
+        if (fname === "web_search") {
+          let q = "";
+          try { q = JSON.parse(call.function.arguments)?.query ?? ""; } catch { /* ignore */ }
+          let toolResult = "";
+          if (websearchCount >= MAX_WEBSEARCH) {
+            toolResult = "（已达联网检索次数上限，请基于已有材料给出判定）";
+          } else if (!q.trim()) {
+            toolResult = "（检索关键词为空）";
+          } else {
+            websearchCount++;
+            console.log("[evaluate] web_search:", q);
+            toolResult = await webSearch(q);
+          }
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: toolResult.slice(0, 1500),
+          });
+        }
+      }
+      if (submitted) break;
     }
 
-    const aiJson = await aiResp.json();
-    const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
-    if (!call) {
-      console.error("Qwen unexpected payload:", JSON.stringify(aiJson).slice(0, 500));
-      return json({ error: "系统返回格式错误" }, 500);
-    }
-    const result = JSON.parse(call.function.arguments);
+    if (!result) return json({ error: "系统未能完成核验，请重试" }, 500);
 
     // ---- 服务端硬规则：纠正 AI 自相矛盾 / 兜底中文化 ----
     const overrideNotes: string[] = [];
@@ -270,6 +402,26 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (result.relevance_ok === false) failedChecks.push("图片相关性");
     if (result.authenticity_ok === false) failedChecks.push("真实性");
     if (result.name_match_ok === false) failedChecks.push("姓名匹配");
+    if (result.identity_match_ok === false) failedChecks.push("身份核验");
+    if (result.logic_ok === false)          failedChecks.push("逻辑性核验");
+    if (result.completeness_ok === false)   failedChecks.push("材料完整性");
+
+    // 学校兜底：detected_school 非空且不属于默认学校族 → 强制身份不符
+    const detSchool = (result.detected_school ?? "").toString().trim().toLowerCase();
+    if (detSchool && detSchool !== "未识别") {
+      const ok = SCHOOL_ALIASES.some((a) => detSchool.includes(a.toLowerCase()));
+      if (!ok) {
+        if (result.identity_match_ok !== false) {
+          result.identity_match_ok = false;
+          const note = `材料学校『${result.detected_school}』不属于长春财经学院`;
+          result.identity_mismatch_detail = result.identity_mismatch_detail
+            ? `${result.identity_mismatch_detail}；${note}`
+            : note;
+          if (!failedChecks.includes("身份核验")) failedChecks.push("身份核验");
+          overrideNotes.push(`服务端校验：${note}，已强制改判为「驳回」。`);
+        }
+      }
+    }
 
     if (failedChecks.length > 0) {
       // 任一核验失败 → 强制驳回 + 高置信
@@ -382,6 +534,14 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
         ai_check_relevance:    typeof result.relevance_ok    === "boolean" ? result.relevance_ok    : null,
         ai_check_authenticity: typeof result.authenticity_ok === "boolean" ? result.authenticity_ok : null,
         ai_check_name_match:   typeof result.name_match_ok   === "boolean" ? result.name_match_ok   : null,
+        ai_check_identity_match: typeof result.identity_match_ok === "boolean" ? result.identity_match_ok : null,
+        ai_check_logic:          typeof result.logic_ok          === "boolean" ? result.logic_ok          : null,
+        ai_check_completeness:   typeof result.completeness_ok   === "boolean" ? result.completeness_ok   : null,
+        ai_identity_mismatch:    result.identity_mismatch_detail ?? null,
+        ai_logic_issue:          result.logic_issue_detail       ?? null,
+        ai_blank_fields:         result.blank_fields_detail      ?? null,
+        ai_detected_student_no:  result.detected_student_no      ?? null,
+        ai_detected_school:      result.detected_school          ?? null,
         ai_detected_project:     result.detected_project     ?? null,
         ai_detected_achievement: result.detected_achievement ?? null,
         ai_detected_level:       result.detected_level       ?? null,
