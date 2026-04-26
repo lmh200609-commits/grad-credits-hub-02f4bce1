@@ -31,6 +31,10 @@ async function webSearch(query: string): Promise<string> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // 提到 try 外，以便 catch 中也能写 ai_last_error
+  let admin: ReturnType<typeof createClient> | null = null;
+  let application_id: string | null = null;
+
   try {
     // ---- AuthN: verify caller JWT ----
     const authHeader = req.headers.get("Authorization");
@@ -49,10 +53,11 @@ Deno.serve(async (req) => {
     }
     const callerId = claimsData.claims.sub as string;
 
-    const { application_id } = await req.json();
+    const body = await req.json();
+    application_id = body?.application_id ?? null;
     if (!application_id) return json({ error: "application_id required" }, 400);
 
-    const admin = createClient(
+    admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
@@ -370,7 +375,10 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       if (submitted) break;
     }
 
-    if (!result) return json({ error: "系统未能完成核验，请重试" }, 500);
+    if (!result) {
+      await writeFailure(admin, application_id, "AI 模型未在限定轮次内返回评估结果");
+      return json({ error: "系统未能完成核验，请重试", retryable: true }, 500);
+    }
 
     // ---- 服务端硬规则：纠正 AI 自相矛盾 / 兜底中文化 ----
     const overrideNotes: string[] = [];
