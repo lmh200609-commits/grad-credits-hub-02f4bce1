@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 type Counts = Record<string, number>;
+type SubCounts = { ai_uncertain: number; student_appeal: number };
 
 const CARDS = [
   { key: "pending_ai", label: "系统核验中", desc: "刚提交，系统正在自动核验", icon: CheckCircle2, color: "text-muted-foreground bg-muted" },
@@ -23,6 +24,7 @@ const CARDS = [
 const ReviewHub = () => {
   const navigate = useNavigate();
   const [counts, setCounts] = useState<Counts>({});
+  const [pendingBreakdown, setPendingBreakdown] = useState<SubCounts>({ ai_uncertain: 0, student_appeal: 0 });
 
   useEffect(() => {
     (async () => {
@@ -36,6 +38,18 @@ const ReviewHub = () => {
       const c: Counts = {};
       statuses.forEach((s, i) => { c[s] = results[i].count ?? 0; });
       setCounts(c);
+
+      // 待复核拆分：AI 转人工 vs 学生申诉
+      const [ai, appeal] = await Promise.all([
+        supabase.from("applications").select("id", { count: "exact", head: true })
+          .eq("status", "pending_review").eq("review_source", "ai_uncertain"),
+        supabase.from("applications").select("id", { count: "exact", head: true })
+          .eq("status", "pending_review").eq("review_source", "student_appeal"),
+      ]);
+      setPendingBreakdown({
+        ai_uncertain: ai.count ?? 0,
+        student_appeal: appeal.count ?? 0,
+      });
     })();
   }, []);
 
@@ -77,6 +91,12 @@ const ReviewHub = () => {
                         <div className="text-2xl font-bold tracking-tight">{counts[c.key] ?? 0}</div>
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">{c.desc}</div>
+                      {c.key === "pending_review" && (
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                          <span><span className="text-warning font-medium">AI 转人工</span> {pendingBreakdown.ai_uncertain}</span>
+                          <span><span className="text-orange-600 font-medium">学生申诉</span> {pendingBreakdown.student_appeal}</span>
+                        </div>
+                      )}
                       <div className="mt-2 inline-flex items-center text-[11px] text-primary opacity-0 transition group-hover:opacity-100">
                         查看 <ArrowRight className="ml-0.5 h-3 w-3" />
                       </div>
