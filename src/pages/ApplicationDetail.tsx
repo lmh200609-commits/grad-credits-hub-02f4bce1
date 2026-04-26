@@ -469,25 +469,29 @@ const ApplicationDetail = () => {
         {isReviewer && (
           app.ai_reasoning ||
           app.ai_suggested_credit != null ||
-          app.ai_matched_rule_id ||
           app.ai_confidence != null ||
           app.status === "rejected_by_ai" ||
-          app.status === "auto_approved"
+          app.status === "auto_approved" ||
+          app.ai_check_consistency != null
         ) && (
-          <Card className={app.status === "rejected_by_ai" ? "border-destructive" : ""}>
-            <CardHeader>
-              <CardTitle className="text-base">系统核验结果</CardTitle>
-              <CardDescription>
-                建议匹配规则：{matchedRule?.name ?? "未匹配"} · 建议学分：{app.ai_suggested_credit ?? "—"} · 置信度 {app.ai_confidence != null ? `${(Number(app.ai_confidence) * 100).toFixed(0)}%` : "—"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
-              <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">
-                {app.ai_reasoning || "系统未给出详细理由。"}
-              </p>
-            </CardContent>
-          </Card>
+          <AiVerdictCard
+            app={{
+              status: app.status,
+              ai_confidence: app.ai_confidence,
+              ai_reasoning: app.ai_reasoning,
+              ai_suggested_credit: app.ai_suggested_credit,
+              ai_check_consistency: app.ai_check_consistency ?? null,
+              ai_check_relevance: app.ai_check_relevance ?? null,
+              ai_check_authenticity: app.ai_check_authenticity ?? null,
+              ai_check_name_match: app.ai_check_name_match ?? null,
+              ai_detected_project: app.ai_detected_project ?? null,
+              ai_detected_achievement: app.ai_detected_achievement ?? null,
+              ai_detected_level: app.ai_detected_level ?? null,
+              ai_detected_identity: app.ai_detected_identity ?? null,
+              ai_override_note: app.ai_override_note ?? null,
+              review_source: app.review_source ?? null,
+            }}
+          />
         )}
 
         {isReviewer && app.status !== "pending_ai" && (
