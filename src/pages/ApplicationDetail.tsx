@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
+import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
 import { ArrowLeft, Check, X, FileDown, ImageIcon } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
@@ -33,6 +34,16 @@ type App = {
   final_credit: number | null;
   final_review_note: string | null;
   submitted_at: string;
+  review_source?: string | null;
+  ai_check_consistency?: boolean | null;
+  ai_check_relevance?: boolean | null;
+  ai_check_authenticity?: boolean | null;
+  ai_check_name_match?: boolean | null;
+  ai_detected_project?: string | null;
+  ai_detected_achievement?: string | null;
+  ai_detected_level?: string | null;
+  ai_detected_identity?: string | null;
+  ai_override_note?: string | null;
 };
 type Review = {
   id: string; action: string; decision: string; credit: number | null;
