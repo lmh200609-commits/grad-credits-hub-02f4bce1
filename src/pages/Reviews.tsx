@@ -54,6 +54,7 @@ const ReviewsList = () => {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "ai_uncertain" | "student_appeal">("all");
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 50;
 
@@ -69,8 +70,10 @@ const ReviewsList = () => {
     return () => clearTimeout(t);
   }, [search]);
 
-  // 切换 tab/搜索时回到第 0 页
-  useEffect(() => { setPage(0); }, [tab, debounced]);
+  // 切换 tab/搜索/来源筛选时回到第 0 页
+  useEffect(() => { setPage(0); }, [tab, debounced, sourceFilter]);
+  // 切换出"待复核"时清空来源筛选
+  useEffect(() => { if (tab !== "pending_review") setSourceFilter("all"); }, [tab]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -175,6 +178,25 @@ const ReviewsList = () => {
             <TabsTrigger value="finished">人工已完成</TabsTrigger>
           </TabsList>
         </Tabs>
+        {tab === "pending_review" && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">复核来源：</span>
+            {([
+              ["all", "全部"],
+              ["ai_uncertain", "AI 转人工"],
+              ["student_appeal", "学生申诉"],
+            ] as const).map(([k, label]) => (
+              <Button
+                key={k}
+                size="sm"
+                variant={sourceFilter === k ? "default" : "outline"}
+                onClick={() => setSourceFilter(k)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        )}
         <Card>
           <CardHeader><CardTitle className="text-base">共 {total} 条 · {tabLabel[tab] ?? tab}</CardTitle></CardHeader>
           <CardContent>
