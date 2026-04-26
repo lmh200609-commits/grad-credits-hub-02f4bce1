@@ -1,126 +1,99 @@
-## 用户提出的三个问题
+## 目标
 
-1. **学生主动申请的人工复核** 与 **AI 自己拿不准触发的人工复核** 在系统里都是 `pending_review`，教师无法一眼分辨；
-2. AI **拒绝** / **不确定 review** / **学生申诉的人工复核** 三种情况，置信度展示混在一起，看不出区别；
-3. 教师/管理员端看到的 AI 结果（`ai_reasoning` 长文）夹杂英文（null、SCI、AI 等），并且没有把四项核验拆成结构化中文呈现，不够"详细"。
+在原有 AI 初审基础上，新增三项能力：
 
-## 修复方案（一次解决三件事）
+1. **身份核验**：材料中出现的「学号 / 姓名 / 院系 / 班级 / 身份证号」必须与学生账号 `profiles` 一致；任一不符 → 强制驳回。
+2. **逻辑性核验**：检测常识性错误（如 CET-4 满分仅 710，材料显示 720；GPA 超上限；时间倒置；证书编号格式异常等）→ 强制驳回。允许 AI 用通识知识 + **联网查询**做辅助判断，但必须以材料证据为主。
+3. **空白字段判定**：材料中出现「学校：—— / 学校：______ / 学校：（空）」「院系：—— / 院系：（空）」等占位符且未填写 → 直接判定材料无效驳回。**默认学校 = 长春财经学院**：若材料未写学校，但其他身份字段都对得上，则视为长春财经学院；若材料明确写了别的学校，则与默认值不符 → 驳回。
 
-### A. 区分"复核来源"——加一个枚举字段，而不是新增状态
+## 技术改动
 
-避免动核心 `application_status` 枚举（涉及大量表/RLS/UI），而是在 `applications` 加一个轻量字段：
-
-```sql
-ALTER TABLE public.applications
-  ADD COLUMN review_source text
-  CHECK (review_source IN ('ai_uncertain','student_appeal','reviewer_recall'));
-```
-
-含义：
-- `ai_uncertain`：AI 自己不确定，主动转人工（`evaluate-application` 写入）
-- `student_appeal`：AI 已驳回 / 已通过后，学生主动点"申请人工复核"（`requestManualReview` 写入）
-- `reviewer_recall`：教师/管理员把已结案重新打回（保留扩展位）
-
-写入位置：
-- `supabase/functions/evaluate-application/index.ts`：当 `nextStatus = "pending_review"` 时同时 `review_source: "ai_uncertain"`
-- `src/pages/ApplicationDetail.tsx` 的 `requestManualReview()`：写 `review_source: "student_appeal"`
-
-UI 区分：
-- `ApplicationDetail` 顶部 badge 旁、`Reviews` 列表行内、`ReviewHub` 子计数都加一个小徽章：
-  - 🟡「AI 转人工」= `ai_uncertain`
-  - 🟠「学生申诉」= `student_appeal`
-- `Reviews.tsx` 的"待复核"Tab 顶部加两个筛选 chip：「全部待复核 / AI 转人工 / 学生申诉」。
-
-### B. 置信度展示分场景区分
-
-服务端置信度规则（在 `evaluate-application` 的 normalize 阶段就保证）：
-
-| 场景 | recommendation | confidence 区间 | 展示方式 |
-|---|---|---|---|
-| 4 项核验全部 OK，材料明确通过 | approve | 0.85–0.98 | 绿色「系统高置信通过 92%」 |
-| 任一核验失败 / 明显造假 | reject | 0.85–0.98 | 红色「系统高置信驳回 92%」 |
-| 模糊 / 缺附件 / 同名等无法判断 | review | **0.40–0.70** | 灰色「系统低置信，转人工 55%」 |
-| 学生申诉触发的人工复核 | — | **不显示 AI 置信度**，单独标「学生申诉，无 AI 置信度」 |
-
-服务端硬约束（防止再出现"review + 90%"自相矛盾）：
-- 只要任一核验项 false → 强制 `recommendation = "reject"`，`confidence = max(原值, 0.9)`；
-- `recommendation === "review"` → `confidence = min(原值, 0.7)`；
-- approve 时附件不是图片 → 降级为 review，`confidence ≤ 0.65`。
-
-前端 `ApplicationDetail` / `SubmissionRecords` / `Reviews` 的置信度位置都按上表的颜色 + 文案展示，避免单纯一个百分比让人误解。
-
-### C. 让 AI 结果"全中文 + 结构化 + 详细"
-
-#### C1. 持久化结构化字段（不再只存一段长文）
+### 1) 数据库迁移（`applications` 新增 8 列）
 
 ```sql
 ALTER TABLE public.applications
-  ADD COLUMN ai_check_consistency  boolean,
-  ADD COLUMN ai_check_relevance    boolean,
-  ADD COLUMN ai_check_authenticity boolean,
-  ADD COLUMN ai_check_name_match   boolean,
-  ADD COLUMN ai_detected_project     text,
-  ADD COLUMN ai_detected_achievement text,
-  ADD COLUMN ai_detected_level       text,
-  ADD COLUMN ai_detected_identity    text,
-  ADD COLUMN ai_override_note        text;  -- 服务端硬覆盖时写明原因
+  ADD COLUMN IF NOT EXISTS ai_check_identity_match  boolean,   -- 身份信息一致性
+  ADD COLUMN IF NOT EXISTS ai_check_logic           boolean,   -- 逻辑合理性
+  ADD COLUMN IF NOT EXISTS ai_check_completeness    boolean,   -- 材料字段完整性（无空白占位）
+  ADD COLUMN IF NOT EXISTS ai_identity_mismatch     text,      -- 身份不符的中文说明
+  ADD COLUMN IF NOT EXISTS ai_logic_issue           text,      -- 逻辑错误的中文说明
+  ADD COLUMN IF NOT EXISTS ai_blank_fields          text,      -- 检测到的空白字段（如「学校、院系」）
+  ADD COLUMN IF NOT EXISTS ai_detected_student_no   text,
+  ADD COLUMN IF NOT EXISTS ai_detected_school       text;      -- 图片中识别到的学校
 ```
 
-`evaluate-application` 在写 `applications` 时把 AI tool-call 的 4 个布尔 + 4 个 detected 字段一并落库，并在被服务端 normalize 强制改判时写 `ai_override_note`（例如：「AI 给出 review 但一致性=false，已强制改判为驳回」）。
+### 2) `supabase/functions/evaluate-application/index.ts`
 
-#### C2. Prompt 收紧 + 中文化输出
+**a. 拉取学生完整档案**：`profiles.select` 扩展为 `full_name, student_no, department, class_name, id_card`，同时硬编码 `DEFAULT_SCHOOL = "长春财经学院"`，一并写入 prompt 的 `student_profile` 段（身份证仅传末 4 位脱敏）。
 
-在 `supabase/functions/evaluate-application/index.ts` 的 systemPrompt 里追加硬约束：
-- "所有字段、reasoning、reasoning_short **必须使用简体中文**，禁止出现 null、SCI、ACM 等英文/缩写；如必须引用英文术语，请加中文解释。无法识别就写「未识别」而不是 null。"
-- "review 表示不确定，confidence 不得 ≥ 0.8；能给出 ≥0.85 的把握必须选 approve / reject。"
-- "任一核验项 false → 必须 reject，confidence ≥ 0.85。"
+**b. 系统提示词新增三段 + 联网授权：**
 
-服务端兜底：把 detected_* 与 reasoning 中的 `"null"` / `null` 字面量替换为 `"未识别"`；把 `"SCI"` `"ACM"` 等保留但加括号中文（仅做轻量字符串处理）。
+- **C. 身份核验** → `identity_match_ok` + `identity_mismatch_detail`
+  - 材料未出现身份字段 → `true`，detail = "材料未包含身份信息"
+  - 出现学号/姓名/院系/班级/身份证 → 与 `student_profile` 逐项严格比对，任一不符 → `false`，detail 写明具体差异。
+  - **学校特别规则**：默认学校为长春财经学院；材料若未写学校 → 视为一致；材料明确写了其他学校（且非"长春财经学院"等价表述）→ `false`。
 
-#### C3. 教师/管理员端"系统核验结果"卡片改版（`src/pages/ApplicationDetail.tsx`）
+- **D. 逻辑性核验** → `logic_ok` + `logic_issue_detail`
+  - 检测常识错误：四级/六级满分 710；GPA 上限 4.0/5.0；分数 / 名次 / 颁发日期是否合理。
+  - **允许联网查询**：当遇到无法仅靠通识判断的赛事 / 证书 / 期刊真伪时，可调用 `web_search` 工具核实（见下方 c 项），但 reasoning 中必须注明「材料证据为主，联网信息辅助」。
+  - 命中 → `false`，detail 用中文写明（如「材料显示 CET-4 = 720 分，CET-4 满分仅 710 分，分数不合理」）。
 
-把现在那段灰底长文 `ai_reasoning`，重构成一张结构化卡：
+- **E. 完整性核验** → `completeness_ok` + `blank_fields_detail`
+  - 检测「学校：____ / 学校：—— / 学校：（） / 院系：__」等任何字段名后留白 / 占位符（中英文括号、下划线、横线、星号、空白）。
+  - 命中任一空白关键字段（学校 / 院系 / 班级 / 姓名 / 学号 / 项目名 / 颁发单位） → `false`，detail = "材料中『学校、院系』字段为空白未填写"。
 
-```
-系统核验结果                          [系统高置信驳回 92%]
+**c. 工具 schema 扩展**：在 `submit_evaluation` 之外新增一个 `web_search` function tool，让模型可在需要时主动调用：
 
-四项核验
-  ✓ 材料一致性     与所选关键词一致
-  ✗ 图片相关性     图片为风景，与"学科竞赛"不相关
-  ✓ 真实性         未发现篡改或 AI 生成痕迹
-  — 姓名匹配       图片中未出现姓名，无法判断
-
-图片实际识别
-  项目大类：学科竞赛
-  成果细类：未识别
-  级别：    省级三等奖
-  身份：    未识别
-
-服务端复核备注（如有）
-  AI 给出 review 但一致性=false，已强制改判为驳回。
-
-详细理由
-  （ai_reasoning 中文长文）
+```typescript
+tools: [
+  { type: "function", function: { name: "web_search",
+      parameters: { type: "object",
+        properties: { query: { type: "string" } }, required: ["query"] } } },
+  { type: "function", function: { name: "submit_evaluation", ...原 schema 加新字段... } },
+],
+tool_choice: "auto",   // 由 auto 替代强制
 ```
 
-`SubmissionRecords.tsx`、`Reviews.tsx` 列表里的"AI 简短理由"也优先用 `ai_reasoning_short`（已经更短更中文）。
+**调用循环**：保留原 single-shot 改为最多 2 轮。若模型返回 `web_search` → 后端用 `https://api.tavily.com` 或简单的 DuckDuckGo HTML 抓取（已可用，无需新 secret，使用 `fetch` + `r.jina.ai` 代理获取摘要文本，限 800 字），把结果作为 `tool` 角色消息追加，再调一次模型；第二次必须直接调用 `submit_evaluation`。设硬上限 2 次 web_search，避免成本失控。
 
-### D. 涉及文件汇总
+**新字段加入 submit_evaluation 的 properties + required：**
 
-- 迁移：新增 1 个 migration 加上 `review_source` + 4 布尔 + 4 detected + `ai_override_note` 字段（无需改枚举）
-- `supabase/functions/evaluate-application/index.ts`：prompt 收紧、normalize 后处理、写入新字段、写 `review_source='ai_uncertain'`
-- `supabase/functions/ai-eval-stress-test/index.ts`：同步 prompt（中文/置信度规则）保证压测口径一致
-- `src/integrations/supabase/types.ts`：自动同步（不手改）
-- `src/pages/ApplicationDetail.tsx`：
-  - "系统核验结果"卡片改成结构化展示
-  - `requestManualReview` 写 `review_source='student_appeal'`
-  - 顶部加来源徽章
-- `src/pages/Reviews.tsx`：加来源筛选 chip + 行内来源徽章
-- `src/pages/admin/ReviewHub.tsx`：拆分 `pending_review` 计数为 AI 转人工 / 学生申诉 两个子卡
-- `src/pages/SubmissionRecords.tsx`：AI 卡片同步成结构化展示，置信度按颜色分级
+```typescript
+identity_match_ok, identity_mismatch_detail,
+logic_ok, logic_issue_detail,
+completeness_ok, blank_fields_detail,
+detected_student_no, detected_school
+```
 
-## 验收
+**d. 服务端硬规则扩展（接现有 `failedChecks` 路径）：**
 
-1. 用 `ai-eval-stress-test` 跑一遍：所有有明显问题的用例（C2/C3/C5/C7）→ `rejected_by_ai`，置信度 ≥ 90%；模糊/同名/无附件（C6/C8/C9/C10）→ `pending_review` + `review_source='ai_uncertain'`，置信度 ≤ 70%。
-2. 学生在已驳回页点"申请人工复核" → `pending_review` + `review_source='student_appeal'` + 教师列表标「学生申诉」徽章 + 不显示 AI 置信度。
-3. 教师打开任一申请详情 → "系统核验结果"四项核验、检测属性、强制改判备注、详细理由分块展示，无 `null`/英文裸词。
+```typescript
+if (result.identity_match_ok === false) failedChecks.push("身份核验");
+if (result.logic_ok === false)          failedChecks.push("逻辑性核验");
+if (result.completeness_ok === false)   failedChecks.push("材料完整性");
+```
+
+→ 复用既有「任一失败 → 强制 reject + 90% 置信」逻辑，并把三个 detail 字段拼到 `overrideNotes` 与 reasoning。
+
+**学校兜底**：服务端再做一次正则保险——若 `detected_school` 非空且既不包含「长春财经」也不在已知等价别名（"CCUFE"），覆盖 `identity_match_ok = false`，detail 追加「材料学校『…』不属于长春财经学院」。
+
+**e. 落库**：把 8 个新列写入 `applications` 更新语句。
+
+**f. reasoning 模板**：固定结构追加「身份核验：…；逻辑性：…；完整性：…」三段。
+
+### 3) `src/components/AiVerdictCard.tsx`
+
+- 「核验项」区块新增三行：身份信息一致性、逻辑合理性、材料完整性，复用 `<CheckRow ok={...} />`。
+- 任一为 `false` 时，下方显示对应的红色细体说明（`ai_identity_mismatch` / `ai_logic_issue` / `ai_blank_fields`）。
+- 「图片实际识别」追加「学号」「学校」两行。
+- TS 接口同步新增 8 字段。
+
+### 4) 类型同步
+
+迁移成功后 `src/integrations/supabase/types.ts` 自动重生成，无需手改。
+
+## 不在范围
+
+- 不改学生端 UI（学生只看 `reasoning_short`，会自动出现「身份信息不符 / 字段空白未填写 / 分数超出常识范围」之类一句话）。
+- 不改 `Reviews.tsx` / `ReviewHub.tsx` 列表（仍按 review_source 区分 AI/学生申诉）。
+- 联网检索仅作为辅助，硬规则与材料证据始终优先。
