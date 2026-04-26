@@ -240,6 +240,72 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     }
     const result = JSON.parse(call.function.arguments);
 
+    // ---- 服务端硬规则：纠正 AI 自相矛盾 / 兜底中文化 ----
+    const overrideNotes: string[] = [];
+    const sanitize = (v: unknown): string | null => {
+      if (v === null || v === undefined) return null;
+      const s = String(v).trim();
+      if (!s) return null;
+      // 把英文占位符统一改写为「未识别」
+      if (/^(null|none|n\/a|undefined|unknown|无)$/i.test(s)) return "未识别";
+      return s;
+    };
+    result.detected_project = sanitize(result.detected_project);
+    result.detected_achievement = sanitize(result.detected_achievement);
+    result.detected_level = sanitize(result.detected_level);
+    result.detected_identity = sanitize(result.detected_identity);
+    if (typeof result.reasoning === "string") {
+      result.reasoning = result.reasoning
+        .replace(/=\s*null/gi, "=未识别")
+        .replace(/=\s*none/gi, "=未识别")
+        .replace(/\bnull\b/g, "未识别");
+    }
+    if (typeof result.reasoning_short === "string") {
+      result.reasoning_short = result.reasoning_short
+        .replace(/\bnull\b/g, "未识别");
+    }
+
+    const failedChecks: string[] = [];
+    if (result.consistency_ok === false) failedChecks.push("材料一致性");
+    if (result.relevance_ok === false) failedChecks.push("图片相关性");
+    if (result.authenticity_ok === false) failedChecks.push("真实性");
+    if (result.name_match_ok === false) failedChecks.push("姓名匹配");
+
+    if (failedChecks.length > 0) {
+      // 任一核验失败 → 强制驳回 + 高置信
+      if (result.recommendation !== "reject") {
+        overrideNotes.push(
+          `AI 原判定为「${result.recommendation}」，但核验项「${failedChecks.join("、")}」未通过，已强制改判为驳回。`,
+        );
+        result.recommendation = "reject";
+      }
+      const c = Number(result.confidence ?? 0);
+      if (!(c >= 0.85)) {
+        overrideNotes.push(`AI 置信度 ${(c * 100).toFixed(0)}% 与"明确不通过"不一致，已上调至 90%。`);
+        result.confidence = 0.9;
+      }
+    } else if (result.recommendation === "review") {
+      // review 不允许高置信度（自相矛盾）
+      const c = Number(result.confidence ?? 0.5);
+      if (c > 0.7) {
+        overrideNotes.push(`AI 给出"需人工复核"但置信度 ${(c * 100).toFixed(0)}% 偏高，已下调至 70%（不确定不应高置信）。`);
+        result.confidence = 0.7;
+      }
+      if (c < 0.4) {
+        result.confidence = 0.4;
+      }
+    } else if (result.recommendation === "approve") {
+      // approve 但无可视觉核验的附件 → 降级 review
+      if (!imageDataUrl) {
+        overrideNotes.push("无可视觉核验的图片附件，已由"通过"降级为"需人工复核"。");
+        result.recommendation = "review";
+        result.confidence = Math.min(Number(result.confidence ?? 0.6), 0.65);
+      } else {
+        const c = Number(result.confidence ?? 0);
+        if (c < 0.85) result.confidence = 0.85;
+      }
+    }
+
     // 用 AI 从图片中识别到的真实属性重新匹配案例（防止学生选高分关键词配低级别证书）
     const detected = {
       project: result.detected_project as string | null,
