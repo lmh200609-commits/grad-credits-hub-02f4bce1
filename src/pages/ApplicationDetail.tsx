@@ -51,6 +51,10 @@ type App = {
   ai_override_note?: string | null;
   certificate_no?: string | null;
   certificate_issued_at?: string | null;
+  face_match_status?: "unknown" | "no_face" | "match" | "mismatch" | "error" | null;
+  face_match_score?: number | null;
+  face_match_note?: string | null;
+  face_checked_at?: string | null;
 };
 type Review = {
   id: string; action: string; decision: string; credit: number | null;
