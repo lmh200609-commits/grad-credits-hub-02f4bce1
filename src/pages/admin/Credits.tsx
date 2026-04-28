@@ -16,6 +16,7 @@ import {
 import { Download, Trophy, Users, CheckCircle2, AlertTriangle } from "lucide-react";
 import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
+import * as XLSX from "xlsx";
 
 const PAGE_SIZE = 50;
 
@@ -117,17 +118,19 @@ const Credits = () => {
   }, [rows]);
   const maxCredit = useMemo(() => rows.reduce((m, r) => Math.max(m, r.total_credit), 0), [rows]);
 
-  const exportCsv = () => {
-    const header = ["排名", "姓名", "学号", "院系", "专业", "班级", "通过申请数", "累计学分"];
-    const lines = filtered.map((r, i) => [
+  const exportXlsx = () => {
+    const header = ["排名", "姓名", "学号", "院系", "专业", "班级", "通过申请数", "累计学分", "是否合格"];
+    const data = filtered.map((r, i) => [
       i + 1, r.full_name ?? "", r.student_no ?? "", r.department ?? "",
-      r.major ?? "", r.class_name ?? "", r.approved_count, r.total_credit.toFixed(1),
-    ].join(","));
-    const blob = new Blob(["\ufeff" + [header.join(","), ...lines].join("\n")], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `学分排名_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+      r.major ?? "", r.class_name ?? "", r.approved_count, Number(r.total_credit.toFixed(1)),
+      r.total_credit >= PASS_THRESHOLD ? "合格" : "不合格",
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+    ws["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "学分排名");
+    const tag = passFilter === "pass" ? "合格" : passFilter === "fail" ? "不合格" : "全部";
+    XLSX.writeFile(wb, `学分排名_${tag}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   return (
@@ -137,8 +140,8 @@ const Credits = () => {
           title="学生学分排名"
           description="基于已通过的申请累计计算"
           actions={
-            <Button onClick={exportCsv} variant="outline" size="sm">
-              <Download className="mr-2 h-4 w-4" /> 导出 CSV
+            <Button onClick={exportXlsx} variant="outline" size="sm">
+              <Download className="mr-2 h-4 w-4" /> 导出 Excel
             </Button>
           }
         />

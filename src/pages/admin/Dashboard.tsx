@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
 } from "recharts";
@@ -25,6 +28,8 @@ const PENDING: App["status"][] = ["pending_ai", "pending_review"];
 // 高对比度多彩配色
 const COLORS = ["#10b981", "#ef4444", "#f59e0b", "#3b82f6", "#a855f7", "#06b6d4"];
 const DEPT_COLORS = ["#6366f1", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#0ea5e9", "#84cc16", "#f43f5e"];
+const PASS_COLORS = ["#10b981", "#ef4444"];
+const PASS_THRESHOLD = 4;
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -33,6 +38,7 @@ const AdminDashboard = () => {
   const [teacherCount, setTeacherCount] = useState(0);
   const [ruleCount, setRuleCount] = useState(0);
   const [deptStats, setDeptStats] = useState<{ name: string; value: number }[]>([]);
+  const [studentIds, setStudentIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     (async () => {
@@ -48,6 +54,7 @@ const AdminDashboard = () => {
       setRuleCount(rc ?? 0);
 
       const studentIds = new Set(roles.filter((r) => r.role === "student").map((r) => r.user_id));
+      setStudentIds(studentIds);
       const deptMap = new Map<string, number>();
       profiles.filter((p) => studentIds.has(p.user_id)).forEach((p) => {
         const k = p.department ?? "未填写";
@@ -70,6 +77,30 @@ const AdminDashboard = () => {
       totalCredit,
     };
   }, [apps]);
+
+  const passStats = useMemo(() => {
+    const credit = new Map<string, number>();
+    apps.forEach((a) => {
+      if (!APPROVED.includes(a.status)) return;
+      const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
+      credit.set(a.student_id, (credit.get(a.student_id) ?? 0) + c);
+    });
+    let pass = 0, fail = 0;
+    studentIds.forEach((id) => {
+      if ((credit.get(id) ?? 0) >= PASS_THRESHOLD) pass++; else fail++;
+    });
+    return { pass, fail, total: pass + fail };
+  }, [apps, studentIds]);
+
+  const passPie = useMemo(() => {
+    if (!passStats.total) return [];
+    return [
+      { name: "合格", value: passStats.pass },
+      { name: "不合格", value: passStats.fail },
+    ];
+  }, [passStats]);
+
+  const fmtPct = (n: number) => passStats.total ? `${((n / passStats.total) * 100).toFixed(1)}%` : "—";
 
   const trend = useMemo(() => {
     const map = new Map<string, number>();
@@ -125,6 +156,55 @@ const AdminDashboard = () => {
           <StatCard label="累计学分" value={stats.totalCredit.toFixed(1)} accent="text-fuchsia-600" />
           <StatCard label="规则 / 师生" value={`${ruleCount} / ${teacherCount}+${studentCount}`} accent="text-cyan-600" />
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">学生合格情况（阈值 ≥ {PASS_THRESHOLD} 学分，点击行可跳转）</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>类别</TableHead>
+                  <TableHead className="text-right">人数</TableHead>
+                  <TableHead className="text-right">占比</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow className="cursor-pointer hover:bg-success/10" onClick={() => navigate("/admin/credits?passFilter=pass")}>
+                  <TableCell className="font-medium text-success">合格</TableCell>
+                  <TableCell className="text-right font-semibold">{passStats.pass}</TableCell>
+                  <TableCell className="text-right">{fmtPct(passStats.pass)}</TableCell>
+                </TableRow>
+                <TableRow className="cursor-pointer hover:bg-danger/10" onClick={() => navigate("/admin/credits?passFilter=fail")}>
+                  <TableCell className="font-medium text-danger">不合格</TableCell>
+                  <TableCell className="text-right font-semibold">{passStats.fail}</TableCell>
+                  <TableCell className="text-right">{fmtPct(passStats.fail)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground">合计</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{passStats.total}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">100%</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            <div className="h-[220px]">
+              {passPie.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-muted-foreground">暂无数据</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={passPie} dataKey="value" nameKey="name" outerRadius={80} label>
+                      {passPie.map((_, i) => <Cell key={i} fill={PASS_COLORS[i]} />)}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>

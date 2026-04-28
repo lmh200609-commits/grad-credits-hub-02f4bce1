@@ -32,9 +32,10 @@ const adminItems: Item[] = [
 ];
 
 const teacherItems: Item[] = [
-  { title: "工作台", url: "/", icon: LayoutDashboard },
+  { title: "数据看板", url: "/teacher/dashboard", icon: BarChart3 },
   { title: "待审核", url: "/reviews", icon: ClipboardCheck },
   { title: "提交记录", url: "/submissions", icon: History },
+  { title: "学分排名", url: "/teacher/credits", icon: Trophy },
   { title: "学生管理", url: "/teacher/students", icon: Users },
 ];
 
