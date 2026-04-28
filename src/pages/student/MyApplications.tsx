@@ -45,10 +45,13 @@ const MyApplications = () => {
   const reload = useSerializedReload(load);
   useEffect(() => { reload(); }, [reload, load]);
 
+  // Subscribe ONLY to this student's own applications. While auth is still
+  // resolving (`user` is null), pass `null` so the hook skips subscribing
+  // entirely instead of briefly listening to the whole table.
   useRealtimeTable(
     "applications",
     reload,
-    { filter: user ? `student_id=eq.${user.id}` : undefined },
+    { filter: user ? `student_id=eq.${user.id}` : null },
   );
 
   const getAppTitle = (r: Row) => {
