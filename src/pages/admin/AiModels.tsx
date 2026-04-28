@@ -50,6 +50,14 @@ type Binding = {
   ai_providers: { id: string; name: string; vendor: string; base_url: string; api_key_last4: string } | null;
 };
 
+type EnvFallback = {
+  vendor: string;
+  baseUrl: string;
+  providerName: string;
+  defaultModel: string;
+  envKey: string;
+} | null;
+
 async function callAdmin(action: string, payload: Record<string, unknown> = {}) {
   const { data, error } = await supabase.functions.invoke("ai-provider-admin", {
     body: { action, ...payload },
@@ -64,6 +72,7 @@ const maskKey = (last4: string) => last4 ? `••••••••${last4}` : 
 const AiModelsPage = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [bindings, setBindings] = useState<Binding[]>([]);
+  const [fallback, setFallback] = useState<EnvFallback>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Provider | null>(null);
   const [providerOpen, setProviderOpen] = useState(false);
@@ -75,6 +84,7 @@ const AiModelsPage = () => {
       const [p, b] = await Promise.all([callAdmin("list_providers"), callAdmin("list_bindings")]);
       setProviders(p.providers || []);
       setBindings(b.bindings || []);
+      setFallback(b.fallback ?? null);
     } catch (e) {
       toast({ title: "加载失败", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -198,14 +208,22 @@ const AiModelsPage = () => {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">功能与模型绑定</CardTitle>
-            <p className="text-sm text-muted-foreground">为每个 AI 功能单独选择提供商与模型名。未绑定时系统会回退到环境变量中的旧密钥（兼容期）。</p>
+            <p className="text-sm text-muted-foreground">
+              下表显示系统中每个 AI 功能 <b>当前实际调用的提供商与模型</b>。未绑定提供商时，系统会自动回退到环境变量密钥。
+            </p>
+            {fallback && (
+              <div className="mt-2 rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+                <b>当前回退渠道：</b>{fallback.providerName} · 走 <code className="font-mono">{fallback.envKey}</code> · {fallback.baseUrl}
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>功能</TableHead>
-                  <TableHead>当前提供商</TableHead>
+                  <TableHead>当前实际调用</TableHead>
+                  <TableHead>提供商绑定</TableHead>
                   <TableHead>模型名</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -216,6 +234,7 @@ const AiModelsPage = () => {
                     key={b.function_key}
                     binding={b}
                     providers={providers}
+                    fallback={fallback}
                     onSaved={load}
                   />
                 ))}
@@ -237,8 +256,8 @@ const AiModelsPage = () => {
 
 /* ----------------- Binding row ----------------- */
 const BindingRow = ({
-  binding, providers, onSaved,
-}: { binding: Binding; providers: Provider[]; onSaved: () => void }) => {
+  binding, providers, fallback, onSaved,
+}: { binding: Binding; providers: Provider[]; fallback: EnvFallback; onSaved: () => void }) => {
   const [providerId, setProviderId] = useState<string>(binding.provider_id ?? "__none__");
   const [model, setModel] = useState<string>(binding.model);
   const [saving, setSaving] = useState(false);
@@ -269,6 +288,10 @@ const BindingRow = ({
   };
 
   const currentProvider = providers.find((p) => p.id === providerId);
+  const isBound = !!binding.provider_id && !!binding.ai_providers;
+  const activeName = isBound ? binding.ai_providers!.name : (fallback?.providerName ?? "未配置");
+  const activeBase = isBound ? binding.ai_providers!.base_url : (fallback?.baseUrl ?? "—");
+  const activeModel = binding.model || fallback?.defaultModel || "—";
 
   return (
     <TableRow>
@@ -276,6 +299,14 @@ const BindingRow = ({
         <div className="font-medium">{meta.label}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">{meta.desc}</div>
         <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{binding.function_key}</div>
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="flex items-center gap-1">
+          <Badge variant={isBound ? "default" : "secondary"}>{isBound ? "已绑定" : "环境回退"}</Badge>
+          <span className="text-sm font-medium">{activeName}</span>
+        </div>
+        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground" title={activeBase}>{activeBase}</div>
+        <div className="mt-0.5 font-mono text-[11px]">{activeModel}</div>
       </TableCell>
       <TableCell className="min-w-[220px] align-top">
         <Select value={providerId} onValueChange={setProviderId}>

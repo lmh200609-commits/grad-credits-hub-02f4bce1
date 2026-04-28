@@ -209,7 +209,37 @@ Deno.serve(async (req) => {
         .select("function_key, model, provider_id, ai_providers(id, name, vendor, base_url, api_key_last4)")
         .order("function_key");
       if (error) throw error;
-      return json({ bindings: data ?? [] });
+
+      // Compute environment fallback so the admin can see what is *actually* called
+      // for any function that hasn't been explicitly bound to a provider.
+      const dashscope = !!Deno.env.get("DASHSCOPE_API_KEY");
+      const deepseek = !!Deno.env.get("DEEPSEEK_API_KEY");
+      let fallback: { vendor: string; baseUrl: string; providerName: string; defaultModel: string; envKey: string } | null = null;
+      if (dashscope) {
+        fallback = { vendor: "qwen", baseUrl: VENDOR_FALLBACK_URL.qwen, providerName: "通义千问 (env fallback)", defaultModel: "qwen-plus", envKey: "DASHSCOPE_API_KEY" };
+      } else if (deepseek) {
+        fallback = { vendor: "deepseek", baseUrl: VENDOR_FALLBACK_URL.deepseek, providerName: "DeepSeek (env fallback)", defaultModel: "deepseek-chat", envKey: "DEEPSEEK_API_KEY" };
+      }
+
+      // Make sure every known function appears, even when no DB row exists yet.
+      const KNOWN_FUNCTIONS = [
+        "evaluate-application",
+        "ai-parse-roster",
+        "ai-explain-import",
+        "import-assistant-chat",
+        "staff-ai-assistant",
+        "ask-credit-assistant",
+        "polish-answer",
+      ];
+      const map = new Map<string, any>();
+      for (const row of data ?? []) map.set((row as any).function_key, row);
+      const merged = KNOWN_FUNCTIONS.map((fk) => {
+        const row = map.get(fk);
+        if (row) return row;
+        return { function_key: fk, model: fallback?.defaultModel ?? "", provider_id: null, ai_providers: null };
+      });
+
+      return json({ bindings: merged, fallback });
     }
 
     if (action === "upsert_binding") {
