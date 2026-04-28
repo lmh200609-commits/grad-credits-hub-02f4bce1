@@ -1,6 +1,7 @@
 // 系统材料核验：仅校验"材料 vs 关键词 vs 学生姓名"一致性，及是否存在
 // 明显篡改 / AI 生成痕迹 / 无关图片。其他内容（学分大小等）不严格校验。
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { getAiConfig, callChatCompletions } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
