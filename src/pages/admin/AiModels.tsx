@@ -308,8 +308,8 @@ const ProviderDialog = ({
   open, onOpenChange, editing, onSaved,
 }: { open: boolean; onOpenChange: (v: boolean) => void; editing: Provider | null; onSaved: () => void }) => {
   const [name, setName] = useState("");
-  const [vendor, setVendor] = useState("deepseek");
-  const [baseUrl, setBaseUrl] = useState(VENDOR_PRESETS[0].baseUrl);
+  const [vendor, setVendor] = useState<string>("deepseek");
+  const [baseUrl, setBaseUrl] = useState<string>(VENDOR_PRESETS[0].baseUrl);
   const [apiKey, setApiKey] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
