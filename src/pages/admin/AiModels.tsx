@@ -230,11 +230,11 @@ const AiModelsPage = () => {
                   if (!confirm("将根据环境变量 Key 创建/更新 DashScope + DeepSeek 提供商，并把 7 个功能按默认清单（evaluate→qwen3-vl-32b-thinking, parse→qwen-plus, explain/import→qwen-turbo, staff/ask/polish→deepseek-chat）一键绑定。是否继续？")) return;
                   try {
                     const r = await callAdmin("restore_defaults");
-                    toast.success("已按默认清单恢复绑定");
+                    toast({ title: "已按默认清单恢复绑定" });
                     console.log("restore_defaults:", r);
                     load();
                   } catch (e) {
-                    toast.error((e as Error).message);
+                    toast({ title: "恢复失败", description: (e as Error).message, variant: "destructive" });
                   }
                 }}
               >
