@@ -1,6 +1,7 @@
 // AI-powered roster parser: AI identifies column mapping from a sample,
 // then we apply it to ALL rows server-side (supports 2000+ rows).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { getAiConfig } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
