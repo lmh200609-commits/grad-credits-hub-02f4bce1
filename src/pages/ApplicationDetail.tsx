@@ -483,7 +483,25 @@ const ApplicationDetail = () => {
               ⚠ 第 {reReviewIndex} 次人工复核（学生再次申诉）
             </Badge>
           )}
+          {canExportCert && (
+            <Button
+              size="sm"
+              variant="default"
+              className="ml-auto"
+              onClick={handleExportCertificate}
+              disabled={exporting}
+            >
+              <Award className="mr-1 h-4 w-4" />
+              {exporting ? "正在生成…" : (app.certificate_no ? "重新导出学分证明" : "导出学分证明")}
+            </Button>
+          )}
         </div>
+        {app.certificate_no && (
+          <div className="text-xs text-muted-foreground">
+            证书编号：<span className="font-mono">{app.certificate_no}</span>
+            {app.certificate_issued_at && <> · 首次签发：{new Date(app.certificate_issued_at).toLocaleString()}</>}
+          </div>
+        )}
 
         <Card>
           <CardHeader>
