@@ -47,7 +47,7 @@ const VerifyCertificate = () => {
               <Row k="签发日期" v={new Date(r.issued_at).toLocaleDateString()} />
             </>
           )}
-          {r && !r.ok && (
+          {r && !r.ok && "error" in r && (
             <p className="text-destructive">{r.error}</p>
           )}
         </CardContent>
