@@ -842,10 +842,53 @@ const ApplicationDetail = () => {
           id="__cert_render__"
           style={{ position: "fixed", left: -99999, top: 0, zIndex: -1 }}
         >
-          <CertificatePreview data={certData} />
+          <CertificatePreview data={certData} orientation={orientation} />
         </div>,
         document.body,
       )}
+      <Dialog open={previewOpen} onOpenChange={(o) => { if (!exporting) setPreviewOpen(o); }}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>学分认定证明 · 预览</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">PDF 方向：</span>
+            <ToggleGroup
+              type="single"
+              value={orientation}
+              onValueChange={(v) => v && setOrientation(v as "landscape" | "portrait")}
+              size="sm"
+              variant="outline"
+            >
+              <ToggleGroupItem value="landscape">A4 横版</ToggleGroupItem>
+              <ToggleGroupItem value="portrait">A4 竖版</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          {certData && (
+            <div className="max-h-[65vh] overflow-auto rounded border bg-muted/20 p-4">
+              <div
+                style={{
+                  transform: orientation === "portrait" ? "scale(0.55)" : "scale(0.6)",
+                  transformOrigin: "top center",
+                  width: orientation === "portrait" ? 794 : 1123,
+                  margin: "0 auto",
+                }}
+              >
+                <CertificatePreview data={certData} orientation={orientation} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={exporting}>
+              取消
+            </Button>
+            <Button onClick={downloadCertificate} disabled={exporting}>
+              <FileDown className="mr-1 h-4 w-4" />
+              {exporting ? "导出中…" : "下载 PDF"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
