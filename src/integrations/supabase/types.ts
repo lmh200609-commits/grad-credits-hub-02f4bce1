@@ -14,6 +14,80 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_function_bindings: {
+        Row: {
+          function_key: string
+          id: string
+          model: string
+          provider_id: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          function_key: string
+          id?: string
+          model: string
+          provider_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          function_key?: string
+          id?: string
+          model?: string
+          provider_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_function_bindings_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "ai_providers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_providers: {
+        Row: {
+          api_key_encrypted: string
+          api_key_last4: string
+          base_url: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          note: string | null
+          updated_at: string
+          vendor: string
+        }
+        Insert: {
+          api_key_encrypted: string
+          api_key_last4?: string
+          base_url: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          note?: string | null
+          updated_at?: string
+          vendor: string
+        }
+        Update: {
+          api_key_encrypted?: string
+          api_key_last4?: string
+          base_url?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          note?: string | null
+          updated_at?: string
+          vendor?: string
+        }
+        Relationships: []
+      }
       application_reviews: {
         Row: {
           action: Database["public"]["Enums"]["review_action"]
