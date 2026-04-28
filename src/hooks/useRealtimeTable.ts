@@ -174,6 +174,5 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
         currentChannel = null;
       }
     };
-  }, [table, event, filter, pollMs]);
-  // `skip` is derived from `filter`, no extra dep needed.
+  }, [table, event, filter, pollMs, skip]);
 }
