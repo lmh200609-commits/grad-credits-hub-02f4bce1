@@ -22,9 +22,14 @@ async function getCallerUserId(req: Request): Promise<string | null> {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: auth } } },
     );
-    const { data } = await userClient.auth.getClaims(token);
-    return (data?.claims?.sub as string | undefined) ?? null;
-  } catch {
+    const { data, error } = await userClient.auth.getUser(token);
+    if (error) {
+      console.error("getUser error:", error.message);
+      return null;
+    }
+    return data?.user?.id ?? null;
+  } catch (e) {
+    console.error("auth exception:", e);
     return null;
   }
 }
