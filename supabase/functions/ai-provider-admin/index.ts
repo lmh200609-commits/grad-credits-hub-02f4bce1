@@ -266,6 +266,75 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "restore_defaults") {
+      // Create (or reuse) DashScope + DeepSeek providers from env vars,
+      // then bind every function to its previously-recorded model.
+      const dashKey = Deno.env.get("DASHSCOPE_API_KEY") || "";
+      const dsKey = Deno.env.get("DEEPSEEK_API_KEY") || "";
+
+      const ensureProvider = async (
+        name: string, vendor: string, baseUrl: string, plainKey: string,
+      ): Promise<string | null> => {
+        if (!plainKey) return null;
+        const { data: existing } = await admin
+          .from("ai_providers").select("id").eq("vendor", vendor).eq("name", name).maybeSingle();
+        const { data: enc, error: encErr } = await admin.rpc("ai_encrypt_api_key", {
+          _plain: plainKey, _secret: SECRET,
+        });
+        if (encErr) throw encErr;
+        const row = Array.isArray(enc) ? enc[0] : enc;
+        const api_key_encrypted = row?.encrypted as string;
+        const api_key_last4 = row?.last4 as string;
+        if (existing?.id) {
+          await admin.from("ai_providers").update({
+            base_url: baseUrl, api_key_encrypted, api_key_last4,
+          }).eq("id", existing.id);
+          return existing.id as string;
+        }
+        const { data: ins, error: insErr } = await admin.from("ai_providers").insert({
+          name, vendor, base_url: baseUrl, note: "auto-restored from env",
+          api_key_encrypted, api_key_last4: api_key_last4 ?? "",
+          created_by: guard.uid,
+        }).select("id").maybeSingle();
+        if (insErr) throw insErr;
+        return (ins?.id as string) ?? null;
+      };
+
+      const qwenId = await ensureProvider(
+        "通义千问 DashScope", "qwen", VENDOR_FALLBACK_URL.qwen, dashKey,
+      );
+      const deepseekId = await ensureProvider(
+        "DeepSeek 深度求索", "deepseek", VENDOR_FALLBACK_URL.deepseek, dsKey,
+      );
+
+      const PLAN: { fk: string; provider: "qwen" | "deepseek"; model: string }[] = [
+        { fk: "evaluate-application",   provider: "qwen",     model: "qwen3-vl-32b-thinking" },
+        { fk: "ai-parse-roster",        provider: "qwen",     model: "qwen-plus" },
+        { fk: "ai-explain-import",      provider: "qwen",     model: "qwen-turbo" },
+        { fk: "import-assistant-chat",  provider: "qwen",     model: "qwen-turbo" },
+        { fk: "staff-ai-assistant",     provider: "deepseek", model: "deepseek-chat" },
+        { fk: "ask-credit-assistant",   provider: "deepseek", model: "deepseek-chat" },
+        { fk: "polish-answer",          provider: "deepseek", model: "deepseek-chat" },
+      ];
+      const results: any[] = [];
+      for (const p of PLAN) {
+        const pid = p.provider === "qwen" ? qwenId : deepseekId;
+        if (!pid) {
+          results.push({ function_key: p.fk, ok: false, error: `${p.provider} key 未配置` });
+          continue;
+        }
+        const { error } = await admin.from("ai_function_bindings").upsert({
+          function_key: p.fk,
+          provider_id: pid,
+          model: p.model,
+          updated_at: new Date().toISOString(),
+          updated_by: guard.uid,
+        }, { onConflict: "function_key" });
+        results.push({ function_key: p.fk, ok: !error, model: p.model, vendor: p.provider, error: error?.message });
+      }
+      return json({ ok: true, qwenId, deepseekId, results });
+    }
+
     return json({ error: `unknown action: ${action}` }, 400);
   } catch (e) {
     console.error("ai-provider-admin error:", e);
