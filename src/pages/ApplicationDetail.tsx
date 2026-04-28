@@ -19,6 +19,7 @@ import { normalizeKeyword } from "@/lib/keywords";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
 import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
+import FaceMatchAlert from "@/components/FaceMatchAlert";
 import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -519,6 +520,16 @@ const ApplicationDetail = () => {
             {app.certificate_issued_at && <> · 首次签发：{new Date(app.certificate_issued_at).toLocaleString()}</>}
           </div>
         )}
+
+        <FaceMatchAlert
+          applicationId={app.id}
+          status={app.face_match_status}
+          score={app.face_match_score ?? null}
+          note={app.face_match_note ?? null}
+          checkedAt={app.face_checked_at ?? null}
+          visible={isReviewer}
+          onRefreshed={load}
+        />
 
         <Card>
           <CardHeader>
