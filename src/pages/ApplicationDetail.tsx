@@ -47,6 +47,8 @@ type App = {
   ai_detected_level?: string | null;
   ai_detected_identity?: string | null;
   ai_override_note?: string | null;
+  certificate_no?: string | null;
+  certificate_issued_at?: string | null;
 };
 type Review = {
   id: string; action: string; decision: string; credit: number | null;
