@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.bulk-delete-users]
 verify_jwt = false
+
+[functions.ai-provider-admin]
+verify_jwt = false

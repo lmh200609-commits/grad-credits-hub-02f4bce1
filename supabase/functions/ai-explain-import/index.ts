@@ -2,6 +2,7 @@
 // Input: structured error summary only (NEVER the raw Excel).
 // Output: { summary, suggestions[] } in Chinese.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { getAiConfig } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,8 +45,11 @@ Deno.serve(async (req) => {
       return json({ summary: "无错误。", suggestions: [] });
     }
 
-    const apiKey = Deno.env.get("DASHSCOPE_API_KEY");
-    if (!apiKey) return json({ error: "DASHSCOPE_API_KEY 未配置" }, 500);
+    let aiCfg;
+    try { aiCfg = await getAiConfig("ai-explain-import"); }
+    catch (e) { return json({ error: (e as Error).message }, 500); }
+    const apiKey = aiCfg.apiKey;
+    const aiUrl = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
     // Aggregate error messages by frequency to keep prompt small.
     const counter = new Map<string, number>();
@@ -63,11 +67,11 @@ Deno.serve(async (req) => {
     let lastErr = "";
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        aiResp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+        aiResp = await fetch(aiUrl, {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "qwen-turbo",
+            model: aiCfg.model,
             messages: [
               { role: "system", content: "你是名册导入失败的诊断助手。基于错误聚类，给出中文【原因摘要】（1-2 句）和【修复建议】（3-5 条，可执行）。仅输出 JSON：{\"summary\": string, \"suggestions\": string[]}。" },
               { role: "user", content: userPrompt },

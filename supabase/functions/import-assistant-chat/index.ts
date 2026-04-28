@@ -2,6 +2,7 @@
 // Answers questions about: Excel format, default password/role, how table data
 // overrides defaults, common errors, etc. Uses Qwen via DashScope.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { getAiConfig } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -72,8 +73,11 @@ Deno.serve(async (req) => {
       content: String(m.content ?? "").slice(0, 2000),
     }));
 
-    const apiKey = Deno.env.get("DASHSCOPE_API_KEY");
-    if (!apiKey) return json({ error: "DASHSCOPE_API_KEY 未配置" }, 500);
+    let aiCfg;
+    try { aiCfg = await getAiConfig("import-assistant-chat"); }
+    catch (e) { return json({ error: (e as Error).message }, 500); }
+    const apiKey = aiCfg.apiKey;
+    const aiUrl = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
     const contextHint = `[当前默认值] 角色=${defaults.role}，密码=${defaults.password}`;
 
@@ -81,11 +85,11 @@ Deno.serve(async (req) => {
     let lastErr = "";
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        aiResp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+        aiResp = await fetch(aiUrl, {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "qwen-turbo",
+            model: aiCfg.model,
             messages: [
               { role: "system", content: SYSTEM_PROMPT },
               { role: "system", content: contextHint },

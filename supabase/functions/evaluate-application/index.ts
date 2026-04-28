@@ -1,6 +1,7 @@
 // 系统材料核验：仅校验"材料 vs 关键词 vs 学生姓名"一致性，及是否存在
 // 明显篡改 / AI 生成痕迹 / 无关图片。其他内容（学分大小等）不严格校验。
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { getAiConfig, callChatCompletions } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -325,26 +326,24 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     const MAX_WEBSEARCH = 2;
     const MAX_ROUNDS = 4;
 
+    let aiCfg;
+    try {
+      aiCfg = await getAiConfig("evaluate-application");
+    } catch (e) {
+      const msg = (e as Error).message;
+      await writeFailure(admin, application_id, msg);
+      return json({ error: msg, retryable: true }, 500);
+    }
+
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const forceSubmit = websearchCount >= MAX_WEBSEARCH || round === MAX_ROUNDS - 1;
-      const aiResp = await fetch(
-        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${Deno.env.get("DASHSCOPE_API_KEY")}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "qwen3-vl-32b-thinking",
-            messages,
-            tools,
-            tool_choice: forceSubmit
-              ? { type: "function", function: { name: "submit_evaluation" } }
-              : "auto",
-          }),
-        },
-      );
+      const aiResp = await callChatCompletions(aiCfg, {
+        messages,
+        tools,
+        tool_choice: forceSubmit
+          ? { type: "function", function: { name: "submit_evaluation" } }
+          : "auto",
+      });
       if (!aiResp.ok) {
         const t = await aiResp.text();
         console.error("Qwen gateway error:", aiResp.status, t);

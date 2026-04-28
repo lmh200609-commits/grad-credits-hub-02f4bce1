@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { normalizeMarkdown, toSections, shouldPolish, callPolish } from "../_shared/format-answer.ts";
+import { getAiConfig } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -128,14 +129,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const body = (await req.json()) as { messages: Msg[]; provider?: "deepseek" | "qwen" };
+    const body = (await req.json()) as { messages: Msg[] };
     const messages = body.messages;
-    const provider = body.provider ?? "deepseek"; // default DeepSeek (low-cost / high-concurrency)
-
-    const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
-    const DASHSCOPE_API_KEY = Deno.env.get("DASHSCOPE_API_KEY");
-    if (provider === "deepseek" && !DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY 未配置");
-    if (provider === "qwen" && !DASHSCOPE_API_KEY) throw new Error("DASHSCOPE_API_KEY 未配置");
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "messages 不能为空" }), {
@@ -301,11 +296,11 @@ Deno.serve(async (req) => {
       ...messages.slice(-20),
     ];
 
-    const endpoint = provider === "qwen"
-      ? "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-      : "https://api.deepseek.com/chat/completions";
-    const apiKey = provider === "qwen" ? DASHSCOPE_API_KEY! : DEEPSEEK_API_KEY!;
-    const model = provider === "qwen" ? "qwen-plus" : "deepseek-chat";
+    const aiCfg = await getAiConfig("ask-credit-assistant");
+    const endpoint = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+    const apiKey = aiCfg.apiKey;
+    const model = aiCfg.model;
+    const provider = aiCfg.vendor;
 
     const resp = await fetch(endpoint, {
       method: "POST",

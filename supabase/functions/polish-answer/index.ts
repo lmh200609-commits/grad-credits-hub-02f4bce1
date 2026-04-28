@@ -1,3 +1,5 @@
+import { getAiConfig } from "../_shared/ai-router.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -16,25 +18,22 @@ const SYSTEM_PROMPT = `你是中文排版编辑。把用户给你的内容改写
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
-    const { raw, provider = "deepseek" } = await req.json() as { raw: string; provider?: "deepseek" | "qwen" };
+    const { raw } = await req.json() as { raw: string };
     if (!raw || typeof raw !== "string") {
       return new Response(JSON.stringify({ error: "raw is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
-    const DASHSCOPE_API_KEY = Deno.env.get("DASHSCOPE_API_KEY");
-    const useQwen = provider === "qwen" && DASHSCOPE_API_KEY;
-    const apiKey = useQwen ? DASHSCOPE_API_KEY! : DEEPSEEK_API_KEY;
-    if (!apiKey) {
+    let aiCfg;
+    try { aiCfg = await getAiConfig("polish-answer"); }
+    catch {
       return new Response(JSON.stringify({ polished: raw, used: "none" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const endpoint = useQwen
-      ? "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-      : "https://api.deepseek.com/chat/completions";
-    const model = useQwen ? "qwen-plus" : "deepseek-chat";
+    const endpoint = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+    const apiKey = aiCfg.apiKey;
+    const model = aiCfg.model;
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), 4500);
     const resp = await fetch(endpoint, {
@@ -60,7 +59,7 @@ Deno.serve(async (req) => {
     }
     const data = await resp.json();
     const polished = data?.choices?.[0]?.message?.content?.trim() || raw;
-    return new Response(JSON.stringify({ polished, used: useQwen ? "qwen" : "deepseek" }), {
+    return new Response(JSON.stringify({ polished, used: aiCfg.vendor }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
