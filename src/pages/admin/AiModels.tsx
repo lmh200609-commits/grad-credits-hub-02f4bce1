@@ -50,6 +50,14 @@ type Binding = {
   ai_providers: { id: string; name: string; vendor: string; base_url: string; api_key_last4: string } | null;
 };
 
+type EnvFallback = {
+  vendor: string;
+  baseUrl: string;
+  providerName: string;
+  defaultModel: string;
+  envKey: string;
+} | null;
+
 async function callAdmin(action: string, payload: Record<string, unknown> = {}) {
   const { data, error } = await supabase.functions.invoke("ai-provider-admin", {
     body: { action, ...payload },
@@ -64,6 +72,7 @@ const maskKey = (last4: string) => last4 ? `••••••••${last4}` : 
 const AiModelsPage = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [bindings, setBindings] = useState<Binding[]>([]);
+  const [fallback, setFallback] = useState<EnvFallback>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Provider | null>(null);
   const [providerOpen, setProviderOpen] = useState(false);
@@ -75,6 +84,7 @@ const AiModelsPage = () => {
       const [p, b] = await Promise.all([callAdmin("list_providers"), callAdmin("list_bindings")]);
       setProviders(p.providers || []);
       setBindings(b.bindings || []);
+      setFallback(b.fallback ?? null);
     } catch (e) {
       toast({ title: "加载失败", description: (e as Error).message, variant: "destructive" });
     } finally {
