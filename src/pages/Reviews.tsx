@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,7 +56,6 @@ const ReviewsList = () => {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [sourceFilter, setSourceFilter] = useState<"all" | "ai_uncertain" | "student_appeal">("all");
-  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const PAGE_SIZE = 50;
 
   useEffect(() => {
@@ -139,13 +139,10 @@ const ReviewsList = () => {
     setLoading(false);
   }, [tab, page, debounced, sourceFilter]);
 
-  useEffect(() => { load(); }, [load]);
-
-  // Realtime 防抖：批量审核时避免每次事件都整表 reload
-  useRealtimeTable("applications", () => {
-    if (reloadTimer.current) clearTimeout(reloadTimer.current);
-    reloadTimer.current = setTimeout(() => load(), 800);
-  });
+  // Coalesce concurrent invocations and prevent stale-response overwrites.
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
+  useRealtimeTable("applications", reload);
 
   const tabLabel = useMemo(() => ({
     all: "全部", pending_review: "待复核", auto_approved: "系统已通过",
