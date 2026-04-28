@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { normalizeMarkdown, toSections, shouldPolish, callPolish } from "../_shared/format-answer.ts";
+import { getAiConfig } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
