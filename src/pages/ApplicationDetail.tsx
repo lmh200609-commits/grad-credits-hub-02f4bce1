@@ -20,6 +20,8 @@ import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
 import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
 import { createPortal } from "react-dom";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type App = {
   id: string;
@@ -81,6 +83,9 @@ const ApplicationDetail = () => {
   const [libraryRefs, setLibraryRefs] = useState<KeywordRef[]>([]);
   const [exporting, setExporting] = useState(false);
   const [certData, setCertData] = useState<CertificateData | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
+  const [preparing, setPreparing] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -394,7 +399,7 @@ const ApplicationDetail = () => {
   const canExportCert =
     isApproved && (app.student_id === user?.id || hasRole("teacher") || hasRole("admin"));
 
-  const handleExportCertificate = async () => {
+  const openCertificatePreview = async () => {
     if (!app || !student) return;
     if (!student.full_name || !student.student_no) {
       return toast({
@@ -403,15 +408,11 @@ const ApplicationDetail = () => {
         variant: "destructive",
       });
     }
-    setExporting(true);
+    setPreparing(true);
     try {
-      // 生成或读取证书编号
       const { data: certNo, error: ge } = await supabase.rpc("gen_certificate_no", { _app_id: app.id });
-      if (ge || !certNo) {
-        throw new Error(ge?.message ?? "证书编号生成失败");
-      }
+      if (ge || !certNo) throw new Error(ge?.message ?? "证书编号生成失败");
 
-      // 学生照片转 dataURL（避免跨域污染）
       let photoDataUrl: string | null = null;
       if (student.photo_url) {
         const { data: signed } = await supabase.storage
@@ -431,7 +432,7 @@ const ApplicationDetail = () => {
         (app.description || "").slice(0, 24) ||
         "—";
 
-      const data: CertificateData = {
+      setCertData({
         school: student.school || "长春财经学院",
         studentName: student.full_name!,
         studentNo: student.student_no!,
@@ -446,25 +447,37 @@ const ApplicationDetail = () => {
         reviewerName: null,
         issuedAt: new Date().toISOString(),
         qrDataUrl,
-      };
+      });
+      setPreviewOpen(true);
+      load();
+    } catch (e: any) {
+      toast({ title: "准备失败", description: e?.message ?? "未知错误", variant: "destructive" });
+    } finally {
+      setPreparing(false);
+    }
+  };
 
-      setCertData(data);
-      // 等下一帧让 Portal 渲染
+  const downloadCertificate = async () => {
+    if (!certData || !student) return;
+    setExporting(true);
+    try {
+      // 等待离屏节点渲染（orientation 切换时尺寸会变）
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       await new Promise((r) => setTimeout(r, 50));
       const node = document.getElementById("__cert_render__") as HTMLDivElement | null;
       if (!node) throw new Error("证书渲染失败");
+      const tag = orientation === "portrait" ? "竖版" : "横版";
       await exportElementToPdf(
         node,
-        `学分认定证明_${student.student_no}_${certNo}.pdf`,
+        `学分认定证明_${student.student_no}_${certData.certificateNo}_${tag}.pdf`,
+        orientation,
       );
-      toast({ title: "证明已导出", description: `证书编号：${certNo}` });
-      load();
+      toast({ title: "证明已导出", description: `证书编号：${certData.certificateNo}` });
+      setPreviewOpen(false);
     } catch (e: any) {
       toast({ title: "导出失败", description: e?.message ?? "未知错误", variant: "destructive" });
     } finally {
       setExporting(false);
-      setCertData(null);
     }
   };
 
@@ -488,11 +501,11 @@ const ApplicationDetail = () => {
               size="sm"
               variant="default"
               className="ml-auto"
-              onClick={handleExportCertificate}
-              disabled={exporting}
+              onClick={openCertificatePreview}
+              disabled={preparing || exporting}
             >
               <Award className="mr-1 h-4 w-4" />
-              {exporting ? "正在生成…" : (app.certificate_no ? "重新导出学分证明" : "导出学分证明")}
+              {preparing ? "准备预览…" : (app.certificate_no ? "重新导出学分证明" : "导出学分证明")}
             </Button>
           )}
         </div>
@@ -829,10 +842,53 @@ const ApplicationDetail = () => {
           id="__cert_render__"
           style={{ position: "fixed", left: -99999, top: 0, zIndex: -1 }}
         >
-          <CertificatePreview data={certData} />
+          <CertificatePreview data={certData} orientation={orientation} />
         </div>,
         document.body,
       )}
+      <Dialog open={previewOpen} onOpenChange={(o) => { if (!exporting) setPreviewOpen(o); }}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>学分认定证明 · 预览</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">PDF 方向：</span>
+            <ToggleGroup
+              type="single"
+              value={orientation}
+              onValueChange={(v) => v && setOrientation(v as "landscape" | "portrait")}
+              size="sm"
+              variant="outline"
+            >
+              <ToggleGroupItem value="landscape">A4 横版</ToggleGroupItem>
+              <ToggleGroupItem value="portrait">A4 竖版</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          {certData && (
+            <div className="max-h-[65vh] overflow-auto rounded border bg-muted/20 p-4">
+              <div
+                style={{
+                  transform: orientation === "portrait" ? "scale(0.55)" : "scale(0.6)",
+                  transformOrigin: "top center",
+                  width: orientation === "portrait" ? 794 : 1123,
+                  margin: "0 auto",
+                }}
+              >
+                <CertificatePreview data={certData} orientation={orientation} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={exporting}>
+              取消
+            </Button>
+            <Button onClick={downloadCertificate} disabled={exporting}>
+              <FileDown className="mr-1 h-4 w-4" />
+              {exporting ? "导出中…" : "下载 PDF"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };

@@ -34,20 +34,24 @@ const fmtDate = (iso: string) => {
 };
 
 /**
- * A4 横版 1123 × 794 px @96dpi。固定像素布局以便 html2canvas 截图后嵌入 PDF。
- * 注意：组件用纯内联样式而非 Tailwind 语义 token，因为渲染到 PDF 时
- * Tailwind 的 CSS 变量在离屏 DOM 上可能解析失败。
+ * A4 证书。横版 1123×794、竖版 794×1123（@96dpi）。
+ * 用纯内联样式，避免 html2canvas 离屏渲染时丢失 Tailwind CSS 变量。
  */
-const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>(
-  ({ data }, ref) => {
+const CertificatePreview = forwardRef<
+  HTMLDivElement,
+  { data: CertificateData; orientation?: "landscape" | "portrait" }
+>(({ data, orientation = "landscape" }, ref) => {
+    const isPortrait = orientation === "portrait";
+    const W = isPortrait ? 794 : 1123;
+    const H = isPortrait ? 1123 : 794;
     return (
       <div
         ref={ref}
         style={{
-          width: 1123,
-          height: 794,
+          width: W,
+          height: H,
           background: "#fffdf6",
-          padding: 56,
+          padding: isPortrait ? 48 : 56,
           fontFamily:
             '"PingFang SC","Microsoft YaHei","Hiragino Sans GB",-apple-system,system-ui,sans-serif',
           color: "#1a1a1a",
@@ -57,15 +61,15 @@ const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>
         }}
       >
         {/* 顶部 */}
-        <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: 4, color: "#8b1c1c" }}>
+        <div style={{ textAlign: "center", marginBottom: isPortrait ? 32 : 24 }}>
+          <div style={{ fontSize: isPortrait ? 28 : 30, fontWeight: 700, letterSpacing: 4, color: "#8b1c1c" }}>
             {data.school}
           </div>
           <div
             style={{
-              fontSize: 42,
+              fontSize: isPortrait ? 38 : 42,
               fontWeight: 800,
-              letterSpacing: 12,
+              letterSpacing: isPortrait ? 10 : 12,
               marginTop: 8,
               color: "#1a1a1a",
             }}
@@ -78,7 +82,15 @@ const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>
         </div>
 
         {/* 正文 + 照片 */}
-        <div style={{ display: "flex", gap: 32, marginTop: 24 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isPortrait ? "column" : "row",
+            alignItems: isPortrait ? "center" : "flex-start",
+            gap: isPortrait ? 24 : 32,
+            marginTop: 24,
+          }}
+        >
           <div
             style={{
               width: 160,
@@ -104,7 +116,14 @@ const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>
             )}
           </div>
 
-          <div style={{ flex: 1, fontSize: 17, lineHeight: 2 }}>
+          <div
+            style={{
+              flex: 1,
+              width: isPortrait ? "100%" : undefined,
+              fontSize: 17,
+              lineHeight: 2,
+            }}
+          >
             <Row label="姓名" value={data.studentName} />
             <Row label="学号" value={data.studentNo} />
             <Row label="院系" value={data.department || "—"} />
@@ -117,8 +136,8 @@ const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>
         {/* 认定描述 */}
         <div
           style={{
-            marginTop: 28,
-            fontSize: 18,
+            marginTop: isPortrait ? 40 : 28,
+            fontSize: isPortrait ? 17 : 18,
             lineHeight: 2,
             textIndent: "2em",
           }}
@@ -138,9 +157,9 @@ const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>
         <div
           style={{
             position: "absolute",
-            left: 56,
-            right: 56,
-            bottom: 56,
+            left: isPortrait ? 48 : 56,
+            right: isPortrait ? 48 : 56,
+            bottom: isPortrait ? 60 : 56,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-end",
@@ -167,7 +186,7 @@ const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>
           <div
             style={{
               position: "absolute",
-              right: 120,
+              right: isPortrait ? 80 : 120,
               bottom: 40,
               width: 130,
               height: 130,
@@ -194,8 +213,7 @@ const CertificatePreview = forwardRef<HTMLDivElement, { data: CertificateData }>
         </div>
       </div>
     );
-  },
-);
+});
 
 CertificatePreview.displayName = "CertificatePreview";
 
