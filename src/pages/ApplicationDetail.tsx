@@ -19,6 +19,7 @@ import { normalizeKeyword } from "@/lib/keywords";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
 import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
+import FaceMatchAlert from "@/components/FaceMatchAlert";
 import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -51,6 +52,10 @@ type App = {
   ai_override_note?: string | null;
   certificate_no?: string | null;
   certificate_issued_at?: string | null;
+  face_match_status?: "unknown" | "no_face" | "match" | "mismatch" | "error" | null;
+  face_match_score?: number | null;
+  face_match_note?: string | null;
+  face_checked_at?: string | null;
 };
 type Review = {
   id: string; action: string; decision: string; credit: number | null;
@@ -515,6 +520,16 @@ const ApplicationDetail = () => {
             {app.certificate_issued_at && <> · 首次签发：{new Date(app.certificate_issued_at).toLocaleString()}</>}
           </div>
         )}
+
+        <FaceMatchAlert
+          applicationId={app.id}
+          status={app.face_match_status}
+          score={app.face_match_score ?? null}
+          note={app.face_match_note ?? null}
+          checkedAt={app.face_checked_at ?? null}
+          visible={isReviewer}
+          onRefreshed={load}
+        />
 
         <Card>
           <CardHeader>

@@ -181,6 +181,10 @@ export type Database = {
           created_at: string
           custom_keywords: string[]
           description: string
+          face_checked_at: string | null
+          face_match_note: string | null
+          face_match_score: number | null
+          face_match_status: string | null
           file_path: string | null
           final_credit: number | null
           final_review_note: string | null
@@ -225,6 +229,10 @@ export type Database = {
           created_at?: string
           custom_keywords?: string[]
           description: string
+          face_checked_at?: string | null
+          face_match_note?: string | null
+          face_match_score?: number | null
+          face_match_status?: string | null
           file_path?: string | null
           final_credit?: number | null
           final_review_note?: string | null
@@ -269,6 +277,10 @@ export type Database = {
           created_at?: string
           custom_keywords?: string[]
           description?: string
+          face_checked_at?: string | null
+          face_match_note?: string | null
+          face_match_score?: number | null
+          face_match_status?: string | null
           file_path?: string | null
           final_credit?: number | null
           final_review_note?: string | null

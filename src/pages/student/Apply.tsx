@@ -365,6 +365,10 @@ const ApplyPage = () => {
       supabase.functions.invoke("evaluate-application", {
         body: { application_id: (app as any).id },
       }).catch(() => { /* 静默失败，转人工 */ });
+      // 后台静默触发人脸比对（不影响材料有效性，仅作教师端提示）
+      supabase.functions.invoke("face-compare", {
+        body: { application_id: (app as any).id },
+      }).catch(() => { /* 静默失败 */ });
       navigate("/my-applications");
     } catch (e: any) {
       toast({ title: "提交失败", description: e.message, variant: "destructive" });
