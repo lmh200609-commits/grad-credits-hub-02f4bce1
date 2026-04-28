@@ -11,6 +11,7 @@ import StaffAiAssistant from "@/components/StaffAiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
   Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags, History, Cpu, IdCard,
+  Activity,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -29,6 +30,7 @@ const adminItems: Item[] = [
   { title: "批量导入账号", url: "/admin/import", icon: Upload },
   { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
   { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
+  { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 
 const teacherItems: Item[] = [
@@ -37,6 +39,7 @@ const teacherItems: Item[] = [
   { title: "提交记录", url: "/submissions", icon: History },
   { title: "学分排名", url: "/teacher/credits", icon: Trophy },
   { title: "学生管理", url: "/teacher/students", icon: Users },
+  { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 
 const studentItems: Item[] = [
@@ -44,6 +47,7 @@ const studentItems: Item[] = [
   { title: "申请学分", url: "/apply", icon: Send },
   { title: "我的申请", url: "/my-applications", icon: FileText },
   { title: "我的档案", url: "/profile", icon: IdCard },
+  { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 
 // Extra routes (detail pages, shared routes) for header title lookup only
