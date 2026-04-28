@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,32 +27,32 @@ const ReviewHub = () => {
   const [counts, setCounts] = useState<Counts>({});
   const [pendingBreakdown, setPendingBreakdown] = useState<SubCounts>({ ai_uncertain: 0, student_appeal: 0 });
 
-  useEffect(() => {
-    (async () => {
-      // Use server-side counts per status to avoid pulling thousands of rows
-      const statuses = ["pending_ai", "auto_approved", "pending_review", "rejected_by_ai", "approved", "rejected"] as const;
-      const results = await Promise.all(
-        statuses.map((s) =>
-          supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", s),
-        ),
-      );
-      const c: Counts = {};
-      statuses.forEach((s, i) => { c[s] = results[i].count ?? 0; });
-      setCounts(c);
+  const load = useCallback(async () => {
+    const statuses = ["pending_ai", "auto_approved", "pending_review", "rejected_by_ai", "approved", "rejected"] as const;
+    const results = await Promise.all(
+      statuses.map((s) =>
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", s),
+      ),
+    );
+    const c: Counts = {};
+    statuses.forEach((s, i) => { c[s] = results[i].count ?? 0; });
+    setCounts(c);
 
-      // 待复核拆分：AI 转人工 vs 学生申诉
-      const [ai, appeal] = await Promise.all([
-        supabase.from("applications").select("id", { count: "exact", head: true })
-          .eq("status", "pending_review").eq("review_source", "ai_uncertain"),
-        supabase.from("applications").select("id", { count: "exact", head: true })
-          .eq("status", "pending_review").eq("review_source", "student_appeal"),
-      ]);
-      setPendingBreakdown({
-        ai_uncertain: ai.count ?? 0,
-        student_appeal: appeal.count ?? 0,
-      });
-    })();
+    const [ai, appeal] = await Promise.all([
+      supabase.from("applications").select("id", { count: "exact", head: true })
+        .eq("status", "pending_review").eq("review_source", "ai_uncertain"),
+      supabase.from("applications").select("id", { count: "exact", head: true })
+        .eq("status", "pending_review").eq("review_source", "student_appeal"),
+    ]);
+    setPendingBreakdown({
+      ai_uncertain: ai.count ?? 0,
+      student_appeal: appeal.count ?? 0,
+    });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useRealtimeTable("applications", load);
 
   return (
     <AppLayout>
