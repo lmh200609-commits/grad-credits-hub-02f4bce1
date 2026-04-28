@@ -30,6 +30,7 @@ import TeacherDashboard from "./pages/teacher/Dashboard.tsx";
 import TeacherCredits from "./pages/teacher/Credits.tsx";
 import VerifyCertificate from "./pages/VerifyCertificate.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import RealtimeDiagnostics from "./pages/RealtimeDiagnostics.tsx";
 
 const queryClient = new QueryClient();
 
@@ -65,6 +66,7 @@ const App = () => (
             <Route path="/teacher/students/:id" element={<RoleRoute role={["teacher", "admin"]}><StudentDetail /></RoleRoute>} />
             <Route path="/teacher/dashboard" element={<RoleRoute role={["teacher", "admin"]}><TeacherDashboard /></RoleRoute>} />
             <Route path="/teacher/credits" element={<RoleRoute role={["teacher", "admin"]}><TeacherCredits /></RoleRoute>} />
+            <Route path="/diagnostics/realtime" element={<ProtectedRoute><RealtimeDiagnostics /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
