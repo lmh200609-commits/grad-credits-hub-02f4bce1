@@ -20,6 +20,8 @@ import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
 import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
 import { createPortal } from "react-dom";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type App = {
   id: string;
