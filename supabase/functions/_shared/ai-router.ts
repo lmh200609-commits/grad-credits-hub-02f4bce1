@@ -78,11 +78,16 @@ export async function getAiConfig(functionKey: string): Promise<AiConfig> {
   const dashscope = Deno.env.get("DASHSCOPE_API_KEY");
   const deepseek = Deno.env.get("DEEPSEEK_API_KEY");
   const preferQwen = !!dashscope;
+  const bindingModel = (binding as any)?.model as string | undefined;
+  const isQwenModel = (m?: string) => !!m && /^(qwen|qwq|qvq)/i.test(m);
+  const isDeepseekModel = (m?: string) => !!m && /^deepseek/i.test(m);
   if (preferQwen) {
     return {
       baseUrl: VENDOR_FALLBACK_URL.qwen,
       apiKey: dashscope!,
-      model: (binding as any)?.model || "qwen-plus",
+      // Only honor the binding model if it's actually a Qwen model;
+      // otherwise the request would 404 on DashScope.
+      model: isQwenModel(bindingModel) ? bindingModel! : "qwen-plus",
       vendor: "qwen",
       providerName: "通义千问 (env fallback)",
     };
@@ -91,7 +96,7 @@ export async function getAiConfig(functionKey: string): Promise<AiConfig> {
     return {
       baseUrl: VENDOR_FALLBACK_URL.deepseek,
       apiKey: deepseek,
-      model: (binding as any)?.model || "deepseek-chat",
+      model: isDeepseekModel(bindingModel) ? bindingModel! : "deepseek-chat",
       vendor: "deepseek",
       providerName: "DeepSeek (env fallback)",
     };
