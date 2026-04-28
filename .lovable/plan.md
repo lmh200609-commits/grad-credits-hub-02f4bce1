@@ -1,73 +1,117 @@
-# 数据看板合格统计 + Excel 导出 + 教师端同步
+# 学分认定证明导出功能
 
-## 1. 管理员数据看板：新增"合格 / 不合格"统计
+为审核通过（status=approved 或 auto_approved）的申请增加"导出学分认定证明 PDF"按钮，证明上包含学生身份信息、学分、证书编号、学生照片、学校公章与防伪二维码。
 
-文件：`src/pages/admin/Dashboard.tsx`
+## 1. 数据库变更（migration）
 
-- 复用 Credits 页面的口径（`PASS_THRESHOLD = 4`，APPROVED 状态累计 `final_credit ?? ai_suggested_credit`）。
-- 在现有统计卡区域下方新增一张 Card「学生合格情况」：
-  - 表格两行：合格人数 / 不合格人数，列：人数、占比（百分比，1 位小数）。
-  - 两行整行可点击（cursor-pointer + hover），点击后 `navigate` 到 `/admin/credits?passFilter=pass` 或 `/admin/credits?passFilter=fail`。
-  - 旁边附一个小型 Pie 图直观显示比例（绿/红双色，复用现有 Recharts）。
-- 仅基于已有 `student_id` 集合 + applications 计算，无需新查询。
+**`profiles` 表新增字段**：
+- `school text` —— 学校名称，默认 `'湖南文理学院'`（占位，可改）
+- `photo_url text` —— 学生证件照路径（指向 `application-files` 桶下的 `student-photos/{user_id}.jpg`）
+  - 复用已有 `application-files` 桶，避免新建桶；为 student-photos 子目录的对象增加 RLS：学生本人可 select/insert/update 自己目录；admin/teacher 可 select 全部
 
-## 2. 学分排名：导出 CSV → 导出 Excel（.xlsx）
+**`applications` 表新增字段**：
+- `certificate_no text unique` —— 证书编号
+- `certificate_issued_at timestamptz` —— 首次签发时间
 
-文件：`src/pages/admin/Credits.tsx`
+**编号生成函数**：
+```sql
+create or replace function public.gen_certificate_no(_app_id uuid)
+returns text language plpgsql security definer set search_path=public as $$
+declare v_year text := to_char(now(),'YYYY');
+        v_seq int;
+        v_no text;
+begin
+  -- 已存在直接返回
+  select certificate_no into v_no from applications where id=_app_id;
+  if v_no is not null then return v_no; end if;
+  -- 仅审核通过的申请可签发
+  if not exists(select 1 from applications where id=_app_id
+                  and status in ('approved','auto_approved')) then
+     raise exception 'application not approved';
+  end if;
+  -- 序号 = 当年已签发数 + 1
+  select count(*)+1 into v_seq from applications
+   where certificate_no like v_year||'-%';
+  v_no := v_year||'-'||lpad(v_seq::text,4,'0');
+  update applications set certificate_no=v_no,
+         certificate_issued_at=now() where id=_app_id;
+  return v_no;
+end;$$;
+```
+RLS：当前申请的学生本人 / teacher / admin 才能调用（在函数内部 `auth.uid()` 校验）。
 
-- 已存在依赖 `xlsx@0.18.5`，直接 `import * as XLSX from "xlsx"`。
-- 重写 `exportCsv`（改名 `exportXlsx`）：
-  - 使用 `XLSX.utils.aoa_to_sheet` 生成工作表，列与现有 CSV 一致 + 新增"是否合格"列。
-  - 文件名：`学分排名_${当前筛选 pass/fail/全部}_${日期}.xlsx`。
-  - 导出范围 = 当前 `filtered`（尊重用户的 dept / search / passFilter）。
-- 按钮文案：`导出 Excel`，icon 不变。
+## 2. 学生端：照片与档案维护
 
-## 3. 教师端同步「数据看板」+「学分排名」
+**新页面 `src/pages/student/MyProfile.tsx`**（侧边栏新增"我的档案"入口）：
+- 展示并允许学生编辑：姓名、学号、院系、专业、班级、身份证号、电话、出生日期、学校（只读）
+- 上传/替换学生照片（裁剪为 1:1.25 证件照比例，存到 `application-files/student-photos/{user_id}.jpg`）
+- 写入 `profiles` 表（已有 RLS：本人可 update）
 
-### 3.1 新增教师页面（薄包装，复用逻辑）
+**`AppLayout.tsx`** 学生角色侧边栏增加 `我的档案` 菜单项，路由 `/profile`。
 
-为了避免硬编码"admin"路径并保持权限隔离，新建：
+## 3. 证书 PDF 导出
 
-- `src/pages/teacher/Dashboard.tsx` — 复制 Admin Dashboard 的内容，去掉「打开复核中心」按钮中的 `/admin/review` 改为 `/reviews`，"快捷入口"中的链接改为教师可访问路径（`/reviews`、`/teacher/credits`、`/teacher/students`）。
-- `src/pages/teacher/Credits.tsx` — 复制 Admin Credits，行操作的"详情"链接已是 `/teacher/students/{id}` 无需改；StatCard 点击后跳转使用相对当前路径（`/teacher/credits?passFilter=...`）。
+**依赖**：`bun add jspdf qrcode` （`jspdf` 内置中文字体方案：用 `jsPDF` + 注册思源宋体子集，或直接用 `html2canvas` 把 React 渲染的证书 DOM 截图后嵌入 PDF —— 采用后者，避免中文字体打包问题）。
+追加 `bun add html2canvas`。
 
-> 决定使用复制而非抽公共组件：两页未来管理员/教师可能展示不同字段（如教师不一定看到全部院系），复制更稳妥；改动可控。
+**新组件 `src/components/CertificatePreview.tsx`**：
+A4 横版（1123×794px @96dpi），布局：
+```
+┌─────────────────────────────────────────┐
+│   学校名（大标题）                          │
+│   学分认定证明                              │
+│  ─────────────────────────────────       │
+│  [学生照片]   姓名: xxx   学号: xxx          │
+│   1寸照     院系: xxx   专业: xxx           │
+│             身份证号: 4302**********1234   │ ← 中间脱敏
+│                                          │
+│  兹证明该生在校期间，因 [项目/获奖名称]       │
+│  获得创新创业学分 X.X 分，特此证明。           │
+│                                          │
+│  申请说明摘要：……                            │
+│  审核日期：YYYY-MM-DD  审核人：xxx           │
+│                                          │
+│         证书编号：2026-0001                │
+│  [二维码]                       [虚拟公章]  │
+│  扫码验证                                  │
+└─────────────────────────────────────────┘
+```
 
-### 3.2 路由与侧边栏
+二维码内容：`{origin}/verify/{certificate_no}`（验证页面下面单独建）。
 
-文件：`src/App.tsx`
-- 新增 `/teacher/dashboard` → `TeacherDashboard`（role=teacher）。
-- 新增 `/teacher/credits` → `TeacherCredits`（role=teacher）。
+**导出按钮位置**：`src/pages/ApplicationDetail.tsx`，仅当 `status in ('approved','auto_approved')` 且当前用户是该申请的学生本人 / teacher / admin 时显示「导出学分证明」按钮。
 
-文件：`src/components/AppLayout.tsx`
-- `teacherItems` 工作台改为指向 `/teacher/dashboard`（icon 用 `BarChart3`），并新增「学分排名」`/teacher/credits`（icon `Trophy`），插在「学生管理」之前。
-- `extraTitles` 不需要改（已通过菜单标题命中）。
+**导出流程**：
+1. 点击按钮 → 若 `certificate_no` 为空，调 `supabase.rpc('gen_certificate_no', { _app_id })` 生成
+2. 隐式渲染 `<CertificatePreview>` 组件到屏外 div
+3. `html2canvas` 截图 → `jsPDF`（A4 横向）`addImage` → `save('学分认定证明_{学号}_{证书编号}.pdf')`
 
-### 3.3 工作助手（StaffAiAssistant）支持教师跳转
+## 4. 证书在线验证页
 
-文件：`supabase/functions/staff-ai-assistant/index.ts`
-- 路径白名单新增：
-  - `/teacher/dashboard`
-  - `/teacher/credits（支持 ?passFilter=fail|pass|all、?dept=xxx）`
-- `list_failing_students` 与 `query_stats` 中 `navigate_path` 当前固定指向 `/admin/credits?passFilter=...`：改为根据请求 body 中的 `role` 字段动态选择：
-  - admin → `/admin/credits?passFilter=...`
-  - teacher → `/teacher/credits?passFilter=...`
-- 同步把"数据看板"路径在 system prompt 里区分 admin/teacher。
-- 教师角色不可访问 `/admin/*`，提示词中保持现有限制。
+**新页面 `src/pages/VerifyCertificate.tsx`**，路由 `/verify/:certNo`（无需登录可访问）：
+- 通过新增 edge function `verify-certificate`（公开，verify_jwt=false）按 `certificate_no` 查询并返回安全字段（学生姓名、学号、学分、签发日期），不暴露身份证、照片、详细描述
+- 页面显示"✓ 证书有效 / ✗ 证书无效"
 
-文件：`src/components/StaffAiAssistant.tsx`
-- 已传 `role` 给 edge function，无需改动；候选学生跳转分支已正确（teacher 走 `/teacher/students/{id}`）。
+## 5. 文件改动一览
 
-## 4. 自测要点
+**新建**：
+- `supabase/migrations/<ts>_certificate.sql`
+- `src/pages/student/MyProfile.tsx`
+- `src/pages/VerifyCertificate.tsx`
+- `src/components/CertificatePreview.tsx`
+- `src/lib/certificate.ts`（导出逻辑封装）
+- `supabase/functions/verify-certificate/index.ts`
 
-- 管理员 `/admin/dashboard` 看到「学生合格情况」表格 + 饼图，点击两行分别跳转到对应筛选的学分排名。
-- 学分排名（管理员/教师）「导出 Excel」生成 .xlsx，可被 Excel/WPS 打开，包含当前筛选数据 + 是否合格列。
-- 教师登录后侧边栏出现「工作台 / 学分排名」，页面正常加载（受 RLS 约束；与 Admin 同口径）。
-- 工作助手在教师端问"查看不合格学生"，跳转 `/teacher/credits?passFilter=fail`；管理员端依旧跳 `/admin/credits?passFilter=fail`。
+**修改**：
+- `src/App.tsx`（注册 `/profile`、`/verify/:certNo` 路由）
+- `src/components/AppLayout.tsx`（学生侧边栏新增"我的档案"）
+- `src/pages/ApplicationDetail.tsx`（新增"导出学分证明"按钮 + 调用导出）
+- `package.json`（新增 jspdf、html2canvas、qrcode）
 
-## 技术细节
+## 6. 用户需要做的事
 
-- 比例计算：`pass / (pass + fail)`，分母为 0 时显示 `—`。
-- xlsx 列宽：通过 `ws['!cols']` 给序号 6、姓名 12、学号 14、院系/专业/班级 16、数值列 10。
-- 教师可见学生范围依赖现有 RLS（profiles + user_roles 的 teacher 策略已存在），无需新建数据库策略。
-- 不新增数据库表 / RPC / secret。
+签发后请管理员在"用户管理"或学生本人在"我的档案"页面：
+1. 上传学生证件照（必填，否则证书上是占位头像）
+2. 补全院系、身份证号等基础信息
+
+如需修改默认校名"湖南文理学院"，请告诉我正确校名，我会在 migration 默认值里改掉。
