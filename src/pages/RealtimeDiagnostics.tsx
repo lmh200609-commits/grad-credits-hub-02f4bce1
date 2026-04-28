@@ -91,6 +91,7 @@ const RealtimeDiagnostics = () => {
 
   const [refreshing, setRefreshing] = useState(false);
   const seqRef = useRef(0);
+  const mountedAtRef = useRef<number>(Date.now());
 
   // Compare table — recomputed on every state change.
   const rows = useMemo(() => SPECS.map((spec) => {
@@ -134,8 +135,6 @@ const RealtimeDiagnostics = () => {
     }
     return { spec, ev, srv, status, detail, lastEventTs, maxChangedTs };
   }), [events, server]);
-
-  const mountedAtRef = useRef<number>(Date.now());
 
   const fetchServerSnapshot = useCallback(async () => {
     setRefreshing(true);
