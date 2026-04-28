@@ -229,9 +229,7 @@ const AiModelsPage = () => {
                 <TableRow>
                   <TableHead>功能</TableHead>
                   <TableHead>当前实际调用</TableHead>
-                  <TableHead>提供商绑定</TableHead>
-                  <TableHead>模型名</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead>提供商 + 模型（自动保存）</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
