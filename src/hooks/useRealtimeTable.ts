@@ -2,7 +2,20 @@ import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
-type Filter = { event?: "INSERT" | "UPDATE" | "DELETE" | "*"; filter?: string };
+type Filter = {
+  event?: "INSERT" | "UPDATE" | "DELETE" | "*";
+  /**
+   * Server-side row filter, e.g. `student_id=eq.<uuid>`.
+   *
+   * Three states:
+   *  - omitted (key not present): subscribe to the whole table
+   *  - a non-empty string: subscribe with that filter
+   *  - explicitly `null` / `undefined` / `""`: SKIP subscription entirely
+   *    (use this to avoid a brief full-table window while you wait for
+   *    auth / route params to load).
+   */
+  filter?: string | null;
+};
 
 /**
  * Subscribe to postgres changes on a table and call `onChange` on each event.
@@ -26,13 +39,22 @@ type Filter = { event?: "INSERT" | "UPDATE" | "DELETE" | "*"; filter?: string };
 export function useRealtimeTable<T extends Record<string, unknown>>(
   table: string,
   onChange: (payload: RealtimePostgresChangesPayload<T>) => void | Promise<void>,
-  { event = "*", filter }: Filter = {},
+  options: Filter = {},
   pollMs = 10000,
 ) {
+  const { event = "*", filter } = options;
+  // When the caller explicitly passed the `filter` key but its value is
+  // empty (auth not ready yet, etc.), do NOT subscribe — otherwise we'd
+  // briefly listen to the whole table.
+  const filterKeyProvided = Object.prototype.hasOwnProperty.call(options, "filter");
+  const skip = filterKeyProvided && (filter === null || filter === undefined || filter === "");
+
   const cbRef = useRef(onChange);
   cbRef.current = onChange;
 
   useEffect(() => {
+    if (skip) return;
+
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let burstTimer: ReturnType<typeof setTimeout> | null = null;
@@ -153,4 +175,5 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
       }
     };
   }, [table, event, filter, pollMs]);
+  // `skip` is derived from `filter`, no extra dep needed.
 }
