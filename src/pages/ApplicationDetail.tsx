@@ -399,7 +399,7 @@ const ApplicationDetail = () => {
   const canExportCert =
     isApproved && (app.student_id === user?.id || hasRole("teacher") || hasRole("admin"));
 
-  const handleExportCertificate = async () => {
+  const openCertificatePreview = async () => {
     if (!app || !student) return;
     if (!student.full_name || !student.student_no) {
       return toast({
@@ -408,15 +408,11 @@ const ApplicationDetail = () => {
         variant: "destructive",
       });
     }
-    setExporting(true);
+    setPreparing(true);
     try {
-      // 生成或读取证书编号
       const { data: certNo, error: ge } = await supabase.rpc("gen_certificate_no", { _app_id: app.id });
-      if (ge || !certNo) {
-        throw new Error(ge?.message ?? "证书编号生成失败");
-      }
+      if (ge || !certNo) throw new Error(ge?.message ?? "证书编号生成失败");
 
-      // 学生照片转 dataURL（避免跨域污染）
       let photoDataUrl: string | null = null;
       if (student.photo_url) {
         const { data: signed } = await supabase.storage
@@ -436,7 +432,7 @@ const ApplicationDetail = () => {
         (app.description || "").slice(0, 24) ||
         "—";
 
-      const data: CertificateData = {
+      setCertData({
         school: student.school || "长春财经学院",
         studentName: student.full_name!,
         studentNo: student.student_no!,
@@ -451,25 +447,37 @@ const ApplicationDetail = () => {
         reviewerName: null,
         issuedAt: new Date().toISOString(),
         qrDataUrl,
-      };
+      });
+      setPreviewOpen(true);
+      load();
+    } catch (e: any) {
+      toast({ title: "准备失败", description: e?.message ?? "未知错误", variant: "destructive" });
+    } finally {
+      setPreparing(false);
+    }
+  };
 
-      setCertData(data);
-      // 等下一帧让 Portal 渲染
+  const downloadCertificate = async () => {
+    if (!certData || !student) return;
+    setExporting(true);
+    try {
+      // 等待离屏节点渲染（orientation 切换时尺寸会变）
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       await new Promise((r) => setTimeout(r, 50));
       const node = document.getElementById("__cert_render__") as HTMLDivElement | null;
       if (!node) throw new Error("证书渲染失败");
+      const tag = orientation === "portrait" ? "竖版" : "横版";
       await exportElementToPdf(
         node,
-        `学分认定证明_${student.student_no}_${certNo}.pdf`,
+        `学分认定证明_${student.student_no}_${certData.certificateNo}_${tag}.pdf`,
+        orientation,
       );
-      toast({ title: "证明已导出", description: `证书编号：${certNo}` });
-      load();
+      toast({ title: "证明已导出", description: `证书编号：${certData.certificateNo}` });
+      setPreviewOpen(false);
     } catch (e: any) {
       toast({ title: "导出失败", description: e?.message ?? "未知错误", variant: "destructive" });
     } finally {
       setExporting(false);
-      setCertData(null);
     }
   };
 
