@@ -957,6 +957,17 @@ export type Database = {
       }
     }
     Functions: {
+      ai_decrypt_provider_key: {
+        Args: { _provider_id: string; _secret: string }
+        Returns: string
+      }
+      ai_encrypt_api_key: {
+        Args: { _plain: string; _secret: string }
+        Returns: {
+          encrypted: string
+          last4: string
+        }[]
+      }
       dedupe_keywords: {
         Args: never
         Returns: {
