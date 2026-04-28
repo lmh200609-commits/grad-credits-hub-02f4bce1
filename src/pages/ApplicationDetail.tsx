@@ -81,8 +81,6 @@ const ApplicationDetail = () => {
   const [libraryRefs, setLibraryRefs] = useState<KeywordRef[]>([]);
   const [exporting, setExporting] = useState(false);
   const [certData, setCertData] = useState<CertificateData | null>(null);
-  const certRef = useState<HTMLDivElement | null>(null);
-  const [certEl, setCertEl] = useState<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
