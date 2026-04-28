@@ -208,14 +208,22 @@ const AiModelsPage = () => {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">功能与模型绑定</CardTitle>
-            <p className="text-sm text-muted-foreground">为每个 AI 功能单独选择提供商与模型名。未绑定时系统会回退到环境变量中的旧密钥（兼容期）。</p>
+            <p className="text-sm text-muted-foreground">
+              下表显示系统中每个 AI 功能 <b>当前实际调用的提供商与模型</b>。未绑定提供商时，系统会自动回退到环境变量密钥。
+            </p>
+            {fallback && (
+              <div className="mt-2 rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+                <b>当前回退渠道：</b>{fallback.providerName} · 走 <code className="font-mono">{fallback.envKey}</code> · {fallback.baseUrl}
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>功能</TableHead>
-                  <TableHead>当前提供商</TableHead>
+                  <TableHead>当前实际调用</TableHead>
+                  <TableHead>提供商绑定</TableHead>
                   <TableHead>模型名</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -226,6 +234,7 @@ const AiModelsPage = () => {
                     key={b.function_key}
                     binding={b}
                     providers={providers}
+                    fallback={fallback}
                     onSaved={load}
                   />
                 ))}
