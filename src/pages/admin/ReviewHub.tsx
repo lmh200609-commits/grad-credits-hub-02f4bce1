@@ -4,6 +4,7 @@ import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,9 +51,10 @@ const ReviewHub = () => {
     });
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
 
-  useRealtimeTable("applications", load);
+  useRealtimeTable("applications", reload);
 
   return (
     <AppLayout>

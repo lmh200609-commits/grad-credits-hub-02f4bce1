@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
@@ -58,11 +59,12 @@ const StudentWorkbench = () => {
     setLoading(false);
   }, [user, account]);
 
-  useEffect(() => { load(); }, [load]);
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
 
   useRealtimeTable(
     "applications",
-    load,
+    reload,
     { filter: user ? `student_id=eq.${user.id}` : undefined },
   );
 
