@@ -3,21 +3,14 @@ import { useCallback, useEffect, useRef } from "react";
 /**
  * Wrap an async loader so that:
  *  1. Only ONE invocation runs at a time. Calls made while one is in flight
- *     are coalesced into a single follow-up run after the current one
- *     resolves. This prevents N parallel fetches from N realtime events.
- *  2. Stale responses can never overwrite newer ones — each run gets a
- *     monotonically increasing generation; if a newer run started after the
- *     loader awaited, the older run's continuation is a no-op (the loader
- *     itself returns normally; the caller's setState should already be done
- *     inside `loader`, so the newer run's setState always wins because it
- *     is awaited AFTER the older one resolves).
+ *     are coalesced into a SINGLE follow-up run after the current one
+ *     resolves. This prevents N parallel fetches when several realtime
+ *     subscriptions (e.g. one for `applications`, one for `profiles`) all
+ *     point at the same loader.
+ *  2. Stale responses cannot overwrite newer ones, because the follow-up
+ *     run is only started AFTER the previous one's setState has already
+ *     been applied — so the latest run is always the latest write.
  *  3. Calls after unmount are dropped.
- *
- * Usage:
- *   const load = useSerializedReload(useCallback(async () => { ... }, [...]));
- *   useRealtimeTable("applications", load);
- *   useRealtimeTable("profiles", load);
- *   useEffect(() => { load(); }, [load]);
  */
 export function useSerializedReload(loader: () => Promise<void> | void) {
   const loaderRef = useRef(loader);
@@ -32,7 +25,7 @@ export function useSerializedReload(loader: () => Promise<void> | void) {
     return () => { cancelledRef.current = true; };
   }, []);
 
-  return useCallback(async () => {
+  const run = useCallback(async function run(): Promise<void> {
     if (cancelledRef.current) return;
     if (inFlightRef.current) {
       pendingRef.current = true;
@@ -42,25 +35,16 @@ export function useSerializedReload(loader: () => Promise<void> | void) {
     try {
       await loaderRef.current();
     } catch {
-      /* swallow; next event/poll will retry */
+      /* swallow; next realtime event or poll tick will retry */
     } finally {
       inFlightRef.current = false;
       if (pendingRef.current && !cancelledRef.current) {
         pendingRef.current = false;
-        // Schedule the follow-up on a microtask to avoid deep recursion.
-        Promise.resolve().then(() => {
-          if (!cancelledRef.current) {
-            // Re-enter via the same wrapper to keep the invariant.
-            void run();
-          }
-        });
+        // Defer to a microtask to avoid deep recursion on busy bursts.
+        void Promise.resolve().then(run);
       }
     }
   }, []);
 
-  // The closure above references `run` via the stable callback; alias it.
-  // We need a name in scope for the recursion above.
-  function run() {
-    return (this as never); // unused; satisfies the reference at definition time
-  }
+  return run;
 }
