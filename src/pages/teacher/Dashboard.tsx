@@ -145,6 +145,18 @@ const TeacherDashboard = () => {
           <StatCard label="待复核" value={stats.pending} accent="text-amber-600" />
           <StatCard label="已拒绝" value={stats.rejected} accent="text-rose-600" />
           <StatCard label="累计学分" value={stats.totalCredit.toFixed(1)} accent="text-fuchsia-600" />
+          <StatCard
+            label={`合格人数（${fmtPct(passStats.pass)}）`}
+            value={passStats.pass}
+            accent="text-emerald-600"
+            onClick={() => navigate("/teacher/credits?passFilter=pass")}
+          />
+          <StatCard
+            label={`不合格人数（${fmtPct(passStats.fail)}）`}
+            value={passStats.fail}
+            accent="text-rose-600"
+            onClick={() => navigate("/teacher/credits?passFilter=fail")}
+          />
         </div>
 
         <Card>
@@ -184,7 +196,18 @@ const TeacherDashboard = () => {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={passPie} dataKey="value" nameKey="name" outerRadius={80} label>
+                    <Pie
+                      data={passPie}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={80}
+                      label
+                      className="cursor-pointer"
+                      onClick={(d: any) => {
+                        const filter = d?.name === "合格" ? "pass" : "fail";
+                        navigate(`/teacher/credits?passFilter=${filter}`);
+                      }}
+                    >
                       {passPie.map((_, i) => <Cell key={i} fill={PASS_COLORS[i]} />)}
                     </Pie>
                     <Tooltip />
@@ -274,8 +297,8 @@ const TeacherDashboard = () => {
   );
 };
 
-const StatCard = ({ label, value, accent }: { label: string; value: string | number; accent?: string }) => (
-  <Card>
+const StatCard = ({ label, value, accent, onClick }: { label: string; value: string | number; accent?: string; onClick?: () => void }) => (
+  <Card onClick={onClick} className={onClick ? "cursor-pointer transition hover:border-primary hover:shadow-md" : undefined}>
     <CardContent className="p-4">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={`mt-1 text-2xl font-semibold ${accent ?? ""}`}>{value}</div>
