@@ -25,6 +25,8 @@ import MyApplications from "./pages/student/MyApplications.tsx";
 import ApplicationDetail from "./pages/ApplicationDetail.tsx";
 import Students from "./pages/teacher/Students.tsx";
 import StudentDetail from "./pages/teacher/StudentDetail.tsx";
+import TeacherDashboard from "./pages/teacher/Dashboard.tsx";
+import TeacherCredits from "./pages/teacher/Credits.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -57,6 +59,8 @@ const App = () => (
             <Route path="/applications/:id" element={<ProtectedRoute><ApplicationDetail /></ProtectedRoute>} />
             <Route path="/teacher/students" element={<RoleRoute role={["teacher", "admin"]}><Students /></RoleRoute>} />
             <Route path="/teacher/students/:id" element={<RoleRoute role={["teacher", "admin"]}><StudentDetail /></RoleRoute>} />
+            <Route path="/teacher/dashboard" element={<RoleRoute role={["teacher", "admin"]}><TeacherDashboard /></RoleRoute>} />
+            <Route path="/teacher/credits" element={<RoleRoute role={["teacher", "admin"]}><TeacherCredits /></RoleRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
