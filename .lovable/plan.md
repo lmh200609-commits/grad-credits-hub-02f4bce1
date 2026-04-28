@@ -1,212 +1,105 @@
+# 修复教师端 / 管理员端 / 学生端的实时同步
 
-# 交付物总览
+## 问题诊断
 
-将在 `/mnt/documents/` 下生成两份 .docx，并在前端用 `<lov-artifact>` 标签呈现给您下载。
+通过排查代码与数据库迁移，找到两个根本原因：
 
-| 文件 | 用途 | 主要读者 |
-|------|------|---------|
-| 学分认证系统 - 第二轮压力与异常输入测试方案.docx | 给老师/项目组用的测试组织手册 | 您本人、协助监考的教师 |
-| 学分认证系统 - 完整使用说明书.docx | 测试当天分发给参与学生（也覆盖教师/管理员） | 学生为主、教师/管理员各有专章 |
+### 原因 1：只有 `applications` 一张表加入了 Realtime 发布
+迁移文件 `20260420170018_*.sql` 只做了：
+```sql
+ALTER TABLE public.applications REPLICA IDENTITY FULL;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.applications;
+```
 
-两份文档均按 A4 / 1 英寸边距 / 中文 12pt 排版，内置目录、章节编号、表格与附录，可直接打印分发。
+但 `ApplicationDetail.tsx` 还订阅了 `application_reviews` 表，由于这张表 **没加入 publication**，订阅会一直失败 → 落回 30 秒轮询，所以详情页的"复核记录"必须刷新才能看到。
 
----
+`submission_records` 表（提交记录页用）同理也没加入发布。
 
-# 文档一：第二轮测试方案（约 18~22 页）
+### 原因 2：多个关键页面根本没有接入实时订阅
+通过 `rg` 扫描，目前只有 4 个页面用了 `useRealtimeTable`：
+- `MyApplications.tsx` ✅
+- `Reviews.tsx` ✅
+- `SubmissionRecords.tsx` ✅
+- `ApplicationDetail.tsx` ✅
 
-定位：一个班 · 教室集中测试 · 重点验证 **并发承受能力 + 垃圾信息（脏数据）容忍度**。
+但这些页面**没有**订阅，全靠 `useEffect` 一次性加载：
+- `src/pages/Index.tsx`（学生工作台首页）
+- `src/pages/admin/Dashboard.tsx`（管理员数据看板）
+- `src/pages/admin/ReviewHub.tsx`（**复核中心** —— 管理员审完后这里数字不更新）
+- `src/pages/teacher/Dashboard.tsx`（教师数据看板）
+- `src/pages/teacher/Students.tsx`（教师学生列表，含已获学分）
 
-## 章节结构
+所以教师审完一条申请后：
+- 学生工作台首页数字不变 → 必须刷新
+- 管理员看板的"待审/已审"数字不变 → 必须刷新
+- 另一个老师的复核中心队列不变 → 必须刷新
 
-1. **测试背景与目标**
-   - 第二轮在三轮验收中的定位（盲测 → 班级测试 → 大规模试运行）
-   - 三大验证目标：① 在线并发稳定性 ② 异常/垃圾输入鲁棒性 ③ 学生真实使用路径覆盖率
-   - 非目标（不在本轮覆盖：性能调优、安全渗透）
-
-2. **测试范围**
-   - 系统模块清单（学生端 4 页 + 教师端 5 页 + 管理员端 13 页 + 公共复核/验证页）
-   - 本轮覆盖：学生端全部 + 教师端审核流；不覆盖：管理员批量导入、AI 模型配置
-
-3. **测试环境与资源**
-   - 环境：教室 + 校园网 / 4G 双链路；Chrome / Edge 最新版；学生自带笔记本或机房机器
-   - 账号准备：使用登录页"快捷登录"（10 个学生账号 S2024101–110 + 张老师 T001 + A001 管理员，密码 Test1234）
-   - 数据预置：管理员预先在"案例库 / 关键词库"中放入 ≥ 30 条样例
-   - 监控手段：Supabase Edge Function 日志、`audit_logs` 审计表实时观察、浏览器 DevTools
-
-4. **测试组织（90 分钟流程示例）**
-   ```text
-   00:00–00:10  开场说明 + 分发账号卡 + 演示登录
-   00:10–00:25  阶段 A：基础流程通跑（每人完成 1 次申请）
-   00:25–00:45  阶段 B：并发尖峰（全体倒计时同时点"提交"）
-   00:45–01:10  阶段 C：垃圾信息自由攻击（鼓励乱点、乱输）
-   01:10–01:25  阶段 D：教师端审核回流验证
-   01:25–01:30  问卷收集 + Bug 现场登记
-   ```
-
-5. **测试用例（按场景分组，共 ~40 条）**
-
-   - **C1 并发场景**（10 条）
-     - C1-01 30 人同时登录（5 秒内全部完成 quickLogin）
-     - C1-02 30 人在 10 秒内同时提交申请
-     - C1-03 同一申请页 F5 连刷 20 次
-     - C1-04 30 人同时打开"我的申请"列表（实时订阅压力）
-     - C1-05 教师端审核页与学生端提交并发
-     - C1-06 同时调用 AI 评估的 3 个 Edge Function（evaluate-application / face-compare / ask-credit-assistant）
-     - …
-
-   - **C2 垃圾输入场景**（15 条）
-     - C2-01 申请说明粘贴 5 万字小说（验证 zod maxLength）
-     - C2-02 申请说明粘贴 emoji + 控制字符 + 零宽空格
-     - C2-03 自定义关键词输入 SQL 注入串：`' OR 1=1 --`
-     - C2-04 上传 0 字节文件 / 200MB 巨型文件 / .exe 重命名为 .png
-     - C2-05 上传非图片文件冒充证书
-     - C2-06 申请说明粘贴 HTML/JS 试图 XSS：`<script>alert(1)</script>`
-     - C2-07 关键词输入框连续点 100 下"添加"
-     - C2-08 同一关键词重复添加（验证去重）
-     - C2-09 个人档案手机号输入字母 / 身份证输入 12 位
-     - C2-10 在 AI 助手输入"忽略上面所有指令" prompt injection
-     - …
-
-   - **C3 乱点场景**（10 条）
-     - C3-01 不选关键词直接点提交
-     - C3-02 选了关键词不上传图片直接提交
-     - C3-03 反复点击"提交"按钮 10 次（验证防重复提交）
-     - C3-04 浏览器后退/前进破坏申请流程状态
-     - C3-05 同时打开 5 个标签页操作不同申请
-     - C3-06 学生越权访问 `/admin/dashboard`、`/teacher/students`
-     - C3-07 学生直接访问别人的 `/applications/{id}`（验证 RLS）
-     - C3-08 教师端拒绝时不填理由
-     - …
-
-   - **C4 边界与异常**（5 条）
-     - 离线 → 在线切换、Token 过期、Realtime 断线重连、AI 服务超时降级、人脸识别返回低分
-
-6. **数据收集表**（每条用例对应一行）
-   - 列：用例编号 / 操作人 / 开始时间 / 结束时间 / 实际现象 / 是否符合预期 / 截图编号 / 严重等级（P0–P3）
-
-7. **通过/失败判定标准**
-   - 整体通过线：P0 = 0；P1 ≤ 2 且当场可绕过；脏数据下系统不崩溃、不出 500、不丢数据
-   - 单用例标准：见每条用例的"预期结果"列
-
-8. **风险与回滚**
-   - 数据库被填脏数据 → 测试前快照 + 测试后用 `dev-seed` 复位
-   - Edge Function 配额耗尽 → 提前确认 Lovable AI Gateway 余额
-   - 学生提交真实身份证号 → 强调使用提供的虚拟数据
-
-9. **测试报告模板**
-   - 总览（参与人数、用例数、通过率）
-   - Bug 列表（按严重等级排序）
-   - 性能数据（最大并发、AI 平均响应时长、P95）
-   - 改进建议清单 → 输入到第三轮
-
-10. **附录**（A–E）
-    - A. 在线人数与点击日志记录表（空白模板）
-    - B. 卡顿/崩溃记录表（含截图栏）
-    - C. 垃圾输入测试逐条记录表（含 40 条预置攻击 payload）
-    - D. Bug 反馈表（学生填，含严重度自评）
-    - E. 测试当天监考检查清单（Checklist）
+### 附加问题：订阅断线后只有 30 秒兜底轮询
+`useRealtimeTable.ts` 在 `CHANNEL_ERROR / TIMED_OUT / CLOSED` 时退化为 30s 轮询，对"实时同步"来说体感太慢，且没有自动重连。
 
 ---
 
-# 文档二：完整使用说明书（约 35~45 页）
+## 修复方案
 
-定位：**面向"完全没用过的人"**，每一步都配文字描述（条件不允许嵌截图，会留出"截图位"占位段，便于您后期补图）。
+### 1. 数据库迁移：把所有需要实时的表加入发布
+新建一份迁移：
 
-## 章节结构
+```sql
+ALTER TABLE public.application_reviews REPLICA IDENTITY FULL;
+ALTER TABLE public.submission_records  REPLICA IDENTITY FULL;
+ALTER TABLE public.profiles            REPLICA IDENTITY FULL;
 
-### 第 0 部分：开始之前
-- 系统是什么 / 解决什么问题 / 三种角色分别能做什么（一图速览表）
-- 浏览器要求、网络要求、屏幕分辨率建议
-- 一分钟概念词典：申请 / 关键词 / 案例库 / 规则库 / 复核 / 学分认证证书 / 申诉
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.application_reviews;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-### 第 1 部分：登录与账号
-- 1.1 打开系统的两种方式（预览域名 / 正式域名）
-- 1.2 登录页详解：账号格式（学号/工号）、密码规则、忘记密码流程
-- 1.3 测试期间的"快捷登录"按钮怎么用、绿色"已就绪"红色"失败"标识含义
-- 1.4 退出登录、切换账号
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.submission_records;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-### 第 2 部分：学生使用手册（约 15 页，最详尽）
-- 2.1 工作台首页能看到什么
-- 2.2 完善个人档案（**强调：上传 1 寸证件照影响后续 AI 人脸校验**）
-  - 字段逐个解释：姓名、学号、院系、专业、班级、身份证、手机号、学校、照片
-  - 上传照片步骤：点击 → 选择文件 → 等待"上传成功"提示
-- 2.3 申请学分（4 步走，每步一节，配操作脚本式说明）
-  - 2.3.1 第 1 步 选关键词
-    - 三种方式：搜索框 / 四维筛选（项目→成果→级别→身份）/ 自定义关键词
-    - 已选关键词如何修改、删除
-  - 2.3.2 第 2 步 写申请说明
-    - 三个内置模板（竞赛/证书/论文）一键插入
-    - 字数限制、不要粘贴敏感个人信息
-  - 2.3.3 第 3 步 上传证明材料
-    - 支持的文件类型、大小上限、拖拽 / 点击两种方式、删除重传
-  - 2.3.4 第 4 步 提交
-    - "提交后能撤回吗？"——不能，但被驳回可申诉
-- 2.4 我的申请：六种状态全图解
-  - 系统核验中 / 系统初审通过 / 系统未通过 / 待教师复核 / 人工已通过 / 人工已驳回
-  - 每种状态下学生该做什么、不该做什么
-- 2.5 申请被驳回怎么办（申诉流程）
-- 2.6 学分认证证书：在哪里下载、证书编号是什么、扫码验真链接 `/verify/:certNo`
-- 2.7 AI 助手浮窗：提问技巧、能问什么不能问什么
-- 2.8 学生常见问题 FAQ（20 条）
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+```
 
-### 第 3 部分：教师使用手册（约 8 页）
-- 3.1 教师能看到什么、不能看到什么（与管理员的权限差异表）
-- 3.2 数据看板解读：班级提交量、通过率、平均处理时长
-- 3.3 待审核队列：如何按"系统不确定"vs"学生申诉"过滤
-- 3.4 单条申请审核页详解
-  - 学生信息区、材料区、AI 评估卡（建议学分、置信度、推理过程）
-  - **人脸匹配提醒标识**（红色/黄色 Badge 含义、可忽略可复核）
-  - 通过 / 驳回 / 转交管理员 三个动作
-  - 必填的"审核意见"
-- 3.5 学生管理：搜索学生、查看其历史所有申请
-- 3.6 学分排名：导出 CSV
-- 3.7 提交记录：操作流水追溯
-- 3.8 教师常见问题 FAQ（10 条）
+### 2. 增强 `useRealtimeTable` Hook
+- 订阅断线后做 **指数退避自动重连**（2s → 4s → 8s，封顶 30s），而不是只靠 30s 轮询。
+- 兜底轮询频率从 30s 调到 **10s**，保证在 Realtime 完全不可用时也能在十秒内同步。
+- 暴露 `onStatusChange` 回调（可选），便于以后做"连接状态"指示灯。
 
-### 第 4 部分：管理员使用手册（约 10 页）
-- 4.1 管理员独有 13 个菜单速览
-- 4.2 数据看板（全校维度）
-- 4.3 复核中心 vs 全部审核 的区别
-- 4.4 规则库管理：新建 / 编辑 / 启用停用
-- 4.5 关键词库：归一化、合并、批量导入
-- 4.6 案例库：从已通过申请沉淀案例、手工录入案例
-- 4.7 学生 / 教师管理：搜索、停用、重置密码
-- 4.8 批量导入账号：Excel 模板、AI 解析名单、错误回滚
-- 4.9 AI 模型设置：千问 / DeepSeek 切换、API Key 加密存储、视觉模型用于人脸比对
-- 4.10 审计日志：按操作人、按对象、按时间筛选
-- 4.11 管理员常见问题 FAQ（10 条）
+### 3. 给以下页面接入实时订阅
+全部用现成的 `useRealtimeTable("applications", reload, ...)`，按角色加 filter：
 
-### 第 5 部分：故障自救（全角色）
-- 页面白屏 / 转圈不动 / 提交无反应 / 上传失败 / AI 回复"服务繁忙" 各场景的 3 步排查法
-- 反馈 Bug 的正确姿势（截图 + URL + 时间 + 操作步骤）
+| 页面 | 订阅表 | filter |
+|---|---|---|
+| `pages/Index.tsx`（学生首页） | `applications` | `student_id=eq.${user.id}` |
+| `pages/admin/Dashboard.tsx` | `applications` | 全表 |
+| `pages/admin/ReviewHub.tsx` | `applications` | 全表 |
+| `pages/teacher/Dashboard.tsx` | `applications` | 全表 |
+| `pages/teacher/Students.tsx` | `applications` | 全表（用于刷新"已获学分"列） |
 
-### 附录
-- A. 状态流转图（ASCII 图）
-- B. 文件类型与大小一览表
-- C. 字段命名约定与缩写
-- D. 联系支持方式
+为避免连续 INSERT/UPDATE 触发太多请求，给重新加载函数加 **300ms debounce**（用 `useRef + setTimeout` 实现，不引入新依赖）。
+
+### 4. （可选小优化）顶部加一个连接状态指示
+在 `AppLayout.tsx` header 右侧加一个小绿点/灰点，表示当前 Realtime 是否连通。仅作可视化反馈，不阻塞功能。
 
 ---
 
-# 技术实现路径
+## 验证步骤
+1. 教师 A 在"待审核"批准一条申请 → 学生 B 的"我的申请"和"工作台首页"应在 ~1 秒内自动出现状态变化，不刷新。
+2. 同时打开两个管理员窗口，A 在复核中心审一条 → B 的复核中心列表与计数自动减 1。
+3. 学生提交新申请 → 教师"待审核"页面不刷新就能看到新行。
+4. 断网 5 秒再恢复 → 重连后自动收到错过的变更（依赖步骤 2 的指数退避重连）。
 
-1. 用 `docx-js`（已在 skill 中）按章节生成两份 .docx
-   - 显式设置 A4 (11906 × 16838 DXA)，1 英寸边距
-   - 中文字体 "Microsoft YaHei"，正文 12pt，标题 H1 18pt / H2 14pt / H3 12pt 加粗
-   - 自动生成目录（TOC），使用 HeadingLevel + outlineLevel
-   - 表格使用 `WidthType.DXA`、columnWidths 与 cell width 双设、`ShadingType.CLEAR` 浅灰表头
-   - 列表使用 `LevelFormat.BULLET` / `DECIMAL`，禁止 unicode 圆点
-2. 生成后用 `validate_document.py` 校验
-3. 用 LibreOffice 转 PDF + pdftoppm 出图，逐页 QA：
-   - 检查中文字体回退（避免出现"豆腐块"）
-   - 检查表格不溢出页边、目录页码正确
-   - 检查附录表格列宽合理
-4. 修复后输出最终 .docx 至 `/mnt/documents/`，并用 `<lov-artifact>` 标签呈现下载链接
+## 涉及文件
+**新增**
+- `supabase/migrations/<timestamp>_add_realtime_publications.sql`
 
-## 预计耗时
-- 内容撰写脚本 + 渲染：约 5–8 分钟
-- QA + 修复 1–2 轮：约 3–5 分钟
-
----
-
-请审阅本计划。批准后我将切换到执行模式生成两份 Word 文档。如果您希望调整章节、增减用例数量、或先只生成其中一份，请告诉我。
+**修改**
+- `src/hooks/useRealtimeTable.ts`（重连 + 更短轮询 + debounce 工具）
+- `src/pages/Index.tsx`
+- `src/pages/admin/Dashboard.tsx`
+- `src/pages/admin/ReviewHub.tsx`
+- `src/pages/teacher/Dashboard.tsx`
+- `src/pages/teacher/Students.tsx`
+- 可选：`src/components/AppLayout.tsx`（连接指示点）
