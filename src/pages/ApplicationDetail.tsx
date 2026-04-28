@@ -824,6 +824,15 @@ const ApplicationDetail = () => {
           </CardContent>
         </Card>
       </div>
+      {certData && createPortal(
+        <div
+          id="__cert_render__"
+          style={{ position: "fixed", left: -99999, top: 0, zIndex: -1 }}
+        >
+          <CertificatePreview data={certData} />
+        </div>,
+        document.body,
+      )}
     </AppLayout>
   );
 };
