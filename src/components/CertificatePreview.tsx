@@ -166,49 +166,13 @@ const CertificatePreview = forwardRef<
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.qrDataUrl && (
-              <img
-                src={data.qrDataUrl}
-                alt="验证二维码"
-                style={{ width: 96, height: 96 }}
-              />
-            )}
-            <span style={{ fontSize: 11, color: "#888" }}>扫码在线验证</span>
+            {/* 二维码已移除 */}
           </div>
 
           <div style={{ textAlign: "right", fontSize: 15, lineHeight: 1.8 }}>
             <div>签发单位：{data.school} 教务处</div>
             {data.reviewerName && <div>审核人：{data.reviewerName}</div>}
             <div>签发日期：{fmtDate(data.issuedAt)}</div>
-          </div>
-
-          {/* 虚拟公章 */}
-          <div
-            style={{
-              position: "absolute",
-              right: isPortrait ? 80 : 120,
-              bottom: 40,
-              width: 130,
-              height: 130,
-              border: "4px solid #c0392b",
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transform: "rotate(-12deg)",
-              opacity: 0.78,
-              color: "#c0392b",
-              fontWeight: 700,
-              textAlign: "center",
-              fontSize: 13,
-              lineHeight: 1.4,
-              padding: 8,
-              boxSizing: "border-box",
-            }}
-          >
-            {data.school}
-            <br />
-            教务处专用章
           </div>
         </div>
       </div>
