@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart,
@@ -36,24 +37,27 @@ const TeacherDashboard = () => {
   const [studentIds, setStudentIds] = useState<Set<string>>(new Set());
   const [deptStats, setDeptStats] = useState<{ name: string; value: number }[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      const [a, roles, profiles] = await Promise.all([
-        fetchAll<App>(supabase.from("applications").select("id, status, submitted_at, final_credit, ai_suggested_credit, student_id")),
-        fetchAll<{ user_id: string; role: string }>(supabase.from("user_roles").select("user_id, role")),
-        fetchAll<{ user_id: string; department: string | null }>(supabase.from("profiles").select("user_id, department")),
-      ]);
-      setApps(a);
-      const sids = new Set(roles.filter((r) => r.role === "student").map((r) => r.user_id));
-      setStudentIds(sids);
-      const deptMap = new Map<string, number>();
-      profiles.filter((p) => sids.has(p.user_id)).forEach((p) => {
-        const k = p.department ?? "未填写";
-        deptMap.set(k, (deptMap.get(k) ?? 0) + 1);
-      });
-      setDeptStats(Array.from(deptMap, ([name, value]) => ({ name, value })));
-    })();
+  const load = useCallback(async () => {
+    const [a, roles, profiles] = await Promise.all([
+      fetchAll<App>(supabase.from("applications").select("id, status, submitted_at, final_credit, ai_suggested_credit, student_id")),
+      fetchAll<{ user_id: string; role: string }>(supabase.from("user_roles").select("user_id, role")),
+      fetchAll<{ user_id: string; department: string | null }>(supabase.from("profiles").select("user_id, department")),
+    ]);
+    setApps(a);
+    const sids = new Set(roles.filter((r) => r.role === "student").map((r) => r.user_id));
+    setStudentIds(sids);
+    const deptMap = new Map<string, number>();
+    profiles.filter((p) => sids.has(p.user_id)).forEach((p) => {
+      const k = p.department ?? "未填写";
+      deptMap.set(k, (deptMap.get(k) ?? 0) + 1);
+    });
+    setDeptStats(Array.from(deptMap, ([name, value]) => ({ name, value })));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useRealtimeTable("applications", load);
+  useRealtimeTable("profiles", load);
 
   const stats = useMemo(() => {
     const approved = apps.filter((a) => APPROVED.includes(a.status));

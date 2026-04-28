@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -48,25 +49,27 @@ const Students = () => {
   const [resetting, setResetting] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const [roleRows, profileRows] = await Promise.all([
-        fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", "student")),
-        fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, phone")),
-      ]);
-      const ids = new Set(roleRows.map((r) => r.user_id));
-      setStudentIds(ids);
-      if (ids.size === 0) {
-        // RLS fallback: teacher can't see user_roles → show all visible profiles
-        console.warn("[Students] user_roles returned 0 rows — falling back to all visible profiles");
-        setRows(profileRows);
-      } else {
-        setRows(profileRows.filter((p) => ids.has(p.user_id)));
-      }
-      setLoading(false);
-    })();
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [roleRows, profileRows] = await Promise.all([
+      fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", "student")),
+      fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, phone")),
+    ]);
+    const ids = new Set(roleRows.map((r) => r.user_id));
+    setStudentIds(ids);
+    if (ids.size === 0) {
+      console.warn("[Students] user_roles returned 0 rows — falling back to all visible profiles");
+      setRows(profileRows);
+    } else {
+      setRows(profileRows.filter((p) => ids.has(p.user_id)));
+    }
+    setLoading(false);
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useRealtimeTable("profiles", load);
+  useRealtimeTable("applications", load);
 
   const departments = useMemo(
     () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(),

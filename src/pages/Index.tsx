@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
@@ -32,32 +33,38 @@ const StudentWorkbench = () => {
   const [counts, setCounts] = useState({ total: 0, reviewing: 0, approved: 0, rejected: 0 });
   const [recent, setRecent] = useState<AppRow[]>([]);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!user) return;
-    (async () => {
-      setLoading(true);
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      setDisplayName(resolveDisplayName(prof, account));
-      const { data } = await supabase
-        .from("applications")
-        .select("id,description,status,submitted_at")
-        .eq("student_id", user.id)
-        .order("submitted_at", { ascending: false });
-      const rows = (data ?? []) as AppRow[];
-      const reviewing = rows.filter((r) =>
-        ["pending_ai", "auto_approved", "pending_review"].includes(r.status),
-      ).length;
-      const approved = rows.filter((r) => r.status === "approved").length;
-      const rejected = rows.filter((r) => ["rejected", "rejected_by_ai"].includes(r.status)).length;
-      setCounts({ total: rows.length, reviewing, approved, rejected });
-      setRecent(rows.slice(0, 5));
-      setLoading(false);
-    })();
-  }, [user]);
+    setLoading(true);
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    setDisplayName(resolveDisplayName(prof, account));
+    const { data } = await supabase
+      .from("applications")
+      .select("id,description,status,submitted_at")
+      .eq("student_id", user.id)
+      .order("submitted_at", { ascending: false });
+    const rows = (data ?? []) as AppRow[];
+    const reviewing = rows.filter((r) =>
+      ["pending_ai", "auto_approved", "pending_review"].includes(r.status),
+    ).length;
+    const approved = rows.filter((r) => r.status === "approved").length;
+    const rejected = rows.filter((r) => ["rejected", "rejected_by_ai"].includes(r.status)).length;
+    setCounts({ total: rows.length, reviewing, approved, rejected });
+    setRecent(rows.slice(0, 5));
+    setLoading(false);
+  }, [user, account]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useRealtimeTable(
+    "applications",
+    load,
+    { filter: user ? `student_id=eq.${user.id}` : undefined },
+  );
 
   const latest = recent[0];
   const stepInfo = useMemo(() => {
