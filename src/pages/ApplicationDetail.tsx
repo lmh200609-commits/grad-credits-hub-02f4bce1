@@ -390,6 +390,84 @@ const ApplicationDetail = () => {
 
   if (!app) return <AppLayout><p>加载中…</p></AppLayout>;
 
+  const isApproved = app.status === "approved" || app.status === "auto_approved";
+  const canExportCert =
+    isApproved && (app.student_id === user?.id || hasRole("teacher") || hasRole("admin"));
+
+  const handleExportCertificate = async () => {
+    if (!app || !student) return;
+    if (!student.full_name || !student.student_no) {
+      return toast({
+        title: "学生档案不完整",
+        description: "请先在「我的档案」中补全姓名和学号",
+        variant: "destructive",
+      });
+    }
+    setExporting(true);
+    try {
+      // 生成或读取证书编号
+      const { data: certNo, error: ge } = await supabase.rpc("gen_certificate_no", { _app_id: app.id });
+      if (ge || !certNo) {
+        throw new Error(ge?.message ?? "证书编号生成失败");
+      }
+
+      // 学生照片转 dataURL（避免跨域污染）
+      let photoDataUrl: string | null = null;
+      if (student.photo_url) {
+        const { data: signed } = await supabase.storage
+          .from("application-files")
+          .createSignedUrl(student.photo_url, 3600);
+        if (signed?.signedUrl) photoDataUrl = await urlToDataUrl(signed.signedUrl);
+      }
+
+      const verifyUrl = `${window.location.origin}/verify/${certNo}`;
+      const qrDataUrl = await makeQrDataUrl(verifyUrl);
+
+      const projectTitle =
+        (app.custom_keywords?.[0]) ||
+        (app.selected_keywords?.[0]) ||
+        app.ai_detected_project ||
+        app.ai_detected_achievement ||
+        (app.description || "").slice(0, 24) ||
+        "—";
+
+      const data: CertificateData = {
+        school: student.school || "长春财经学院",
+        studentName: student.full_name!,
+        studentNo: student.student_no!,
+        department: student.department || "—",
+        major: student.major || null,
+        idCard: student.id_card || null,
+        photoDataUrl,
+        certificateNo: String(certNo),
+        credit: Number(app.final_credit ?? app.ai_suggested_credit ?? 0),
+        projectTitle,
+        description: app.description || "",
+        reviewerName: null,
+        issuedAt: new Date().toISOString(),
+        qrDataUrl,
+      };
+
+      setCertData(data);
+      // 等下一帧让 Portal 渲染
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      await new Promise((r) => setTimeout(r, 50));
+      const node = document.getElementById("__cert_render__") as HTMLDivElement | null;
+      if (!node) throw new Error("证书渲染失败");
+      await exportElementToPdf(
+        node,
+        `学分认定证明_${student.student_no}_${certNo}.pdf`,
+      );
+      toast({ title: "证明已导出", description: `证书编号：${certNo}` });
+      load();
+    } catch (e: any) {
+      toast({ title: "导出失败", description: e?.message ?? "未知错误", variant: "destructive" });
+    } finally {
+      setExporting(false);
+      setCertData(null);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-4xl space-y-4">
