@@ -41,9 +41,11 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
     · submission_records_overview — 申请流水总数 + 按事件类型分布
 
 【路径白名单（仅可使用以下路径）】
-- /admin/dashboard           数据看板
+- /admin/dashboard           数据看板（管理员）
+- /teacher/dashboard         数据看板（教师）
 - /admin/review              复核中心
-- /admin/credits             学分排名（支持 ?passFilter=fail|pass|all、?dept=xxx）
+- /admin/credits             学分排名-管理员（支持 ?passFilter=fail|pass|all、?dept=xxx）
+- /teacher/credits           学分排名-教师（支持 ?passFilter=fail|pass|all、?dept=xxx）
 - /admin/users/students      学生管理（支持 ?search=xxx）
 - /admin/users/teachers      教师管理
 - /admin/rules               规则库
@@ -193,7 +195,7 @@ const TOOLS = [
   },
 ];
 
-async function execTool(name: string, args: any, supabase: ReturnType<typeof createClient>) {
+async function execTool(name: string, args: any, supabase: ReturnType<typeof createClient>, userRole: string = "admin") {
   if (name === "navigate_to") {
     return { ok: true, path: String(args?.path || "") };
   }
@@ -236,11 +238,12 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       credit.set(a.student_id, (credit.get(a.student_id) ?? 0) + c);
     });
     const failingIds = Array.from(ids).filter((id: any) => (credit.get(id) ?? 0) < threshold);
+    const base = userRole === "teacher" ? "/teacher/credits" : "/admin/credits";
     return {
       threshold,
       failing_count: failingIds.length,
       total_students: ids.size,
-      navigate_path: `/admin/credits?passFilter=fail`,
+      navigate_path: `${base}?passFilter=fail`,
     };
   }
 
@@ -286,7 +289,7 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     if (metric === "submitted_total") {
       const { data } = await supabase.from("applications").select("student_id");
       const set = new Set((data || []).map((r: any) => r.student_id));
-      return { metric, value: set.size, navigate_path: "/admin/users/students" };
+      return { metric, value: set.size, navigate_path: userRole === "teacher" ? "/teacher/students" : "/admin/users/students" };
     }
     if (metric === "submitted_count") {
       const { count } = await supabase.from("applications").select("id", { count: "exact", head: true });
@@ -308,11 +311,12 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       const passing = Array.from(ids).filter((id: any) => (credit.get(id) ?? 0) >= threshold).length;
       const failing = ids.size - passing;
       const value = metric === "passed_students" ? passing : failing;
+      const base = userRole === "teacher" ? "/teacher/credits" : "/admin/credits";
       return {
         metric,
         value,
         threshold,
-        navigate_path: `/admin/credits?passFilter=${metric === "passed_students" ? "pass" : "fail"}`,
+        navigate_path: `${base}?passFilter=${metric === "passed_students" ? "pass" : "fail"}`,
       };
     }
     if (metric === "auto_approved_total") {
@@ -582,7 +586,7 @@ Deno.serve(async (req) => {
         for (const tc of toolCalls) {
           let args: any = {};
           try { args = JSON.parse(tc.function?.arguments || "{}"); } catch { args = {}; }
-          const result = await execTool(tc.function?.name, args, supabase);
+          const result = await execTool(tc.function?.name, args, supabase, userRole);
 
           if (tc.function?.name === "navigate_to" && (result as any).path) {
             action = { type: "navigate", payload: { path: (result as any).path } };
