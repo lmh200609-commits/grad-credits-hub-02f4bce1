@@ -83,6 +83,9 @@ const ApplicationDetail = () => {
   const [libraryRefs, setLibraryRefs] = useState<KeywordRef[]>([]);
   const [exporting, setExporting] = useState(false);
   const [certData, setCertData] = useState<CertificateData | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
+  const [preparing, setPreparing] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
