@@ -262,27 +262,36 @@ const AiModelsPage = () => {
 const BindingRow = ({
   binding, providers, fallback, onSaved,
 }: { binding: Binding; providers: Provider[]; fallback: EnvFallback; onSaved: () => void }) => {
-  const [providerId, setProviderId] = useState<string>(binding.provider_id ?? "__none__");
-  const [model, setModel] = useState<string>(binding.model);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setProviderId(binding.provider_id ?? "__none__");
-    setModel(binding.model);
-  }, [binding]);
+  const [customDraft, setCustomDraft] = useState("");
+  const [editingCustom, setEditingCustom] = useState(false);
 
   const meta = FUNCTION_LABELS[binding.function_key] ?? { label: binding.function_key, desc: "" };
-  const dirty = (providerId === "__none__" ? null : providerId) !== binding.provider_id || model !== binding.model;
+  const providerId = binding.provider_id ?? "__none__";
+  const currentProvider = providers.find((p) => p.id === binding.provider_id);
+  const isBound = !!binding.provider_id && !!binding.ai_providers;
+  const activeName = isBound ? binding.ai_providers!.name : (fallback?.providerName ?? "未配置");
+  const activeBase = isBound ? binding.ai_providers!.base_url : (fallback?.baseUrl ?? "—");
+  const activeModel = binding.model || fallback?.defaultModel || "—";
 
-  const save = async () => {
+  const vendor = currentProvider?.vendor ?? fallback?.vendor ?? "deepseek";
+  const vendorPreset = VENDOR_PRESETS.find((v) => v.vendor === vendor);
+  const presetModels: string[] = vendorPreset ? [...vendorPreset.models] : [];
+  const modelOptions = Array.from(new Set([binding.model, ...presetModels].filter(Boolean)));
+  const isCustomActive = !!binding.model && !modelOptions.slice(1).includes(binding.model) && !presetModels.includes(binding.model);
+  const showCustomInput = editingCustom || isCustomActive;
+
+  const persist = async (nextProviderId: string | null, nextModel: string) => {
     setSaving(true);
     try {
       await callAdmin("upsert_binding", {
         function_key: binding.function_key,
-        provider_id: providerId === "__none__" ? null : providerId,
-        model: model.trim() || binding.model,
+        provider_id: nextProviderId,
+        model: nextModel.trim() || binding.model,
       });
-      toast({ title: "已保存", description: meta.label });
+      toast({ title: "已更新", description: `${meta.label} → ${nextModel}` });
+      setEditingCustom(false);
+      setCustomDraft("");
       onSaved();
     } catch (e) {
       toast({ title: "保存失败", description: (e as Error).message, variant: "destructive" });
@@ -291,11 +300,20 @@ const BindingRow = ({
     }
   };
 
-  const currentProvider = providers.find((p) => p.id === providerId);
-  const isBound = !!binding.provider_id && !!binding.ai_providers;
-  const activeName = isBound ? binding.ai_providers!.name : (fallback?.providerName ?? "未配置");
-  const activeBase = isBound ? binding.ai_providers!.base_url : (fallback?.baseUrl ?? "—");
-  const activeModel = binding.model || fallback?.defaultModel || "—";
+  const onProviderChange = (nextId: string) => {
+    const realId = nextId === "__none__" ? null : nextId;
+    const nextProvider = providers.find((p) => p.id === realId);
+    const nextVendor = nextProvider?.vendor ?? fallback?.vendor ?? "deepseek";
+    const nextPreset = VENDOR_PRESETS.find((v) => v.vendor === nextVendor);
+    const stillValid = nextPreset?.models.some((m) => m === binding.model);
+    const nextModel = stillValid ? binding.model : (nextPreset?.sample || binding.model);
+    persist(realId, nextModel);
+  };
+
+  const onModelChange = (next: string) => {
+    if (next === "__custom__") { setEditingCustom(true); setCustomDraft(binding.model); return; }
+    persist(binding.provider_id, next);
+  };
 
   return (
     <TableRow>
@@ -312,27 +330,59 @@ const BindingRow = ({
         <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground" title={activeBase}>{activeBase}</div>
         <div className="mt-0.5 font-mono text-[11px]">{activeModel}</div>
       </TableCell>
-      <TableCell className="min-w-[220px] align-top">
-        <Select value={providerId} onValueChange={setProviderId}>
-          <SelectTrigger><SelectValue placeholder="未绑定（使用环境变量）" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">未绑定（兼容旧密钥）</SelectItem>
-            {providers.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.name} · {p.vendor}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <TableCell className="min-w-[340px] align-top">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Select value={providerId} onValueChange={onProviderChange} disabled={saving}>
+            <SelectTrigger className="sm:w-[180px]">
+              <SelectValue placeholder="未绑定（环境变量）" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">未绑定（环境回退）</SelectItem>
+              {providers.map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.name} · {p.vendor}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={showCustomInput ? "__custom__" : binding.model}
+            onValueChange={onModelChange}
+            disabled={saving}
+          >
+            <SelectTrigger className="font-mono text-xs sm:w-[180px]">
+              <SelectValue placeholder="选择模型" />
+            </SelectTrigger>
+            <SelectContent>
+              {modelOptions.map((m) => (
+                <SelectItem key={m} value={m} className="font-mono text-xs">{m}</SelectItem>
+              ))}
+              <SelectItem value="__custom__" className="text-xs">自定义模型名…</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {showCustomInput && (
+          <div className="mt-2 flex items-center gap-2">
+            <Input
+              value={customDraft}
+              placeholder="输入模型名（如 deepseek-chat）"
+              className="font-mono text-xs"
+              onChange={(e) => setCustomDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customDraft.trim()) persist(binding.provider_id, customDraft.trim());
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={saving || !customDraft.trim() || customDraft.trim() === binding.model}
+              onClick={() => persist(binding.provider_id, customDraft.trim())}
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "保存"}
+            </Button>
+          </div>
+        )}
         {currentProvider && (
           <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">{currentProvider.base_url}</div>
         )}
-      </TableCell>
-      <TableCell className="align-top">
-        <Input value={model} onChange={(e) => setModel(e.target.value)} className="font-mono" />
-      </TableCell>
-      <TableCell className="text-right align-top">
-        <Button size="sm" onClick={save} disabled={!dirty || saving}>
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "保存"}
-        </Button>
       </TableCell>
     </TableRow>
   );
