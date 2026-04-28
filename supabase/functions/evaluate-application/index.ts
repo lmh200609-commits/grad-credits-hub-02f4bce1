@@ -325,26 +325,24 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     const MAX_WEBSEARCH = 2;
     const MAX_ROUNDS = 4;
 
+    let aiCfg;
+    try {
+      aiCfg = await getAiConfig("evaluate-application");
+    } catch (e) {
+      const msg = (e as Error).message;
+      await writeFailure(admin, application_id, msg);
+      return json({ error: msg, retryable: true }, 500);
+    }
+
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const forceSubmit = websearchCount >= MAX_WEBSEARCH || round === MAX_ROUNDS - 1;
-      const aiResp = await fetch(
-        "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${Deno.env.get("DASHSCOPE_API_KEY")}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "qwen3-vl-32b-thinking",
-            messages,
-            tools,
-            tool_choice: forceSubmit
-              ? { type: "function", function: { name: "submit_evaluation" } }
-              : "auto",
-          }),
-        },
-      );
+      const aiResp = await callChatCompletions(aiCfg, {
+        messages,
+        tools,
+        tool_choice: forceSubmit
+          ? { type: "function", function: { name: "submit_evaluation" } }
+          : "auto",
+      });
       if (!aiResp.ok) {
         const t = await aiResp.text();
         console.error("Qwen gateway error:", aiResp.status, t);
