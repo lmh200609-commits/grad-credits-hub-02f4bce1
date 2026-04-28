@@ -222,6 +222,25 @@ const AiModelsPage = () => {
                 <b>当前回退渠道：</b>{fallback.providerName} · 走 <code className="font-mono">{fallback.envKey}</code> · {fallback.baseUrl}
               </div>
             )}
+            <div className="mt-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (!confirm("将根据环境变量 Key 创建/更新 DashScope + DeepSeek 提供商，并把 7 个功能按默认清单（evaluate→qwen3-vl-32b-thinking, parse→qwen-plus, explain/import→qwen-turbo, staff/ask/polish→deepseek-chat）一键绑定。是否继续？")) return;
+                  try {
+                    const r = await callAdmin("restore_defaults");
+                    toast({ title: "已按默认清单恢复绑定" });
+                    console.log("restore_defaults:", r);
+                    load();
+                  } catch (e) {
+                    toast({ title: "恢复失败", description: (e as Error).message, variant: "destructive" });
+                  }
+                }}
+              >
+                一键恢复默认模型绑定
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
