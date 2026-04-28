@@ -11,11 +11,21 @@ type Filter = { event?: "INSERT" | "UPDATE" | "DELETE" | "*"; filter?: string };
  * - On CHANNEL_ERROR / TIMED_OUT / CLOSED, falls back to polling every
  *   `pollMs` (default 10s) AND tries to reconnect with exponential backoff
  *   (2s → 4s → 8s, capped at 30s).
- * - Calls to `onChange` are debounced by 300ms to coalesce bursts of events.
+ * - Re-entrancy guard: if `onChange` returns a Promise and another event
+ *   arrives while it is still running, the hook coalesces all intermediate
+ *   events into a SINGLE follow-up call after the in-flight one resolves.
+ *   This guarantees:
+ *     • the same DB change never triggers two parallel reloads
+ *     • events that arrive during a slow reload are not lost
+ *   A small 50ms leading-edge debounce still groups true bursts (e.g.
+ *   trigger cascades that fire several rows in the same tick).
+ * - On successful (re)connect we ALWAYS issue one reload to catch up on
+ *   anything that happened while the channel was down (Realtime does not
+ *   replay missed events).
  */
 export function useRealtimeTable<T extends Record<string, unknown>>(
   table: string,
-  onChange: (payload: RealtimePostgresChangesPayload<T>) => void,
+  onChange: (payload: RealtimePostgresChangesPayload<T>) => void | Promise<void>,
   { event = "*", filter }: Filter = {},
   pollMs = 10000,
 ) {
@@ -25,17 +35,56 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
   useEffect(() => {
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let burstTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     let cancelled = false;
     let currentChannel: ReturnType<typeof supabase.channel> | null = null;
 
+    // Re-entrancy guard:
+    //   inFlight   – a reload is currently running
+    //   pending    – at least one event arrived while inFlight; run once more
+    //   lastPayload – payload to hand to the coalesced follow-up call
+    let inFlight = false;
+    let pending = false;
+    let lastPayload: RealtimePostgresChangesPayload<T> | null = null;
+
+    const runOnce = async (payload: RealtimePostgresChangesPayload<T>) => {
+      if (cancelled) return;
+      inFlight = true;
+      try {
+        await cbRef.current(payload);
+      } catch {
+        /* swallow – next event or the polling tick will retry */
+      } finally {
+        inFlight = false;
+        if (pending && !cancelled) {
+          pending = false;
+          const next = lastPayload ?? ({ eventType: "POLL" } as unknown as RealtimePostgresChangesPayload<T>);
+          lastPayload = null;
+          // Fire-and-forget; chained reloads keep the in-flight invariant.
+          void runOnce(next);
+        }
+      }
+    };
+
     const fire = (payload: RealtimePostgresChangesPayload<T>) => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        cbRef.current(payload);
-      }, 300);
+      if (cancelled) return;
+      // Always remember the latest payload so coalesced follow-ups carry it.
+      lastPayload = payload;
+      if (inFlight) {
+        // A reload is running; mark that we need to run again afterwards.
+        pending = true;
+        return;
+      }
+      // Leading-edge micro-debounce so a burst of events in the same tick
+      // (e.g. several rows from one trigger) collapses into one reload.
+      if (burstTimer) return;
+      burstTimer = setTimeout(() => {
+        burstTimer = null;
+        const p = lastPayload ?? payload;
+        lastPayload = null;
+        void runOnce(p);
+      }, 50);
     };
 
     const startPolling = () => {
@@ -77,6 +126,9 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
           if (status === "SUBSCRIBED") {
             attempt = 0;
             stopPolling();
+            // Catch up on anything missed while the channel was down.
+            // (Supabase Realtime does not replay events.)
+            fire({ eventType: "RECONNECT" } as unknown as RealtimePostgresChangesPayload<T>);
           } else if (
             status === "CHANNEL_ERROR" ||
             status === "TIMED_OUT" ||
@@ -94,7 +146,7 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
       cancelled = true;
       stopPolling();
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+      if (burstTimer) { clearTimeout(burstTimer); burstTimer = null; }
       if (currentChannel) {
         try { supabase.removeChannel(currentChannel); } catch { /* ignore */ }
         currentChannel = null;
