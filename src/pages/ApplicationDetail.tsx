@@ -14,9 +14,12 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle, Award } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
+import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
+import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
+import { createPortal } from "react-dom";
 
 type App = {
   id: string;
@@ -63,13 +66,21 @@ const ApplicationDetail = () => {
   const navigate = useNavigate();
   const { user, hasRole } = useAuth();
   const [app, setApp] = useState<App | null>(null);
-  const [student, setStudent] = useState<{ full_name: string | null; student_no: string | null; email: string | null } | null>(null);
+  const [student, setStudent] = useState<{
+    full_name: string | null; student_no: string | null; email: string | null;
+    department?: string | null; major?: string | null; id_card?: string | null;
+    school?: string | null; photo_url?: string | null;
+  } | null>(null);
   const [matchedRule, setMatchedRule] = useState<{ name: string; credit: number } | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [credit, setCredit] = useState<number>(0);
   const [note, setNote] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [libraryRefs, setLibraryRefs] = useState<KeywordRef[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [certData, setCertData] = useState<CertificateData | null>(null);
+  const certRef = useState<HTMLDivElement | null>(null);
+  const [certEl, setCertEl] = useState<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -78,7 +89,11 @@ const ApplicationDetail = () => {
     setApp(a as App);
     setCredit(Number((a as App).ai_suggested_credit ?? (a as App).final_credit ?? 0));
     const [s, r, rv] = await Promise.all([
-      supabase.from("profiles").select("full_name, student_no, email").eq("user_id", (a as App).student_id).single(),
+      supabase
+        .from("profiles")
+        .select("full_name, student_no, email, department, major, id_card, school, photo_url")
+        .eq("user_id", (a as App).student_id)
+        .single(),
       (a as App).ai_matched_rule_id
         ? supabase.from("rules").select("name, credit").eq("id", (a as App).ai_matched_rule_id).single()
         : Promise.resolve({ data: null }),
