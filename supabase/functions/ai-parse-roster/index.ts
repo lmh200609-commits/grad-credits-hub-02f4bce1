@@ -45,8 +45,14 @@ Deno.serve(async (req) => {
       return json({ error: "rows 不能为空" }, 400);
     }
 
-    const apiKey = Deno.env.get("DASHSCOPE_API_KEY");
-    if (!apiKey) return json({ error: "DASHSCOPE_API_KEY 未配置（通义千问）" }, 500);
+    let aiCfg;
+    try {
+      aiCfg = await getAiConfig("ai-parse-roster");
+    } catch (e) {
+      return json({ error: (e as Error).message }, 500);
+    }
+    const apiKey = aiCfg.apiKey;
+    const aiUrl = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
     // Send only a small sample to AI to get the COLUMN MAPPING (not parsed rows)
     // Hard cap sample at 8KB to prevent prompt injection / over-billing.
@@ -96,14 +102,14 @@ Deno.serve(async (req) => {
     let lastErr = "";
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        aiResp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+        aiResp = await fetch(aiUrl, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "qwen-plus",
+            model: aiCfg.model,
             messages: [
               { role: "system", content: sysPrompt },
               { role: "user", content: `共 ${rawRows.length} 行，样本：\n${sample}` },
