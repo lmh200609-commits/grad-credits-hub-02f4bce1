@@ -194,7 +194,18 @@ const AdminDashboard = () => {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={passPie} dataKey="value" nameKey="name" outerRadius={80} label>
+                    <Pie
+                      data={passPie}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={80}
+                      label
+                      className="cursor-pointer"
+                      onClick={(d: any) => {
+                        const filter = d?.name === "合格" ? "pass" : "fail";
+                        navigate(`/admin/credits?passFilter=${filter}`);
+                      }}
+                    >
                       {passPie.map((_, i) => <Cell key={i} fill={PASS_COLORS[i]} />)}
                     </Pie>
                     <Tooltip />
