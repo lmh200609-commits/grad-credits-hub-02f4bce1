@@ -14,9 +14,12 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle, Award } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
+import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
+import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
+import { createPortal } from "react-dom";
 
 type App = {
   id: string;
@@ -44,6 +47,8 @@ type App = {
   ai_detected_level?: string | null;
   ai_detected_identity?: string | null;
   ai_override_note?: string | null;
+  certificate_no?: string | null;
+  certificate_issued_at?: string | null;
 };
 type Review = {
   id: string; action: string; decision: string; credit: number | null;
@@ -63,13 +68,19 @@ const ApplicationDetail = () => {
   const navigate = useNavigate();
   const { user, hasRole } = useAuth();
   const [app, setApp] = useState<App | null>(null);
-  const [student, setStudent] = useState<{ full_name: string | null; student_no: string | null; email: string | null } | null>(null);
+  const [student, setStudent] = useState<{
+    full_name: string | null; student_no: string | null; email: string | null;
+    department?: string | null; major?: string | null; id_card?: string | null;
+    school?: string | null; photo_url?: string | null;
+  } | null>(null);
   const [matchedRule, setMatchedRule] = useState<{ name: string; credit: number } | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [credit, setCredit] = useState<number>(0);
   const [note, setNote] = useState("");
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [libraryRefs, setLibraryRefs] = useState<KeywordRef[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [certData, setCertData] = useState<CertificateData | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -78,7 +89,11 @@ const ApplicationDetail = () => {
     setApp(a as App);
     setCredit(Number((a as App).ai_suggested_credit ?? (a as App).final_credit ?? 0));
     const [s, r, rv] = await Promise.all([
-      supabase.from("profiles").select("full_name, student_no, email").eq("user_id", (a as App).student_id).single(),
+      supabase
+        .from("profiles")
+        .select("full_name, student_no, email, department, major, id_card, school, photo_url")
+        .eq("user_id", (a as App).student_id)
+        .single(),
       (a as App).ai_matched_rule_id
         ? supabase.from("rules").select("name, credit").eq("id", (a as App).ai_matched_rule_id).single()
         : Promise.resolve({ data: null }),
@@ -375,6 +390,84 @@ const ApplicationDetail = () => {
 
   if (!app) return <AppLayout><p>加载中…</p></AppLayout>;
 
+  const isApproved = app.status === "approved" || app.status === "auto_approved";
+  const canExportCert =
+    isApproved && (app.student_id === user?.id || hasRole("teacher") || hasRole("admin"));
+
+  const handleExportCertificate = async () => {
+    if (!app || !student) return;
+    if (!student.full_name || !student.student_no) {
+      return toast({
+        title: "学生档案不完整",
+        description: "请先在「我的档案」中补全姓名和学号",
+        variant: "destructive",
+      });
+    }
+    setExporting(true);
+    try {
+      // 生成或读取证书编号
+      const { data: certNo, error: ge } = await supabase.rpc("gen_certificate_no", { _app_id: app.id });
+      if (ge || !certNo) {
+        throw new Error(ge?.message ?? "证书编号生成失败");
+      }
+
+      // 学生照片转 dataURL（避免跨域污染）
+      let photoDataUrl: string | null = null;
+      if (student.photo_url) {
+        const { data: signed } = await supabase.storage
+          .from("application-files")
+          .createSignedUrl(student.photo_url, 3600);
+        if (signed?.signedUrl) photoDataUrl = await urlToDataUrl(signed.signedUrl);
+      }
+
+      const verifyUrl = `${window.location.origin}/verify/${certNo}`;
+      const qrDataUrl = await makeQrDataUrl(verifyUrl);
+
+      const projectTitle =
+        (app.custom_keywords?.[0]) ||
+        (app.selected_keywords?.[0]) ||
+        app.ai_detected_project ||
+        app.ai_detected_achievement ||
+        (app.description || "").slice(0, 24) ||
+        "—";
+
+      const data: CertificateData = {
+        school: student.school || "长春财经学院",
+        studentName: student.full_name!,
+        studentNo: student.student_no!,
+        department: student.department || "—",
+        major: student.major || null,
+        idCard: student.id_card || null,
+        photoDataUrl,
+        certificateNo: String(certNo),
+        credit: Number(app.final_credit ?? app.ai_suggested_credit ?? 0),
+        projectTitle,
+        description: app.description || "",
+        reviewerName: null,
+        issuedAt: new Date().toISOString(),
+        qrDataUrl,
+      };
+
+      setCertData(data);
+      // 等下一帧让 Portal 渲染
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      await new Promise((r) => setTimeout(r, 50));
+      const node = document.getElementById("__cert_render__") as HTMLDivElement | null;
+      if (!node) throw new Error("证书渲染失败");
+      await exportElementToPdf(
+        node,
+        `学分认定证明_${student.student_no}_${certNo}.pdf`,
+      );
+      toast({ title: "证明已导出", description: `证书编号：${certNo}` });
+      load();
+    } catch (e: any) {
+      toast({ title: "导出失败", description: e?.message ?? "未知错误", variant: "destructive" });
+    } finally {
+      setExporting(false);
+      setCertData(null);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-4xl space-y-4">
@@ -390,7 +483,25 @@ const ApplicationDetail = () => {
               ⚠ 第 {reReviewIndex} 次人工复核（学生再次申诉）
             </Badge>
           )}
+          {canExportCert && (
+            <Button
+              size="sm"
+              variant="default"
+              className="ml-auto"
+              onClick={handleExportCertificate}
+              disabled={exporting}
+            >
+              <Award className="mr-1 h-4 w-4" />
+              {exporting ? "正在生成…" : (app.certificate_no ? "重新导出学分证明" : "导出学分证明")}
+            </Button>
+          )}
         </div>
+        {app.certificate_no && (
+          <div className="text-xs text-muted-foreground">
+            证书编号：<span className="font-mono">{app.certificate_no}</span>
+            {app.certificate_issued_at && <> · 首次签发：{new Date(app.certificate_issued_at).toLocaleString()}</>}
+          </div>
+        )}
 
         <Card>
           <CardHeader>
@@ -713,6 +824,15 @@ const ApplicationDetail = () => {
           </CardContent>
         </Card>
       </div>
+      {certData && createPortal(
+        <div
+          id="__cert_render__"
+          style={{ position: "fixed", left: -99999, top: 0, zIndex: -1 }}
+        >
+          <CertificatePreview data={certData} />
+        </div>,
+        document.body,
+      )}
     </AppLayout>
   );
 };

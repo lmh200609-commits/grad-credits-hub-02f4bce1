@@ -176,6 +176,8 @@ export type Database = {
           ai_reasoning: string | null
           ai_reasoning_short: string | null
           ai_suggested_credit: number | null
+          certificate_issued_at: string | null
+          certificate_no: string | null
           created_at: string
           custom_keywords: string[]
           description: string
@@ -218,6 +220,8 @@ export type Database = {
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
+          certificate_issued_at?: string | null
+          certificate_no?: string | null
           created_at?: string
           custom_keywords?: string[]
           description: string
@@ -260,6 +264,8 @@ export type Database = {
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
+          certificate_issued_at?: string | null
+          certificate_no?: string | null
           created_at?: string
           custom_keywords?: string[]
           description?: string
@@ -608,7 +614,9 @@ export type Database = {
           id_card: string | null
           major: string | null
           phone: string | null
+          photo_url: string | null
           political_status: string | null
+          school: string | null
           student_no: string | null
           updated_at: string
           user_id: string
@@ -629,7 +637,9 @@ export type Database = {
           id_card?: string | null
           major?: string | null
           phone?: string | null
+          photo_url?: string | null
           political_status?: string | null
+          school?: string | null
           student_no?: string | null
           updated_at?: string
           user_id: string
@@ -650,7 +660,9 @@ export type Database = {
           id_card?: string | null
           major?: string | null
           phone?: string | null
+          photo_url?: string | null
           political_status?: string | null
+          school?: string | null
           student_no?: string | null
           updated_at?: string
           user_id?: string
@@ -975,6 +987,7 @@ export type Database = {
           merged_count: number
         }[]
       }
+      gen_certificate_no: { Args: { _app_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

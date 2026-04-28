@@ -10,7 +10,7 @@ import AiAssistant from "@/components/AiAssistant";
 import StaffAiAssistant from "@/components/StaffAiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
-  Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags, History, Cpu,
+  Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags, History, Cpu, IdCard,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -43,6 +43,7 @@ const studentItems: Item[] = [
   { title: "工作台", url: "/", icon: LayoutDashboard },
   { title: "申请学分", url: "/apply", icon: Send },
   { title: "我的申请", url: "/my-applications", icon: FileText },
+  { title: "我的档案", url: "/profile", icon: IdCard },
 ];
 
 // Extra routes (detail pages, shared routes) for header title lookup only
