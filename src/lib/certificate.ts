@@ -23,10 +23,11 @@ export async function makeQrDataUrl(text: string): Promise<string> {
   return await QRCode.toDataURL(text, { width: 256, margin: 1 });
 }
 
-/** 把指定 DOM 节点导出为 A4 横版 PDF */
+/** 把指定 DOM 节点导出为 A4 PDF（横版或竖版） */
 export async function exportElementToPdf(
   el: HTMLElement,
   filename: string,
+  orientation: "landscape" | "portrait" = "landscape",
 ): Promise<void> {
   const canvas = await html2canvas(el, {
     scale: 2,
@@ -35,7 +36,7 @@ export async function exportElementToPdf(
     logging: false,
   });
   const img = canvas.toDataURL("image/jpeg", 0.95);
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pdf = new jsPDF({ orientation, unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   // 等比缩放并居中
