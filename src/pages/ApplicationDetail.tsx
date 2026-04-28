@@ -501,11 +501,11 @@ const ApplicationDetail = () => {
               size="sm"
               variant="default"
               className="ml-auto"
-              onClick={handleExportCertificate}
-              disabled={exporting}
+              onClick={openCertificatePreview}
+              disabled={preparing || exporting}
             >
               <Award className="mr-1 h-4 w-4" />
-              {exporting ? "正在生成…" : (app.certificate_no ? "重新导出学分证明" : "导出学分证明")}
+              {preparing ? "准备预览…" : (app.certificate_no ? "重新导出学分证明" : "导出学分证明")}
             </Button>
           )}
         </div>
