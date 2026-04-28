@@ -19,12 +19,18 @@ import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Pencil, PlugZap, CheckCircle2, XCircle, Loader2, Cpu } from "lucide-react";
 
 const VENDOR_PRESETS = [
-  { vendor: "deepseek", label: "DeepSeek 深度求索", baseUrl: "https://api.deepseek.com/v1", sample: "deepseek-chat" },
-  { vendor: "qwen",     label: "阿里通义千问 DashScope", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", sample: "qwen-plus" },
-  { vendor: "zhipu",    label: "智谱 GLM",                 baseUrl: "https://open.bigmodel.cn/api/paas/v4", sample: "glm-4-plus" },
-  { vendor: "kimi",     label: "月之暗面 Kimi",            baseUrl: "https://api.moonshot.cn/v1", sample: "moonshot-v1-8k" },
-  { vendor: "wenxin",   label: "百度文心 千帆",            baseUrl: "https://qianfan.baidubce.com/v2", sample: "ernie-4.5-turbo-128k" },
-  { vendor: "custom",   label: "自定义 OpenAI 兼容",       baseUrl: "", sample: "" },
+  { vendor: "deepseek", label: "DeepSeek 深度求索", baseUrl: "https://api.deepseek.com/v1", sample: "deepseek-chat",
+    models: ["deepseek-chat", "deepseek-reasoner"] },
+  { vendor: "qwen",     label: "阿里通义千问 DashScope", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", sample: "qwen-plus",
+    models: ["qwen-plus", "qwen-turbo", "qwen-max", "qwen3-vl-32b-thinking"] },
+  { vendor: "zhipu",    label: "智谱 GLM",                 baseUrl: "https://open.bigmodel.cn/api/paas/v4", sample: "glm-4-plus",
+    models: ["glm-4-plus", "glm-4-flash", "glm-4-air"] },
+  { vendor: "kimi",     label: "月之暗面 Kimi",            baseUrl: "https://api.moonshot.cn/v1", sample: "moonshot-v1-8k",
+    models: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"] },
+  { vendor: "wenxin",   label: "百度文心 千帆",            baseUrl: "https://qianfan.baidubce.com/v2", sample: "ernie-4.5-turbo-128k",
+    models: ["ernie-4.5-turbo-128k", "ernie-4.0-turbo-8k"] },
+  { vendor: "custom",   label: "自定义 OpenAI 兼容",       baseUrl: "", sample: "",
+    models: [] as string[] },
 ] as const;
 
 const FUNCTION_LABELS: Record<string, { label: string; desc: string }> = {
