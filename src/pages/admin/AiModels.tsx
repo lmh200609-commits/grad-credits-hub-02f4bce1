@@ -256,8 +256,8 @@ const AiModelsPage = () => {
 
 /* ----------------- Binding row ----------------- */
 const BindingRow = ({
-  binding, providers, onSaved,
-}: { binding: Binding; providers: Provider[]; onSaved: () => void }) => {
+  binding, providers, fallback, onSaved,
+}: { binding: Binding; providers: Provider[]; fallback: EnvFallback; onSaved: () => void }) => {
   const [providerId, setProviderId] = useState<string>(binding.provider_id ?? "__none__");
   const [model, setModel] = useState<string>(binding.model);
   const [saving, setSaving] = useState(false);
@@ -288,6 +288,10 @@ const BindingRow = ({
   };
 
   const currentProvider = providers.find((p) => p.id === providerId);
+  const isBound = !!binding.provider_id && !!binding.ai_providers;
+  const activeName = isBound ? binding.ai_providers!.name : (fallback?.providerName ?? "未配置");
+  const activeBase = isBound ? binding.ai_providers!.base_url : (fallback?.baseUrl ?? "—");
+  const activeModel = binding.model || fallback?.defaultModel || "—";
 
   return (
     <TableRow>
@@ -295,6 +299,14 @@ const BindingRow = ({
         <div className="font-medium">{meta.label}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">{meta.desc}</div>
         <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{binding.function_key}</div>
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="flex items-center gap-1">
+          <Badge variant={isBound ? "default" : "secondary"}>{isBound ? "已绑定" : "环境回退"}</Badge>
+          <span className="text-sm font-medium">{activeName}</span>
+        </div>
+        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground" title={activeBase}>{activeBase}</div>
+        <div className="mt-0.5 font-mono text-[11px]">{activeModel}</div>
       </TableCell>
       <TableCell className="min-w-[220px] align-top">
         <Select value={providerId} onValueChange={setProviderId}>
