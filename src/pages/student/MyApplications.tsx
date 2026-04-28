@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import AppLayout from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -41,11 +42,12 @@ const MyApplications = () => {
     setLoading(false);
   }, [user]);
 
-  useEffect(() => { load(); }, [load]);
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
 
   useRealtimeTable(
     "applications",
-    load,
+    reload,
     { filter: user ? `student_id=eq.${user.id}` : undefined },
   );
 

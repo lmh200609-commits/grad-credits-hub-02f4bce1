@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,7 +56,6 @@ const SubmissionRecords = () => {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
-  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sheet state
   const [openIdx, setOpenIdx] = useState<number | null>(null);
@@ -128,11 +128,9 @@ const SubmissionRecords = () => {
     setLoading(false);
   }, [debounced, page]);
 
-  useEffect(() => { load(); }, [load]);
-  useRealtimeTable("applications", () => {
-    if (reloadTimer.current) clearTimeout(reloadTimer.current);
-    reloadTimer.current = setTimeout(() => load(), 800);
-  });
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
+  useRealtimeTable("applications", reload);
 
   const current = openIdx != null ? rows[openIdx] : null;
 

@@ -4,6 +4,7 @@ import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -63,10 +64,11 @@ const AdminDashboard = () => {
     setDeptStats(Array.from(deptMap, ([name, value]) => ({ name, value })));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
 
-  useRealtimeTable("applications", load);
-  useRealtimeTable("profiles", load);
+  useRealtimeTable("applications", reload);
+  useRealtimeTable("profiles", reload);
 
   const stats = useMemo(() => {
     const approved = apps.filter((a) => APPROVED.includes(a.status));

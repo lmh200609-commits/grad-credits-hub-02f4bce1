@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import AppLayout from "@/components/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -135,9 +136,10 @@ const ApplicationDetail = () => {
       setLibraryRefs([]);
     }
   }, [id]);
-  useEffect(() => { load(); }, [load]);
-  useRealtimeTable("applications", load, { filter: id ? `id=eq.${id}` : undefined });
-  useRealtimeTable("application_reviews", load, { filter: id ? `application_id=eq.${id}` : undefined });
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
+  useRealtimeTable("applications", reload, { filter: id ? `id=eq.${id}` : undefined });
+  useRealtimeTable("application_reviews", reload, { filter: id ? `application_id=eq.${id}` : undefined });
 
   const isReviewer = !!app && (hasRole("admin") || hasRole("teacher"));
 

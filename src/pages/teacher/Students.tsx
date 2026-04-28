@@ -4,6 +4,7 @@ import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSerializedReload } from "@/hooks/useSerializedReload";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -66,10 +67,11 @@ const Students = () => {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const reload = useSerializedReload(load);
+  useEffect(() => { reload(); }, [reload, load]);
 
-  useRealtimeTable("profiles", load);
-  useRealtimeTable("applications", load);
+  useRealtimeTable("profiles", reload);
+  useRealtimeTable("applications", reload);
 
   const departments = useMemo(
     () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(),
