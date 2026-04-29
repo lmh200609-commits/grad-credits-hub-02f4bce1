@@ -173,16 +173,14 @@ Deno.serve(async (req) => {
       const rawPwd = get("password");
       const studentNo = get("student_no") ?? "";
       const phoneRaw = get("phone") ?? "";
-      // Default rule: 学号 + 电话号码后六位；不足或缺失时左侧补 0 至 6 位
+      // 统一密码规则：学号 + 电话号码后六位；不足或缺失时左侧补 0 至 6 位
       const phoneDigits = phoneRaw.replace(/\D+/g, "");
       const last6 = phoneDigits.length >= 6
         ? phoneDigits.slice(-6)
         : phoneDigits.padStart(6, "0");
-      const computedDefault = studentNo ? `${studentNo}${last6}` : defaultPassword;
-      // Priority: explicit valid password column > computed (学号+电话后6) > global defaultPassword
-      const password = rawPwd && rawPwd.length >= 6
-        ? rawPwd
-        : (computedDefault.length >= 6 ? computedDefault : defaultPassword);
+      const computed = `${studentNo}${last6}`;
+      // 优先级：表格中显式填写的密码列（≥6 位）> 计算值
+      const password = rawPwd && rawPwd.length >= 6 ? rawPwd : computed;
 
       return {
         student_no: get("student_no") ?? "",
