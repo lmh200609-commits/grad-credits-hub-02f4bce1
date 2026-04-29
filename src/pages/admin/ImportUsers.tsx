@@ -34,8 +34,76 @@ type ChatMsg =
   | { kind: "ai"; text: string }
   | { kind: "user"; text: string }
   | { kind: "file"; name: string; rowCount: number }
-  | { kind: "preview"; rows: ParsedRow[]; notes?: string }
+  | { kind: "preview"; rows: ParsedRow[]; notes?: string; rowErrors: RowErrors[] }
   | { kind: "result"; ok: boolean; text: string };
+
+// Per-row field-level validation errors. Map: field name -> error message.
+type RowErrors = Record<string, string>;
+
+const CURRENT_YEAR = new Date().getFullYear();
+
+/** Validate a single parsed row. Returns an error map (empty if all good). */
+const validateRow = (r: ParsedRow): RowErrors => {
+  const e: RowErrors = {};
+
+  if (!r.student_no?.trim()) e.student_no = "学号不能为空";
+  if (!r.full_name?.trim()) e.full_name = "姓名不能为空";
+
+  if (r.gender && !["男", "女"].includes(r.gender.trim())) {
+    e.gender = "性别只能是「男」或「女」";
+  }
+
+  if (r.birth_date) {
+    const m = r.birth_date.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) {
+      e.birth_date = "出生日期格式应为 YYYY-MM-DD";
+    } else {
+      const [_, ys, ms, ds] = m;
+      const y = +ys, mo = +ms, d = +ds;
+      const dt = new Date(`${ys}-${ms}-${ds}T00:00:00`);
+      if (
+        Number.isNaN(dt.getTime()) ||
+        dt.getUTCFullYear() !== y ||
+        dt.getUTCMonth() + 1 !== mo ||
+        dt.getUTCDate() !== d ||
+        y < 1900 ||
+        y > CURRENT_YEAR
+      ) {
+        e.birth_date = "出生日期不是合法日期";
+      }
+    }
+  }
+
+  if (r.enrollment_year != null) {
+    const y = r.enrollment_year;
+    if (!Number.isInteger(y) || y < 1990 || y > CURRENT_YEAR + 1) {
+      e.enrollment_year = `年级应在 1990 - ${CURRENT_YEAR + 1} 之间`;
+    }
+  }
+
+  if (r.phone) {
+    const digits = r.phone.replace(/\D+/g, "");
+    if (digits.length < 7 || digits.length > 15) {
+      e.phone = "手机号位数异常（7-15 位数字）";
+    }
+  }
+
+  if (r.bed_no) {
+    const bed = r.bed_no.trim();
+    if (!/^[A-Za-z0-9\-]{1,8}$/.test(bed)) {
+      e.bed_no = "床号仅支持字母/数字/横线，最多 8 位";
+    }
+  }
+
+  if (r.apartment_no && r.apartment_no.length > 20) e.apartment_no = "公寓号过长";
+  if (r.dorm_room && r.dorm_room.length > 20) e.dorm_room = "宿舍号过长";
+
+  if (!r.password || r.password.length < 6) {
+    e.password = "密码不足 6 位（请补全学号或电话）";
+  }
+
+  return e;
+};
 
 const ROLE_LABEL: Record<string, string> = { admin: "管理员", teacher: "教师", student: "学生" };
 
@@ -162,12 +230,33 @@ const ImportUsers = () => {
         return;
       }
 
+      // Per-row format validation BEFORE allowing import.
+      const rowErrors = rows.map(validateRow);
+      const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
+
       setPendingRows(rows);
-      push({ kind: "preview", rows, notes: data?.notes });
-      push({
-        kind: "ai",
-        text: `识别完成 ✅ 共 ${rows.length} 个账号待创建。请核对预览，确认无误后点击下方 "确认导入"。`,
-      });
+      push({ kind: "preview", rows, notes: data?.notes, rowErrors });
+      if (badCount > 0) {
+        // Collect first few sample errors for the chat hint
+        const samples = rowErrors
+          .map((e, i) => ({ i, e }))
+          .filter((x) => Object.keys(x.e).length > 0)
+          .slice(0, 5)
+          .map((x) =>
+            `第 ${x.i + 2} 行（${rows[x.i].student_no || "无学号"}）：${Object.values(x.e).join("；")}`,
+          )
+          .join("\n");
+        push({
+          kind: "ai",
+          text:
+            `识别完成 ⚠️ 共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传，或修改后再确认导入。\n\n示例：\n${samples}`,
+        });
+      } else {
+        push({
+          kind: "ai",
+          text: `识别完成 ✅ 共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方 "确认导入"。`,
+        });
+      }
     } catch (e) {
       push({ kind: "ai", text: `❌ 读取文件失败：${(e as Error).message}` });
     } finally {
@@ -180,6 +269,21 @@ const ImportUsers = () => {
 
   const confirmImport = async () => {
     if (!pendingRows) return;
+    // Block import if any pending row failed format validation.
+    const errs = pendingRows.map(validateRow);
+    const badCount = errs.filter((e) => Object.keys(e).length > 0).length;
+    if (badCount > 0) {
+      toast({
+        title: "无法导入",
+        description: `仍有 ${badCount} 行格式异常，请修正源表后重新上传`,
+        variant: "destructive",
+      });
+      push({
+        kind: "ai",
+        text: `❌ 已阻止导入：仍有 ${badCount} 行字段格式异常（红色标注）。请修正源表后重新上传。`,
+      });
+      return;
+    }
     setLoading(true);
     push({ kind: "user", text: "确认导入" });
 
@@ -389,6 +493,10 @@ const MessageBubble = ({
   }
 
   if (msg.kind === "preview") {
+    const rowErrors = msg.rowErrors ?? [];
+    const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
+    const cellCls = (i: number, field: string) =>
+      rowErrors[i]?.[field] ? "bg-destructive/15 text-destructive" : "";
     return (
       <div className="flex gap-2">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground">
@@ -398,10 +506,17 @@ const MessageBubble = ({
           {msg.notes && (
             <p className="text-xs italic text-muted-foreground">AI 备注：{msg.notes}</p>
           )}
+          {badCount > 0 && (
+            <div className="flex items-center gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <AlertCircle className="h-4 w-4" />
+              <span>共 {badCount} 行存在字段格式异常（红色高亮），请修正源表后重新上传</span>
+            </div>
+          )}
           <div className="max-h-72 overflow-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">行号</TableHead>
                   <TableHead>学号/工号</TableHead>
                   <TableHead>姓名</TableHead>
                   <TableHead>角色</TableHead>
@@ -421,28 +536,49 @@ const MessageBubble = ({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {msg.rows.slice(0, 50).map((r, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono text-xs">{r.student_no}</TableCell>
-                    <TableCell>{r.full_name}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{ROLE_LABEL[r.role]}</Badge>
-                    </TableCell>
-                    <TableCell>{r.department ?? "—"}</TableCell>
-                    <TableCell>{r.major ?? "—"}</TableCell>
-                    <TableCell>{r.class_name ?? "—"}</TableCell>
-                    <TableCell>{r.enrollment_year ?? "—"}</TableCell>
-                    <TableCell>{r.gender ?? "—"}</TableCell>
-                    <TableCell>{r.ethnicity ?? "—"}</TableCell>
-                    <TableCell>{r.political_status ?? "—"}</TableCell>
-                    <TableCell>{r.birth_date ?? "—"}</TableCell>
-                    <TableCell>{r.advisor ?? "—"}</TableCell>
-                    <TableCell>{r.phone ?? "—"}</TableCell>
-                    <TableCell>{r.apartment_no ?? "—"}</TableCell>
-                    <TableCell>{r.dorm_room ?? "—"}</TableCell>
-                    <TableCell>{r.bed_no ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
+                {msg.rows.slice(0, 50).map((r, i) => {
+                  const errs = rowErrors[i] ?? {};
+                  const hasErr = Object.keys(errs).length > 0;
+                  const errSummary = Object.entries(errs)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join("\n");
+                  return (
+                    <TableRow
+                      key={i}
+                      className={hasErr ? "bg-destructive/5 hover:bg-destructive/10" : undefined}
+                      title={hasErr ? errSummary : undefined}
+                    >
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {hasErr ? (
+                          <span className="inline-flex items-center gap-1 text-destructive">
+                            <AlertCircle className="h-3 w-3" />
+                            {i + 2}
+                          </span>
+                        ) : (
+                          i + 2
+                        )}
+                      </TableCell>
+                      <TableCell className={`font-mono text-xs ${cellCls(i, "student_no")}`}>{r.student_no}</TableCell>
+                      <TableCell className={cellCls(i, "full_name")}>{r.full_name}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{ROLE_LABEL[r.role]}</Badge>
+                      </TableCell>
+                      <TableCell>{r.department ?? "—"}</TableCell>
+                      <TableCell>{r.major ?? "—"}</TableCell>
+                      <TableCell>{r.class_name ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "enrollment_year")}>{r.enrollment_year ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "gender")}>{r.gender ?? "—"}</TableCell>
+                      <TableCell>{r.ethnicity ?? "—"}</TableCell>
+                      <TableCell>{r.political_status ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "birth_date")}>{r.birth_date ?? "—"}</TableCell>
+                      <TableCell>{r.advisor ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "phone")}>{r.phone ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "apartment_no")}>{r.apartment_no ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "dorm_room")}>{r.dorm_room ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "bed_no")}>{r.bed_no ?? "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             {msg.rows.length > 50 && (
@@ -451,9 +587,14 @@ const MessageBubble = ({
               </p>
             )}
           </div>
-          <div className="flex justify-end">
-            <Button onClick={onConfirm} disabled={loading} size="sm">
-              ✅ 确认导入 {msg.rows.length} 个账号
+          <div className="flex items-center justify-end gap-3">
+            {badCount > 0 && (
+              <span className="text-xs text-destructive">
+                {badCount} 行格式异常，无法导入
+              </span>
+            )}
+            <Button onClick={onConfirm} disabled={loading || badCount > 0} size="sm">
+              ✅ 确认导入 {msg.rows.length - badCount} 个账号
             </Button>
           </div>
         </div>
