@@ -1,75 +1,51 @@
-本轮按你的确认执行三件事，**学生名册不在本轮处理**（你之后在 `/admin/import` 自己上传 Excel）。
+## 问题诊断（已通过日志和数据库验证）
 
-## 一、本轮要做的事
+我查询了数据库和 Edge Function 调用日志，确认到关键事实：
 
-### 1. 清空业务数据（不可恢复）
-清空以下表的全部行：
-- `applications`（学分申请）
-- `application_reviews`（评审记录）
-- `submission_records`（提交流水）
-- `audit_logs`（审计日志）
+- `audit_logs` 中 **没有任何一条 `import_users` 记录**。
+- `profiles` 表近 2 小时内 **没有新增任何账号**（仅有之前的 3 个管理员账号）。
+- Edge Function 调用日志中 **只调用过 `import-assistant-chat`（聊天问答）**，**从未调用过 `ai-parse-roster`（解析）和 `import-users`（写入）**。
 
-保留：`rules`、`rule_library`、`keywords`、`cases`、`certificate_types`、`ai_providers`、`ai_function_bindings`、当前你正在登录的管理员账号。
+**根本原因**：你只在聊天框里和 AI 说话（聊天问答），并没有点击输入框左侧的 📎 回形针按钮上传 Excel/CSV 文件。当前的"AI 名册导入助手"是这样工作的：
 
-### 2. 删除所有非管理员账号
-- 查出所有 `user_roles.role IN ('student','teacher')` 的 `user_id`
-- 同时删除 `auth.users` 行（连带触发 profile/role 清理）
-- 删除孤儿 profile（`profiles` 表里在 `user_roles` 没有对应行的）
-- 这一步会一并干掉 dev-seed 创建的 `2024001 / T001 / S2024xxx` 等测试账号，以及 `__perftest__` 性能测试账号
-
-### 3. 新增一个新管理员账号
-- 账号：`A` + 8 位随机数字，例如 `A47390215`
-- 邮箱：`A47390215@admin.local`（前端登录时输入账号即可）
-- 密码：随机 12 位强密码（含大小写字母 + 数字，去掉易混淆字符 0/O/1/l）
-- 在 `user_roles` 写入 `admin` 角色
-- **会在聊天里完整展示账号 + 密码一次**，请立即记下来；之后系统不再保存明文密码
-
-### 4. 新建一个一次性 Edge Function `admin-purge-and-bootstrap`
-专门用于本次清理，调用方为当前登录的 admin。完成后保留该函数（管理员后续若再次需要重置整个环境也能用），但写入清晰的"会清空全部业务数据"警告。
-
-请求体：
-```json
-{ "confirm": "PURGE", "create_new_admin": true }
-```
-必须传 `confirm: "PURGE"` 才会执行；否则返回 400。
-
-返回：
-```json
-{
-  "deleted_applications": 123,
-  "deleted_reviews": 45,
-  "deleted_submission_records": 67,
-  "deleted_audit_logs": 12,
-  "deleted_users": 38,
-  "new_admin": { "account": "A47390215", "email": "A47390215@admin.local", "password": "xxxxxxxxxxxx" }
-}
+```text
+┌─────────────────────────────────────┐
+│ 聊天问答（只回答问题，不会真的导入） │ ← 你刚才用的就是这个
+├─────────────────────────────────────┤
+│ 📎 上传文件 → AI 解析 → 预览 →      │ ← 真正导入必须走这条路
+│   点击「确认导入」→ 写入数据库       │
+└─────────────────────────────────────┘
 ```
 
-### 5. 触发执行
-我会在 Edge Function 部署完成后，用 `supabase--curl_edge_functions` 带你当前登录态调用一次，把返回的新管理员账号密码贴回聊天给你。
+所以"管理员/教师端没出现新数据"和"没看到成功提示"是同一个原因：**根本没有发起导入请求**。
 
-## 二、密码规则（用于之后你上传名册时）
-你已确认：默认密码 = `学号 + 电话号码后六位`，无电话或不足 6 位时 → `学号 + 000000` 补齐。
+## 修复方案
 
-这个规则需要改 `supabase/functions/ai-parse-roster/index.ts`（目前它对 password 列只做"≥6 位才用，否则取默认密码"），新增逻辑：
-- 当导入页未在表格中提供 password 列时，按 `student_no + (phone 后 6 位 || '000000')` 计算每行密码
-- 在解析返回的预览里展示前几位 + 后 4 位的脱敏密码，避免泄漏
+### 1. 让"如何导入"在 UI 上不可错过
+- 在聊天面板顶部增加一个明显的引导横幅（带 📎 大按钮 + 文案"点这里上传 Excel/CSV 开始导入"），首次进入页面就能看到。
+- 把底部输入区的 📎 按钮做大，加文字标签"上传文件"，不再是只有图标。
+- 当 AI 检测到用户在聊天里说"导入/上传/开始/帮我导入"等关键词，但当前没有 `pendingRows` 时，自动用 AI 消息提示"请点击下方📎上传文件开始"，而不是泛泛回答。
 
-这一步**本轮一并实现**，方便你之后直接上传名册即可，不需要再改代码。
+### 2. 让导入结果更醒目
+- 现有 `kind: "result"` 消息已经用了卡片，但和普通 AI 消息差别不大。改成：
+  - 成功：绿色背景 + ✅ 大图标 + "成功创建 N 个账号" + 列出前 5 个学号 + 一个"去学生管理查看"按钮。
+  - 失败：红色背景 + ❌ + 详细失败行号 + AI 诊断。
+- 导入完成后同时弹 toast（已有）+ 在结果卡里加一个跳转按钮直达 `/admin/users/students`。
 
-## 三、文件改动清单
-- 新建：`supabase/functions/admin-purge-and-bootstrap/index.ts`
-- 编辑：`supabase/functions/ai-parse-roster/index.ts`（按 学号+电话后6位 生成默认密码）
-- 编辑：`supabase/config.toml`（注册新函数 `verify_jwt = false`，函数内自行用 JWT + admin 角色校验）
+### 3. 上传/解析/写入全过程进度可见
+- 上传后立即显示一行"读取中…"`Loader`，AI 解析阶段显示"AI 识别字段中…"，写入阶段按 chunk 显示进度条 `第 1/3 批 完成 200/600`。
+- 整个过程结束（成功或失败）一定 push 一条 `result` 消息（目前路径已有，但失败提前 break 后没有兜底覆盖某些早期错误，会补一个 finally）。
 
-## 四、风险提示
-- 第 1、2 步**不可逆**。执行前我会再次在调用前确认。
-- 你当前登录的管理员账号 **不会被删除**（函数里会跳过 caller_id）。
-- 删除 auth user 不会自动级联到 `applications`，所以执行顺序固定为：先清业务表 → 再删用户。
-- 性能测试相关 `cases.notes='__perftest__'` 不在清理范围（cases 表整体保留）；如要顺带清，请在执行前告诉我。
+### 4. 顺手修一处旧文案
+- `import-assistant-chat` 的 system prompt 里仍写着"默认密码=Abc12345"等过时规则，会让 AI 回答时误导用户。改为统一的"密码 = 学号 + 电话后 6 位"规则说明，并让 AI 在被问"怎么导入"时明确回答"请点击输入框左侧的📎按钮上传 Excel"。
 
-## 五、之后你要做的
-1. 用本轮返回的新管理员账号登录
-2. 进入 **AI 名册导入助手** 页（侧边栏 → 导入用户），上传 Excel
-3. 系统会按 `学号 + 电话后6位` 自动生成每个学生的默认密码
-4. 预览确认 → 点击"确认导入"，2000+ 条名册会分批 200 条创建
+## 涉及文件
+
+- `src/pages/admin/ImportUsers.tsx` — 顶部引导横幅、放大📎按钮、关键词检测、`result` 卡样式 + 跳转按钮、进度兜底。
+- `supabase/functions/import-assistant-chat/index.ts` — 更新 system prompt（密码规则 + 引导用户点📎）；需重新部署。
+
+## 验收标准
+
+- 新管理员第一次进入页面，**不点📎也能立刻知道**"上传文件"在哪。
+- 上传一个 5 行的 Excel 后，依次出现：文件卡 → 解析中 → 预览（带校验） → 点击确认 → 进度 → 醒目的成功结果卡 + toast + 跳转按钮。
+- 跳转到学生管理后，新导入的账号立即可见。
