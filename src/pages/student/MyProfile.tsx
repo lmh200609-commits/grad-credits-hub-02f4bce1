@@ -19,6 +19,15 @@ type Profile = {
   phone: string | null;
   school: string | null;
   photo_url: string | null;
+  gender: string | null;
+  ethnicity: string | null;
+  political_status: string | null;
+  birth_date: string | null;
+  enrollment_year: number | null;
+  advisor: string | null;
+  apartment_no: string | null;
+  dorm_room: string | null;
+  bed_no: string | null;
 };
 
 const MyProfile = () => {
@@ -33,12 +42,14 @@ const MyProfile = () => {
     if (!user) return;
     const { data } = await supabase
       .from("profiles")
-      .select("full_name, student_no, department, major, class_name, id_card, phone, school, photo_url")
+      .select("full_name, student_no, department, major, class_name, id_card, phone, school, photo_url, gender, ethnicity, political_status, birth_date, enrollment_year, advisor, apartment_no, dorm_room, bed_no")
       .eq("user_id", user.id)
       .maybeSingle();
     setP((data as Profile) ?? {
       full_name: "", student_no: "", department: "", major: "", class_name: "",
       id_card: "", phone: "", school: "长春财经学院", photo_url: null,
+      gender: "", ethnicity: "", political_status: "", birth_date: "",
+      enrollment_year: null, advisor: "", apartment_no: "", dorm_room: "", bed_no: "",
     });
     if ((data as Profile)?.photo_url) {
       const { data: signed } = await supabase.storage
@@ -65,6 +76,15 @@ const MyProfile = () => {
         class_name: p.class_name?.trim() || null,
         id_card: p.id_card?.trim() || null,
         phone: p.phone?.trim() || null,
+        gender: p.gender?.trim() || null,
+        ethnicity: p.ethnicity?.trim() || null,
+        political_status: p.political_status?.trim() || null,
+        birth_date: p.birth_date?.trim() || null,
+        enrollment_year: p.enrollment_year ?? null,
+        advisor: p.advisor?.trim() || null,
+        apartment_no: p.apartment_no?.trim() || null,
+        dorm_room: p.dorm_room?.trim() || null,
+        bed_no: p.bed_no?.trim() || null,
       })
       .eq("user_id", user.id);
     setSaving(false);
@@ -146,8 +166,20 @@ const MyProfile = () => {
             <Field label="院系" v={p.department} on={(v) => setP({ ...p, department: v })} />
             <Field label="专业" v={p.major} on={(v) => setP({ ...p, major: v })} />
             <Field label="班级" v={p.class_name} on={(v) => setP({ ...p, class_name: v })} />
+            <Field label="年级（入学年份）" v={p.enrollment_year != null ? String(p.enrollment_year) : ""} on={(v) => {
+              const n = parseInt(v.replace(/\D+/g, ""), 10);
+              setP({ ...p, enrollment_year: Number.isFinite(n) ? n : null });
+            }} maxLength={4} />
+            <Field label="性别" v={p.gender} on={(v) => setP({ ...p, gender: v })} />
+            <Field label="民族" v={p.ethnicity} on={(v) => setP({ ...p, ethnicity: v })} />
+            <Field label="政治面貌" v={p.political_status} on={(v) => setP({ ...p, political_status: v })} />
+            <Field label="出生日期" v={p.birth_date} on={(v) => setP({ ...p, birth_date: v })} placeholder="YYYY-MM-DD" />
+            <Field label="辅导员" v={p.advisor} on={(v) => setP({ ...p, advisor: v })} />
             <Field label="身份证号" v={p.id_card} on={(v) => setP({ ...p, id_card: v })} maxLength={18} />
             <Field label="手机号" v={p.phone} on={(v) => setP({ ...p, phone: v })} />
+            <Field label="公寓号" v={p.apartment_no} on={(v) => setP({ ...p, apartment_no: v })} />
+            <Field label="宿舍号" v={p.dorm_room} on={(v) => setP({ ...p, dorm_room: v })} />
+            <Field label="床号" v={p.bed_no} on={(v) => setP({ ...p, bed_no: v })} />
             <div>
               <Label>学校</Label>
               <Input value={p.school ?? ""} disabled />
@@ -163,11 +195,11 @@ const MyProfile = () => {
 };
 
 const Field = ({
-  label, v, on, maxLength,
-}: { label: string; v: string | null; on: (s: string) => void; maxLength?: number }) => (
+  label, v, on, maxLength, placeholder,
+}: { label: string; v: string | null; on: (s: string) => void; maxLength?: number; placeholder?: string }) => (
   <div>
     <Label>{label}</Label>
-    <Input value={v ?? ""} maxLength={maxLength} onChange={(e) => on(e.target.value)} />
+    <Input value={v ?? ""} maxLength={maxLength} placeholder={placeholder} onChange={(e) => on(e.target.value)} />
   </div>
 );
 
