@@ -91,8 +91,8 @@ const validateRow = (r: ParsedRow): RowErrors => {
 
   if (r.bed_no) {
     const bed = r.bed_no.trim();
-    if (!/^[A-Za-z0-9\-]{1,8}$/.test(bed)) {
-      e.bed_no = "床号仅支持字母/数字/横线，最多 8 位";
+    if (!/^[\u4e00-\u9fa5A-Za-z0-9\-]{1,12}$/.test(bed)) {
+      e.bed_no = "床号仅支持中文/字母/数字/横线，最多 12 位";
     }
   }
 
