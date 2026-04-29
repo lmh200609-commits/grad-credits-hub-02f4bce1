@@ -19,6 +19,15 @@ type Row = {
   major?: string;
   role: "admin" | "teacher" | "student";
   password: string;
+  gender?: string;
+  ethnicity?: string;
+  political_status?: string;
+  birth_date?: string;
+  enrollment_year?: number;
+  advisor?: string;
+  apartment_no?: string;
+  dorm_room?: string;
+  bed_no?: string;
 };
 
 async function createOneUser(
@@ -52,6 +61,15 @@ async function createOneUser(
       department: r.department?.trim() || null,
       major: r.major?.trim() || null,
       email,
+      gender: r.gender?.trim() || null,
+      ethnicity: r.ethnicity?.trim() || null,
+      political_status: r.political_status?.trim() || null,
+      birth_date: r.birth_date?.trim() || null,
+      enrollment_year: typeof r.enrollment_year === "number" ? r.enrollment_year : null,
+      advisor: r.advisor?.trim() || null,
+      apartment_no: r.apartment_no?.trim() || null,
+      dorm_room: r.dorm_room?.trim() || null,
+      bed_no: r.bed_no?.trim() || null,
     })
     .eq("user_id", uid);
   if (pe) throw new Error(`第 ${idx + 2} 行写入档案失败: ${pe.message}`);
