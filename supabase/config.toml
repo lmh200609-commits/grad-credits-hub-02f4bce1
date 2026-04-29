@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.ai-provider-admin]
 verify_jwt = false
+
+[functions.admin-purge-and-bootstrap]
+verify_jwt = false
