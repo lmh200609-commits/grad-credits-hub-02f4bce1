@@ -269,6 +269,21 @@ const ImportUsers = () => {
 
   const confirmImport = async () => {
     if (!pendingRows) return;
+    // Block import if any pending row failed format validation.
+    const errs = pendingRows.map(validateRow);
+    const badCount = errs.filter((e) => Object.keys(e).length > 0).length;
+    if (badCount > 0) {
+      toast({
+        title: "无法导入",
+        description: `仍有 ${badCount} 行格式异常，请修正源表后重新上传`,
+        variant: "destructive",
+      });
+      push({
+        kind: "ai",
+        text: `❌ 已阻止导入：仍有 ${badCount} 行字段格式异常（红色标注）。请修正源表后重新上传。`,
+      });
+      return;
+    }
     setLoading(true);
     push({ kind: "user", text: "确认导入" });
 
