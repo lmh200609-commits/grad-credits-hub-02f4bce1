@@ -191,46 +191,99 @@ Deno.serve(async (req) => {
       const rawPwd = get("password");
       const studentNo = get("student_no") ?? "";
       const phoneRaw = get("phone") ?? "";
+      // 规范化手机号：去掉非数字，去除 +86 前缀
+      let phoneDigits = phoneRaw.replace(/\D+/g, "");
+      if (phoneDigits.length === 13 && phoneDigits.startsWith("86")) {
+        phoneDigits = phoneDigits.slice(2);
+      }
+      const phoneClean = phoneDigits.length >= 7 && phoneDigits.length <= 15 ? phoneDigits : undefined;
       // 统一密码规则：学号 + 电话号码后六位；不足或缺失时左侧补 0 至 6 位
-      const phoneDigits = phoneRaw.replace(/\D+/g, "");
       const last6 = phoneDigits.length >= 6
         ? phoneDigits.slice(-6)
         : phoneDigits.padStart(6, "0");
-      const computed = `${studentNo}${last6}`;
+      let computed = `${studentNo}${last6}`;
+      if (computed.length < 6) computed = computed.padStart(6, "0");
       // 优先级：表格中显式填写的密码列（≥6 位）> 计算值
       const password = rawPwd && rawPwd.length >= 6 ? rawPwd : computed;
 
-      // 规范化性别
-      const genderRaw = get("gender");
-      const gender = genderRaw
-        ? (/男|male|m/i.test(genderRaw) ? "男"
-          : /女|female|f/i.test(genderRaw) ? "女"
-          : genderRaw)
-        : undefined;
+      // 规范化性别：M/m/male/1/先生 → 男；F/f/female/0/女士 → 女；其它 → undefined
+      const genderRaw = (get("gender") ?? "").trim();
+      let gender: string | undefined;
+      if (genderRaw) {
+        if (/^(男|male|m|1|先生)$/i.test(genderRaw)) gender = "男";
+        else if (/^(女|female|f|0|女士)$/i.test(genderRaw)) gender = "女";
+        else gender = undefined;
+      }
 
-      // 规范化年级 -> 入学年份（4位数字）
+      // 规范化年级 -> 入学年份（4位数字），支持 "23级" -> 2023
       const yearRaw = get("enrollment_year");
       let enrollmentYear: number | undefined;
       if (yearRaw) {
-        const m = yearRaw.match(/(19|20)\d{2}/);
-        if (m) enrollmentYear = parseInt(m[0], 10);
+        const full = yearRaw.match(/(19|20)\d{2}/);
+        if (full) {
+          enrollmentYear = parseInt(full[0], 10);
+        } else {
+          const short = yearRaw.match(/\b(\d{2})\b/);
+          if (short) {
+            const yy = parseInt(short[1], 10);
+            // 假设 00-49 为 20xx，50-99 为 19xx
+            enrollmentYear = yy <= 49 ? 2000 + yy : 1900 + yy;
+          }
+        }
+        // 越界丢弃
+        const CY = new Date().getFullYear();
+        if (enrollmentYear != null && (enrollmentYear < 1990 || enrollmentYear > CY + 1)) {
+          enrollmentYear = undefined;
+        }
       }
 
-      // 规范化出生日期
+      // 规范化出生日期：支持 YYYY-M-D / YYYY/M/D / YYYY.M.D / YYYY年M月D日 / Excel 序列号
       const birthRaw = get("birth_date");
       let birthDate: string | undefined;
       if (birthRaw) {
-        const s = birthRaw.replace(/[年月./]/g, "-").replace(/日/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
-        const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        const trimmed = birthRaw.trim();
+        // Excel 日期序列号：纯数字（通常 5 位，1900-01-01 为 1）
+        if (/^\d{4,6}$/.test(trimmed)) {
+          const serial = parseInt(trimmed, 10);
+          // Excel 起始 1899-12-30（含 1900 闰年 bug 兼容）
+          const ms = (serial - 25569) * 86400 * 1000;
+          const dt = new Date(ms);
+          if (!Number.isNaN(dt.getTime()) && dt.getUTCFullYear() >= 1900 && dt.getUTCFullYear() <= new Date().getFullYear()) {
+            const y = dt.getUTCFullYear();
+            const mo = String(dt.getUTCMonth() + 1).padStart(2, "0");
+            const d = String(dt.getUTCDate()).padStart(2, "0");
+            birthDate = `${y}-${mo}-${d}`;
+          }
+        }
+        if (!birthDate) {
+          const s = trimmed.replace(/[年月./]/g, "-").replace(/日/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+          const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+          if (m) {
+            const yy = parseInt(m[1], 10);
+            const mo = parseInt(m[2], 10);
+            const dd = parseInt(m[3], 10);
+            if (yy >= 1900 && yy <= new Date().getFullYear() && mo >= 1 && mo <= 12 && dd >= 1 && dd <= 31) {
+              birthDate = `${m[1]}-${String(mo).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+            }
+          }
+        }
+      }
+
+      // 规范化床号：去空格，仅保留中文/字母/数字/横线，截断到 12 位
+      const bedRaw = (get("bed_no") ?? "").replace(/\s+/g, "");
+      let bedNo: string | undefined;
+      if (bedRaw) {
+        const m = bedRaw.match(/[\u4e00-\u9fa5A-Za-z0-9\-]+/g);
         if (m) {
-          birthDate = `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+          const joined = m.join("").slice(0, 12);
+          if (joined) bedNo = joined;
         }
       }
 
       return {
         student_no: get("student_no") ?? "",
         full_name: get("full_name") ?? "",
-        phone: get("phone") || undefined,
+        phone: phoneClean,
         class_name: get("class_name") || undefined,
         department: get("department") || undefined,
         major: get("major") || undefined,
@@ -244,7 +297,7 @@ Deno.serve(async (req) => {
         advisor: get("advisor") || undefined,
         apartment_no: get("apartment_no") || undefined,
         dorm_room: get("dorm_room") || undefined,
-        bed_no: get("bed_no") || undefined,
+        bed_no: bedNo,
       };
     }).filter((r: { student_no: string; full_name: string }) => r.student_no && r.full_name);
 
