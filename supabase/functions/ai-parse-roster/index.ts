@@ -73,6 +73,15 @@ Deno.serve(async (req) => {
 - major：专业
 - role：角色（教师/学生/管理员）
 - password：密码
+- gender：性别（男/女）
+- ethnicity：民族
+- political_status：政治面貌（如群众/共青团员/中共党员/预备党员等）
+- birth_date：出生日期（YYYY-MM-DD）
+- enrollment_year：年级（入学年份，如 2023）
+- advisor：辅导员
+- apartment_no：公寓号
+- dorm_room：宿舍号
+- bed_no：床号
 
 原始表头列名：${JSON.stringify(allKeys)}
 
@@ -86,14 +95,23 @@ Deno.serve(async (req) => {
     "department": "原始列名或null",
     "major": "原始列名或null",
     "role": "原始列名或null",
-    "password": "原始列名或null"
+    "password": "原始列名或null",
+    "gender": "原始列名或null",
+    "ethnicity": "原始列名或null",
+    "political_status": "原始列名或null",
+    "birth_date": "原始列名或null",
+    "enrollment_year": "原始列名或null",
+    "advisor": "原始列名或null",
+    "apartment_no": "原始列名或null",
+    "dorm_room": "原始列名或null",
+    "bed_no": "原始列名或null"
   },
   "role_map": {"教师": "teacher", "老师": "teacher", "管理员": "admin", "学生": "student"},
   "notes": "简要说明你识别了什么"
 }
 
 规则：
-1. 表头可能是任意写法（学号/学生编号/工号/编号/Student No 等），灵活匹配。
+1. 表头可能是任意写法（学号/学生编号/工号/编号/Student No、年级/入学年份、公寓/楼栋、宿舍/寝室/房间、床号/床位 等），灵活匹配。
 2. 找不到对应列的填 null。
 3. student_no 和 full_name 必须找到，否则报错。`;
 
@@ -182,6 +200,33 @@ Deno.serve(async (req) => {
       // 优先级：表格中显式填写的密码列（≥6 位）> 计算值
       const password = rawPwd && rawPwd.length >= 6 ? rawPwd : computed;
 
+      // 规范化性别
+      const genderRaw = get("gender");
+      const gender = genderRaw
+        ? (/男|male|m/i.test(genderRaw) ? "男"
+          : /女|female|f/i.test(genderRaw) ? "女"
+          : genderRaw)
+        : undefined;
+
+      // 规范化年级 -> 入学年份（4位数字）
+      const yearRaw = get("enrollment_year");
+      let enrollmentYear: number | undefined;
+      if (yearRaw) {
+        const m = yearRaw.match(/(19|20)\d{2}/);
+        if (m) enrollmentYear = parseInt(m[0], 10);
+      }
+
+      // 规范化出生日期
+      const birthRaw = get("birth_date");
+      let birthDate: string | undefined;
+      if (birthRaw) {
+        const s = birthRaw.replace(/[年月./]/g, "-").replace(/日/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+        const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if (m) {
+          birthDate = `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+        }
+      }
+
       return {
         student_no: get("student_no") ?? "",
         full_name: get("full_name") ?? "",
@@ -191,6 +236,15 @@ Deno.serve(async (req) => {
         major: get("major") || undefined,
         role: ["admin", "teacher", "student"].includes(role) ? role : defaultRole,
         password,
+        gender,
+        ethnicity: get("ethnicity") || undefined,
+        political_status: get("political_status") || undefined,
+        birth_date: birthDate,
+        enrollment_year: enrollmentYear,
+        advisor: get("advisor") || undefined,
+        apartment_no: get("apartment_no") || undefined,
+        dorm_room: get("dorm_room") || undefined,
+        bed_no: get("bed_no") || undefined,
       };
     }).filter((r: { student_no: string; full_name: string }) => r.student_no && r.full_name);
 
