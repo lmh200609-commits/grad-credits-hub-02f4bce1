@@ -182,9 +182,9 @@ Deno.serve(async (req) => {
     const created: { user_id: string; student_no: string }[] = [];
     const failures: { line: number; message: string; student_no?: string }[] = [];
     try {
-      for (let cStart = 0; cStart < rows.length; cStart += BATCH_SIZE) {
-        const chunk = rows.slice(cStart, cStart + BATCH_SIZE);
-        console.log(`[import-users] chunk ${cStart}-${cStart + chunk.length} / ${rows.length}`);
+      for (let cStart = 0; cStart < workingRows.length; cStart += BATCH_SIZE) {
+        const chunk = workingRows.slice(cStart, cStart + BATCH_SIZE);
+        console.log(`[import-users] chunk ${cStart}-${cStart + chunk.length} / ${workingRows.length}`);
         for (let i = 0; i < chunk.length; i += CONCURRENCY) {
           const batch = chunk.slice(i, i + CONCURRENCY);
           const results = await Promise.allSettled(
@@ -256,6 +256,7 @@ Deno.serve(async (req) => {
       success: true,
       created: created.length,
       failed: failures.length,
+      skipped: skippedRows.length,
       failures: failures.slice(0, 100),
     });
   } catch (e) {
