@@ -1,13 +1,13 @@
 import { z } from "zod";
 
-// 账号 = 纯数字（学号/工号/手机号），前端拼接 @admin.local 交给 Supabase
+// 账号 = 字母+数字（学号/工号/手机号/管理员账号 A########），前端拼接 @admin.local 交给 Supabase
 export const loginSchema = z.object({
   account: z
     .string()
     .trim()
     .min(3, "账号至少 3 位")
     .max(20, "账号不超过 20 位")
-    .regex(/^\d+$/, "账号只能是数字"),
+    .regex(/^[A-Za-z0-9]+$/, "账号只能包含字母和数字"),
   password: z.string().min(6, "密码至少 6 位").max(128),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
