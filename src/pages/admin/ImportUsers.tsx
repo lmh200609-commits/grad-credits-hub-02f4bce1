@@ -61,7 +61,8 @@ const validateRow = (r: ParsedRow): RowErrors => {
     } else {
       const [_, ys, ms, ds] = m;
       const y = +ys, mo = +ms, d = +ds;
-      const dt = new Date(`${ys}-${ms}-${ds}T00:00:00`);
+      // 使用 UTC 构造，避免本地时区导致 getUTCDate 偏移一天（如 +08 时区）
+      const dt = new Date(Date.UTC(y, mo - 1, d));
       if (
         Number.isNaN(dt.getTime()) ||
         dt.getUTCFullYear() !== y ||
