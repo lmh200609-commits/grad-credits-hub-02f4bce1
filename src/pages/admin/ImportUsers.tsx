@@ -306,6 +306,7 @@ const ImportUsers = () => {
     }
 
     let totalCreated = 0;
+    let totalSkipped = 0;
     let failed = false;
 
     for (let ci = 0; ci < chunks.length; ci++) {
@@ -315,7 +316,7 @@ const ImportUsers = () => {
       });
 
       const { data, error } = await supabase.functions.invoke("import-users", {
-        body: { rows: chunks[ci], file_name: lastFileNameRef.current },
+        body: { rows: chunks[ci], file_name: lastFileNameRef.current, skip_existing: true },
       });
 
       if (error) {
@@ -370,19 +371,21 @@ const ImportUsers = () => {
 
       if (data?.success) {
         totalCreated += data.created;
+        if (typeof data.skipped === "number") totalSkipped += data.skipped;
       }
     }
 
     if (!failed) {
       const sampleNos = totalRows.slice(0, 5).map((r) => r.student_no);
+      const skipNote = totalSkipped > 0 ? `（跳过 ${totalSkipped} 个已存在的学号）` : "";
       push({
         kind: "result",
         ok: true,
-        text: `全部完成 🎉 成功创建 ${totalCreated} 个账号，已写入数据库（姓名 / 学号 / 专业 / 班级 / 院系 / 手机号 / 宿舍等字段均已绑定）。`,
+        text: `全部完成 🎉 成功创建 ${totalCreated} 个账号${skipNote}，已写入数据库（姓名 / 学号 / 专业 / 班级 / 院系 / 手机号 / 宿舍等字段均已绑定）。`,
         created: totalCreated,
         sampleNos,
       });
-      toast({ title: "导入成功", description: `已新增 ${totalCreated} 个账号` });
+      toast({ title: "导入成功", description: `已新增 ${totalCreated} 个账号${skipNote}` });
       setPendingRows(null);
     }
 

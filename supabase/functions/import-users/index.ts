@@ -154,11 +154,27 @@ Deno.serve(async (req) => {
         .in("student_no", chunk);
       if (existing?.length) allConflicts.push(...existing.map((e) => e.student_no));
     }
+    const skipExisting = body.skip_existing === true;
+    let skippedRows: string[] = [];
+    let workingRows = rows;
     if (allConflicts.length > 0) {
-      return json({
-        error: `存在已导入的学号/工号（${allConflicts.length}个），整批中止`,
-        conflicts: allConflicts.slice(0, 50),
-      }, 409);
+      if (!skipExisting) {
+        return json({
+          error: `存在已导入的学号/工号（${allConflicts.length}个），整批中止。可在前端勾选「跳过已存在」后重新提交，或先在学生管理中删除冲突账号。`,
+          conflicts: allConflicts.slice(0, 50),
+          can_skip: true,
+        }, 409);
+      }
+      const conflictSet = new Set(allConflicts);
+      skippedRows = [...conflictSet];
+      workingRows = rows.filter((r) => !conflictSet.has(r.student_no.trim()));
+      if (workingRows.length === 0) {
+        return json({
+          error: "所有学号都已存在，没有新账号需要创建",
+          conflicts: allConflicts.slice(0, 50),
+          skipped: skippedRows.length,
+        }, 409);
+      }
     }
 
     // Create users: chunk into BATCH_SIZE groups (sequential), each chunk runs CONCURRENCY in parallel.
@@ -166,9 +182,9 @@ Deno.serve(async (req) => {
     const created: { user_id: string; student_no: string }[] = [];
     const failures: { line: number; message: string; student_no?: string }[] = [];
     try {
-      for (let cStart = 0; cStart < rows.length; cStart += BATCH_SIZE) {
-        const chunk = rows.slice(cStart, cStart + BATCH_SIZE);
-        console.log(`[import-users] chunk ${cStart}-${cStart + chunk.length} / ${rows.length}`);
+      for (let cStart = 0; cStart < workingRows.length; cStart += BATCH_SIZE) {
+        const chunk = workingRows.slice(cStart, cStart + BATCH_SIZE);
+        console.log(`[import-users] chunk ${cStart}-${cStart + chunk.length} / ${workingRows.length}`);
         for (let i = 0; i < chunk.length; i += CONCURRENCY) {
           const batch = chunk.slice(i, i + CONCURRENCY);
           const results = await Promise.allSettled(
@@ -240,6 +256,7 @@ Deno.serve(async (req) => {
       success: true,
       created: created.length,
       failed: failures.length,
+      skipped: skippedRows.length,
       failures: failures.slice(0, 100),
     });
   } catch (e) {
