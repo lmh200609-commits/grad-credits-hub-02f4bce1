@@ -34,8 +34,76 @@ type ChatMsg =
   | { kind: "ai"; text: string }
   | { kind: "user"; text: string }
   | { kind: "file"; name: string; rowCount: number }
-  | { kind: "preview"; rows: ParsedRow[]; notes?: string }
+  | { kind: "preview"; rows: ParsedRow[]; notes?: string; rowErrors: RowErrors[] }
   | { kind: "result"; ok: boolean; text: string };
+
+// Per-row field-level validation errors. Map: field name -> error message.
+type RowErrors = Record<string, string>;
+
+const CURRENT_YEAR = new Date().getFullYear();
+
+/** Validate a single parsed row. Returns an error map (empty if all good). */
+const validateRow = (r: ParsedRow): RowErrors => {
+  const e: RowErrors = {};
+
+  if (!r.student_no?.trim()) e.student_no = "学号不能为空";
+  if (!r.full_name?.trim()) e.full_name = "姓名不能为空";
+
+  if (r.gender && !["男", "女"].includes(r.gender.trim())) {
+    e.gender = "性别只能是「男」或「女」";
+  }
+
+  if (r.birth_date) {
+    const m = r.birth_date.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) {
+      e.birth_date = "出生日期格式应为 YYYY-MM-DD";
+    } else {
+      const [_, ys, ms, ds] = m;
+      const y = +ys, mo = +ms, d = +ds;
+      const dt = new Date(`${ys}-${ms}-${ds}T00:00:00`);
+      if (
+        Number.isNaN(dt.getTime()) ||
+        dt.getUTCFullYear() !== y ||
+        dt.getUTCMonth() + 1 !== mo ||
+        dt.getUTCDate() !== d ||
+        y < 1900 ||
+        y > CURRENT_YEAR
+      ) {
+        e.birth_date = "出生日期不是合法日期";
+      }
+    }
+  }
+
+  if (r.enrollment_year != null) {
+    const y = r.enrollment_year;
+    if (!Number.isInteger(y) || y < 1990 || y > CURRENT_YEAR + 1) {
+      e.enrollment_year = `年级应在 1990 - ${CURRENT_YEAR + 1} 之间`;
+    }
+  }
+
+  if (r.phone) {
+    const digits = r.phone.replace(/\D+/g, "");
+    if (digits.length < 7 || digits.length > 15) {
+      e.phone = "手机号位数异常（7-15 位数字）";
+    }
+  }
+
+  if (r.bed_no) {
+    const bed = r.bed_no.trim();
+    if (!/^[A-Za-z0-9\-]{1,8}$/.test(bed)) {
+      e.bed_no = "床号仅支持字母/数字/横线，最多 8 位";
+    }
+  }
+
+  if (r.apartment_no && r.apartment_no.length > 20) e.apartment_no = "公寓号过长";
+  if (r.dorm_room && r.dorm_room.length > 20) e.dorm_room = "宿舍号过长";
+
+  if (!r.password || r.password.length < 6) {
+    e.password = "密码不足 6 位（请补全学号或电话）";
+  }
+
+  return e;
+};
 
 const ROLE_LABEL: Record<string, string> = { admin: "管理员", teacher: "教师", student: "学生" };
 
