@@ -36,7 +36,12 @@ async function createOneUser(
   idx: number,
 ): Promise<{ user_id: string; student_no: string }> {
   const sno = r.student_no.trim();
-  const email = `${sno}@admin.local`;
+  // 合成邮箱必须只包含 ASCII 字母/数字/.-_，否则 Supabase Auth 会拒绝
+  const localPart = sno.replace(/[^A-Za-z0-9._-]/g, "_");
+  if (!localPart) {
+    throw new Error(`第 ${idx + 2} 行创建账号失败: 学号「${sno}」无法生成有效邮箱（请使用字母数字）`);
+  }
+  const email = `${localPart}@admin.local`;
 
   const { data: u, error: ce } = await admin.auth.admin.createUser({
     email,
