@@ -315,7 +315,7 @@ const ImportUsers = () => {
       });
 
       const { data, error } = await supabase.functions.invoke("import-users", {
-        body: { rows: chunks[ci], file_name: lastFileNameRef.current },
+        body: { rows: chunks[ci], file_name: lastFileNameRef.current, skip_existing: true },
       });
 
       if (error) {
