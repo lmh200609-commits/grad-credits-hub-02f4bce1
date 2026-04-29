@@ -230,12 +230,33 @@ const ImportUsers = () => {
         return;
       }
 
+      // Per-row format validation BEFORE allowing import.
+      const rowErrors = rows.map(validateRow);
+      const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
+
       setPendingRows(rows);
-      push({ kind: "preview", rows, notes: data?.notes });
-      push({
-        kind: "ai",
-        text: `识别完成 ✅ 共 ${rows.length} 个账号待创建。请核对预览，确认无误后点击下方 "确认导入"。`,
-      });
+      push({ kind: "preview", rows, notes: data?.notes, rowErrors });
+      if (badCount > 0) {
+        // Collect first few sample errors for the chat hint
+        const samples = rowErrors
+          .map((e, i) => ({ i, e }))
+          .filter((x) => Object.keys(x.e).length > 0)
+          .slice(0, 5)
+          .map((x) =>
+            `第 ${x.i + 2} 行（${rows[x.i].student_no || "无学号"}）：${Object.values(x.e).join("；")}`,
+          )
+          .join("\n");
+        push({
+          kind: "ai",
+          text:
+            `识别完成 ⚠️ 共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传，或修改后再确认导入。\n\n示例：\n${samples}`,
+        });
+      } else {
+        push({
+          kind: "ai",
+          text: `识别完成 ✅ 共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方 "确认导入"。`,
+        });
+      }
     } catch (e) {
       push({ kind: "ai", text: `❌ 读取文件失败：${(e as Error).message}` });
     } finally {
