@@ -63,7 +63,7 @@ export default function PurgeAndBootstrap() {
 
   return (
     <AppLayout>
-      <PageHeader title="重置环境（危险操作）" subtitle="清空业务数据 + 删除所有非管理员账号 + 创建一个随机密码的新管理员" />
+      <PageHeader title="重置环境（危险操作）" description="清空业务数据 + 删除所有非管理员账号 + 创建一个随机密码的新管理员" />
       <div className="mx-auto max-w-3xl space-y-4">
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
