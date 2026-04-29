@@ -172,7 +172,18 @@ Deno.serve(async (req) => {
       const rawRole = get("role");
       const role = rawRole ? (roleMap[rawRole] ?? defaultRole) : defaultRole;
       const rawPwd = get("password");
-      const password = rawPwd && rawPwd.length >= 6 ? rawPwd : defaultPassword;
+      const studentNo = get("student_no") ?? "";
+      const phoneRaw = get("phone") ?? "";
+      // Default rule: 学号 + 电话号码后六位；不足或缺失时左侧补 0 至 6 位
+      const phoneDigits = phoneRaw.replace(/\D+/g, "");
+      const last6 = phoneDigits.length >= 6
+        ? phoneDigits.slice(-6)
+        : phoneDigits.padStart(6, "0");
+      const computedDefault = studentNo ? `${studentNo}${last6}` : defaultPassword;
+      // Priority: explicit valid password column > computed (学号+电话后6) > global defaultPassword
+      const password = rawPwd && rawPwd.length >= 6
+        ? rawPwd
+        : (computedDefault.length >= 6 ? computedDefault : defaultPassword);
 
       return {
         student_no: get("student_no") ?? "",
