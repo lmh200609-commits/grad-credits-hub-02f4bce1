@@ -37,15 +37,14 @@ const ImportUsers = () => {
     {
       kind: "ai",
       text:
-        "你好👋，我是名册导入助手。\n\n📋 导入规则：\n• 仅支持 Excel（.xlsx/.xls）和 CSV，第一行必须是表头\n• 必填列：学号/工号、姓名；其他列可选\n• 默认角色 / 默认密码可在输入框调整（如「默认角色=学生」「默认密码=Abc12345」）\n• ⚠️ 表格中已填写的「角色」「密码」列以表格数据为准，仅当为空时才用默认值\n\n你可以直接📎上传 Excel/CSV，也可以问我任何关于导入的问题（例如：表格里没写角色会怎样？密码格式有什么要求？）。",
+        "你好👋，我是名册导入助手。\n\n📋 导入规则：\n• 仅支持 Excel（.xlsx/.xls）和 CSV，第一行必须是表头\n• 必填列：学号/工号、姓名；其他列可选\n• 默认角色可在输入框调整（如「默认角色=学生」）\n• 🔑 密码规则：统一为「学号 + 电话号码后 6 位」，电话不足 6 位时左侧补 0\n• ⚠️ 表格中已填写的「角色」列以表格数据为准，仅当为空时才用默认角色\n\n你可以直接📎上传 Excel/CSV，也可以问我任何关于导入的问题。",
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [pendingRows, setPendingRows] = useState<ParsedRow[] | null>(null);
-  const [defaults, setDefaults] = useState<{ role: ParsedRow["role"]; password: string }>({
+  const [defaults, setDefaults] = useState<{ role: ParsedRow["role"] }>({
     role: "student",
-    password: "123456",
   });
 
   const push = (m: ChatMsg) => setMessages((prev) => [...prev, m]);
@@ -66,20 +65,19 @@ const ImportUsers = () => {
       next.role = m === "管理员" ? "admin" : m === "学生" ? "student" : "teacher";
       updated = true;
     }
-    if (pwdMatch && pwdMatch[1].length >= 6) {
-      next.password = pwdMatch[1];
-      updated = true;
+    if (pwdMatch) {
+      push({
+        kind: "ai",
+        text: "ℹ️ 已不再支持设置默认密码。系统统一按「学号 + 电话后 6 位」生成密码（电话不足 6 位时左侧补 0）。",
+      });
+      return;
     }
     if (updated) {
       setDefaults(next);
       push({
         kind: "ai",
-        text: `好的，已更新默认值：角色=${ROLE_LABEL[next.role]}，密码=${next.password}。点击 📎 上传 Excel/CSV 即可开始。`,
+        text: `好的，已更新默认角色：${ROLE_LABEL[next.role]}。点击 📎 上传 Excel/CSV 即可开始。`,
       });
-      return;
-    }
-    if (pwdMatch && pwdMatch[1].length < 6) {
-      push({ kind: "ai", text: "❌ 默认密码至少 6 位，请重新设置。" });
       return;
     }
     void askAi(text);
@@ -135,7 +133,7 @@ const ImportUsers = () => {
       push({ kind: "ai", text: `已读取 ${rawRows.length} 行原始数据，正在让 AI 识别字段并规范化…` });
 
       const { data, error } = await supabase.functions.invoke("ai-parse-roster", {
-        body: { rows: rawRows, defaultRole: defaults.role, defaultPassword: defaults.password },
+        body: { rows: rawRows, defaultRole: defaults.role },
       });
 
       if (error) {
@@ -278,7 +276,7 @@ const ImportUsers = () => {
           </div>
           <div className="ml-auto flex gap-2 text-xs">
             <Badge variant="outline">默认角色：{ROLE_LABEL[defaults.role]}</Badge>
-            <Badge variant="outline">默认密码：{defaults.password}</Badge>
+            <Badge variant="outline">密码规则：学号 + 电话后 6 位</Badge>
           </div>
         </div>
 
@@ -319,7 +317,7 @@ const ImportUsers = () => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleUserMessage()}
-                placeholder="提问或调整默认值，如：表格没写角色会怎样？/ 默认角色=学生 / 默认密码=Abc12345"
+                placeholder="提问或调整默认角色，如：默认角色=学生"
                 disabled={loading}
               />
               <Button onClick={handleUserMessage} disabled={loading || !input.trim()}>
