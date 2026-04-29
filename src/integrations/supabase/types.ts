@@ -612,14 +612,19 @@ export type Database = {
       profiles: {
         Row: {
           address: string | null
+          advisor: string | null
+          apartment_no: string | null
+          bed_no: string | null
           birth_date: string | null
           class_name: string | null
           created_at: string
           department: string | null
+          dorm_room: string | null
           email: string | null
           emergency_contact: string | null
           emergency_phone: string | null
           enrollment_year: number | null
+          ethnicity: string | null
           full_name: string | null
           gender: string | null
           id: string
@@ -635,14 +640,19 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          advisor?: string | null
+          apartment_no?: string | null
+          bed_no?: string | null
           birth_date?: string | null
           class_name?: string | null
           created_at?: string
           department?: string | null
+          dorm_room?: string | null
           email?: string | null
           emergency_contact?: string | null
           emergency_phone?: string | null
           enrollment_year?: number | null
+          ethnicity?: string | null
           full_name?: string | null
           gender?: string | null
           id?: string
@@ -658,14 +668,19 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          advisor?: string | null
+          apartment_no?: string | null
+          bed_no?: string | null
           birth_date?: string | null
           class_name?: string | null
           created_at?: string
           department?: string | null
+          dorm_room?: string | null
           email?: string | null
           emergency_contact?: string | null
           emergency_phone?: string | null
           enrollment_year?: number | null
+          ethnicity?: string | null
           full_name?: string | null
           gender?: string | null
           id?: string
