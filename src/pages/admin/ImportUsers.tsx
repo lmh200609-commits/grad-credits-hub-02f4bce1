@@ -19,6 +19,15 @@ type ParsedRow = {
   major?: string;
   role: "admin" | "teacher" | "student";
   password: string;
+  gender?: string;
+  ethnicity?: string;
+  political_status?: string;
+  birth_date?: string;
+  enrollment_year?: number;
+  advisor?: string;
+  apartment_no?: string;
+  dorm_room?: string;
+  bed_no?: string;
 };
 
 type ChatMsg =
@@ -37,7 +46,7 @@ const ImportUsers = () => {
     {
       kind: "ai",
       text:
-        "你好👋，我是名册导入助手。\n\n📋 导入规则：\n• 仅支持 Excel（.xlsx/.xls）和 CSV，第一行必须是表头\n• 必填列：学号/工号、姓名；其他列可选\n• 默认角色可在输入框调整（如「默认角色=学生」）\n• 🔑 密码规则：统一为「学号 + 电话号码后 6 位」，电话不足 6 位时左侧补 0\n• ⚠️ 表格中已填写的「角色」列以表格数据为准，仅当为空时才用默认角色\n\n你可以直接📎上传 Excel/CSV，也可以问我任何关于导入的问题。",
+        "你好👋，我是名册导入助手。\n\n📋 导入规则：\n• 仅支持 Excel（.xlsx/.xls）和 CSV，第一行必须是表头\n• 必填列：学号/工号、姓名；其他列可选\n• 可识别字段：学院、专业班级、年级、学号、姓名、性别、民族、政治面貌、出生日期、辅导员、学生联系电话、公寓号、宿舍号、床号\n• 默认角色可在输入框调整（如「默认角色=学生」）\n• 🔑 密码规则：统一为「学号 + 电话号码后 6 位」，电话不足 6 位时左侧补 0\n• ⚠️ 表格中已填写的「角色」列以表格数据为准，仅当为空时才用默认角色\n\n你可以直接📎上传 Excel/CSV，也可以问我任何关于导入的问题。",
     },
   ]);
   const [input, setInput] = useState("");
