@@ -40,7 +40,6 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const rawRows = body.rows;
     const defaultRole = body.defaultRole ?? "student";
-    const defaultPassword = body.defaultPassword ?? "123456";
 
     if (!Array.isArray(rawRows) || rawRows.length === 0) {
       return json({ error: "rows 不能为空" }, 400);
