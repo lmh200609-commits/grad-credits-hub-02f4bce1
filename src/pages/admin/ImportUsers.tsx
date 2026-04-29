@@ -493,6 +493,10 @@ const MessageBubble = ({
   }
 
   if (msg.kind === "preview") {
+    const rowErrors = msg.rowErrors ?? [];
+    const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
+    const cellCls = (i: number, field: string) =>
+      rowErrors[i]?.[field] ? "bg-destructive/15 text-destructive" : "";
     return (
       <div className="flex gap-2">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground">
@@ -502,10 +506,17 @@ const MessageBubble = ({
           {msg.notes && (
             <p className="text-xs italic text-muted-foreground">AI 备注：{msg.notes}</p>
           )}
+          {badCount > 0 && (
+            <div className="flex items-center gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <AlertCircle className="h-4 w-4" />
+              <span>共 {badCount} 行存在字段格式异常（红色高亮），请修正源表后重新上传</span>
+            </div>
+          )}
           <div className="max-h-72 overflow-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">行号</TableHead>
                   <TableHead>学号/工号</TableHead>
                   <TableHead>姓名</TableHead>
                   <TableHead>角色</TableHead>
@@ -525,28 +536,49 @@ const MessageBubble = ({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {msg.rows.slice(0, 50).map((r, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono text-xs">{r.student_no}</TableCell>
-                    <TableCell>{r.full_name}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{ROLE_LABEL[r.role]}</Badge>
-                    </TableCell>
-                    <TableCell>{r.department ?? "—"}</TableCell>
-                    <TableCell>{r.major ?? "—"}</TableCell>
-                    <TableCell>{r.class_name ?? "—"}</TableCell>
-                    <TableCell>{r.enrollment_year ?? "—"}</TableCell>
-                    <TableCell>{r.gender ?? "—"}</TableCell>
-                    <TableCell>{r.ethnicity ?? "—"}</TableCell>
-                    <TableCell>{r.political_status ?? "—"}</TableCell>
-                    <TableCell>{r.birth_date ?? "—"}</TableCell>
-                    <TableCell>{r.advisor ?? "—"}</TableCell>
-                    <TableCell>{r.phone ?? "—"}</TableCell>
-                    <TableCell>{r.apartment_no ?? "—"}</TableCell>
-                    <TableCell>{r.dorm_room ?? "—"}</TableCell>
-                    <TableCell>{r.bed_no ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
+                {msg.rows.slice(0, 50).map((r, i) => {
+                  const errs = rowErrors[i] ?? {};
+                  const hasErr = Object.keys(errs).length > 0;
+                  const errSummary = Object.entries(errs)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join("\n");
+                  return (
+                    <TableRow
+                      key={i}
+                      className={hasErr ? "bg-destructive/5 hover:bg-destructive/10" : undefined}
+                      title={hasErr ? errSummary : undefined}
+                    >
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {hasErr ? (
+                          <span className="inline-flex items-center gap-1 text-destructive">
+                            <AlertCircle className="h-3 w-3" />
+                            {i + 2}
+                          </span>
+                        ) : (
+                          i + 2
+                        )}
+                      </TableCell>
+                      <TableCell className={`font-mono text-xs ${cellCls(i, "student_no")}`}>{r.student_no}</TableCell>
+                      <TableCell className={cellCls(i, "full_name")}>{r.full_name}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{ROLE_LABEL[r.role]}</Badge>
+                      </TableCell>
+                      <TableCell>{r.department ?? "—"}</TableCell>
+                      <TableCell>{r.major ?? "—"}</TableCell>
+                      <TableCell>{r.class_name ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "enrollment_year")}>{r.enrollment_year ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "gender")}>{r.gender ?? "—"}</TableCell>
+                      <TableCell>{r.ethnicity ?? "—"}</TableCell>
+                      <TableCell>{r.political_status ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "birth_date")}>{r.birth_date ?? "—"}</TableCell>
+                      <TableCell>{r.advisor ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "phone")}>{r.phone ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "apartment_no")}>{r.apartment_no ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "dorm_room")}>{r.dorm_room ?? "—"}</TableCell>
+                      <TableCell className={cellCls(i, "bed_no")}>{r.bed_no ?? "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             {msg.rows.length > 50 && (
@@ -555,9 +587,14 @@ const MessageBubble = ({
               </p>
             )}
           </div>
-          <div className="flex justify-end">
-            <Button onClick={onConfirm} disabled={loading} size="sm">
-              ✅ 确认导入 {msg.rows.length} 个账号
+          <div className="flex items-center justify-end gap-3">
+            {badCount > 0 && (
+              <span className="text-xs text-destructive">
+                {badCount} 行格式异常，无法导入
+              </span>
+            )}
+            <Button onClick={onConfirm} disabled={loading || badCount > 0} size="sm">
+              ✅ 确认导入 {msg.rows.length - badCount} 个账号
             </Button>
           </div>
         </div>
