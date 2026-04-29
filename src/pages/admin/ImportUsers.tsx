@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
@@ -8,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle } from "lucide-react";
+import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle, Upload, ArrowRight } from "lucide-react";
 
 type ParsedRow = {
   student_no: string;
@@ -35,7 +36,7 @@ type ChatMsg =
   | { kind: "user"; text: string }
   | { kind: "file"; name: string; rowCount: number }
   | { kind: "preview"; rows: ParsedRow[]; notes?: string; rowErrors: RowErrors[] }
-  | { kind: "result"; ok: boolean; text: string };
+  | { kind: "result"; ok: boolean; text: string; created?: number; sampleNos?: string[] };
 
 // Per-row field-level validation errors. Map: field name -> error message.
 type RowErrors = Record<string, string>;
@@ -154,6 +155,16 @@ const ImportUsers = () => {
       push({
         kind: "ai",
         text: `好的，已更新默认角色：${ROLE_LABEL[next.role]}。点击 📎 上传 Excel/CSV 即可开始。`,
+      });
+      return;
+    }
+    // Detect "import intent" — user is asking to import but hasn't uploaded a file yet.
+    const importIntent = /(导入|上传|开始|帮我|怎么(用|做|导)|如何(导入|上传))/.test(text);
+    if (importIntent && !pendingRows) {
+      push({
+        kind: "ai",
+        text:
+          "⚠️ 我注意到你想开始导入。\n\n本助手 **不会** 通过聊天直接创建账号，必须按以下步骤操作：\n\n1️⃣ 点击下方输入框 **左侧的「上传文件」按钮（📎）**，选择 Excel/CSV\n2️⃣ 我会自动识别字段、做格式校验，并展示预览表\n3️⃣ 核对预览后，点击预览下方的 **「确认导入」** 按钮\n4️⃣ 完成后会有绿色的成功卡片，并可一键跳转到学生管理查看\n\n👇 现在就点左下角的「上传文件」按钮开始吧。",
       });
       return;
     }
@@ -362,10 +373,13 @@ const ImportUsers = () => {
     }
 
     if (!failed) {
+      const sampleNos = totalRows.slice(0, 5).map((r) => r.student_no);
       push({
         kind: "result",
         ok: true,
-        text: `全部完成 🎉 成功创建 ${totalCreated} 个账号，已绑定姓名 / 学号 / 专业 / 班级 / 院系 / 手机号。`,
+        text: `全部完成 🎉 成功创建 ${totalCreated} 个账号，已写入数据库（姓名 / 学号 / 专业 / 班级 / 院系 / 手机号 / 宿舍等字段均已绑定）。`,
+        created: totalCreated,
+        sampleNos,
       });
       toast({ title: "导入成功", description: `已新增 ${totalCreated} 个账号` });
       setPendingRows(null);
@@ -393,6 +407,25 @@ const ImportUsers = () => {
           </div>
         </div>
 
+        {/* Prominent upload banner — visible from first paint so the upload affordance is impossible to miss */}
+        {!pendingRows && (
+          <div className="mb-3 flex items-center gap-3 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+              <Upload className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium">第一步：上传 Excel / CSV 文件</p>
+              <p className="text-xs text-muted-foreground">
+                聊天问答不会真正创建账号 —— 必须先在这里上传文件，识别后再点「确认导入」。
+              </p>
+            </div>
+            <Button onClick={() => fileRef.current?.click()} disabled={loading} size="sm">
+              <Upload className="mr-2 h-4 w-4" />
+              选择文件
+            </Button>
+          </div>
+        )}
+
         <Card className="flex flex-1 flex-col overflow-hidden">
           <CardContent className="flex-1 space-y-4 overflow-y-auto p-4">
             {messages.map((m, i) => (
@@ -418,13 +451,15 @@ const ImportUsers = () => {
                 }}
               />
               <Button
-                size="icon"
-                variant="ghost"
+                size="sm"
+                variant="secondary"
                 onClick={() => fileRef.current?.click()}
                 disabled={loading}
                 title="上传 Excel/CSV"
+                className="shrink-0"
               >
-                <Paperclip className="h-4 w-4" />
+                <Paperclip className="mr-1.5 h-4 w-4" />
+                上传文件
               </Button>
               <Input
                 value={input}
@@ -609,15 +644,42 @@ const MessageBubble = ({
         <Bot className="h-4 w-4" />
       </div>
       <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border px-4 py-2 text-sm ${
-          msg.ok ? "border-green-500/40 bg-green-500/10" : "border-destructive/40 bg-destructive/10"
+        className={`max-w-[85%] space-y-2 whitespace-pre-wrap rounded-2xl rounded-tl-sm border-2 px-4 py-3 text-sm ${
+          msg.ok
+            ? "border-green-500/60 bg-green-500/10"
+            : "border-destructive/60 bg-destructive/10"
         }`}
       >
-        <div className="mb-1 flex items-center gap-1 font-medium">
-          {msg.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-          {msg.ok ? "导入成功" : "导入失败"}
+        <div className="flex items-center gap-2 text-base font-semibold">
+          {msg.ok ? (
+            <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+          ) : (
+            <AlertCircle className="h-5 w-5 text-destructive" />
+          )}
+          {msg.ok ? `导入成功${msg.created ? ` · 共 ${msg.created} 个账号` : ""}` : "导入失败"}
         </div>
-        {msg.text}
+        <div className="text-sm">{msg.text}</div>
+        {msg.ok && msg.sampleNos && msg.sampleNos.length > 0 && (
+          <div className="rounded border bg-background/60 px-2 py-1.5 text-xs">
+            <span className="text-muted-foreground">示例学号：</span>
+            <span className="font-mono">{msg.sampleNos.join("、")}</span>
+            {msg.created && msg.created > msg.sampleNos.length && (
+              <span className="text-muted-foreground"> 等共 {msg.created} 个</span>
+            )}
+          </div>
+        )}
+        {msg.ok && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button asChild size="sm" variant="default">
+              <Link to="/admin/users/students">
+                去学生管理查看 <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/admin/users/teachers">查看教师列表</Link>
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
