@@ -408,7 +408,16 @@ const MessageBubble = ({
                   <TableHead>院系</TableHead>
                   <TableHead>专业</TableHead>
                   <TableHead>班级</TableHead>
+                  <TableHead>年级</TableHead>
+                  <TableHead>性别</TableHead>
+                  <TableHead>民族</TableHead>
+                  <TableHead>政治面貌</TableHead>
+                  <TableHead>出生日期</TableHead>
+                  <TableHead>辅导员</TableHead>
                   <TableHead>手机号</TableHead>
+                  <TableHead>公寓号</TableHead>
+                  <TableHead>宿舍号</TableHead>
+                  <TableHead>床号</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -422,7 +431,16 @@ const MessageBubble = ({
                     <TableCell>{r.department ?? "—"}</TableCell>
                     <TableCell>{r.major ?? "—"}</TableCell>
                     <TableCell>{r.class_name ?? "—"}</TableCell>
+                    <TableCell>{r.enrollment_year ?? "—"}</TableCell>
+                    <TableCell>{r.gender ?? "—"}</TableCell>
+                    <TableCell>{r.ethnicity ?? "—"}</TableCell>
+                    <TableCell>{r.political_status ?? "—"}</TableCell>
+                    <TableCell>{r.birth_date ?? "—"}</TableCell>
+                    <TableCell>{r.advisor ?? "—"}</TableCell>
                     <TableCell>{r.phone ?? "—"}</TableCell>
+                    <TableCell>{r.apartment_no ?? "—"}</TableCell>
+                    <TableCell>{r.dorm_room ?? "—"}</TableCell>
+                    <TableCell>{r.bed_no ?? "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
