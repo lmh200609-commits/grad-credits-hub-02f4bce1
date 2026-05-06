@@ -1027,7 +1027,7 @@ export type Database = {
       strip_time_tokens: { Args: { s: string }; Returns: string }
     }
     Enums: {
-      app_role: "admin" | "teacher" | "student"
+      app_role: "admin" | "teacher" | "student" | "super_admin"
       application_status:
         | "pending_ai"
         | "auto_approved"
@@ -1169,7 +1169,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "teacher", "student"],
+      app_role: ["admin", "teacher", "student", "super_admin"],
       application_status: [
         "pending_ai",
         "auto_approved",
