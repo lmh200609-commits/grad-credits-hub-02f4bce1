@@ -74,8 +74,8 @@ const Admins = () => {
             <DialogContent>
               <DialogHeader><DialogTitle>新建学院管理员</DialogTitle></DialogHeader>
               <div className="space-y-3">
-                <div><Label>账号 *（工号 / 自定义）</Label>
-                  <Input value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} placeholder="如 admin_info" />
+                <div><Label>账号 *</Label>
+                  <Input value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} />
                 </div>
                 <div><Label>姓名 *</Label>
                   <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
