@@ -13,6 +13,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type College = { id: string; name: string; code: string };
 type AdminRow = { user_id: string; college_id: string | null; profiles: { full_name: string | null; email: string | null } | null; colleges: { name: string } | null };
@@ -26,6 +30,7 @@ const Admins = () => {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ account: "", password: "", full_name: "", college_id: "" });
   const [saving, setSaving] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState<AdminRow | null>(null);
 
   const load = async () => {
     const [{ data: cs }, { data: rs }] = await Promise.all([
@@ -51,6 +56,14 @@ const Admins = () => {
       profiles: pMap.get(r.user_id) ? { full_name: pMap.get(r.user_id).full_name, email: pMap.get(r.user_id).email } : null,
       colleges: r.college_id && cMap.get(r.college_id) ? { name: cMap.get(r.college_id).name } : null,
     })));
+  };
+
+  const removeAdmin = async (r: AdminRow) => {
+    const { error } = await supabase.from("user_roles")
+      .delete().eq("user_id", r.user_id).eq("role", "admin");
+    if (error) { toast.error(error.message); return; }
+    toast.success("已撤销管理员权限");
+    void load();
   };
   useEffect(() => { void load(); }, []);
 
@@ -119,6 +132,7 @@ const Admins = () => {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>姓名</TableHead><TableHead>账号</TableHead><TableHead>所属学院</TableHead>
+                <TableHead className="text-right">操作</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {rows.map((r) => (
@@ -126,12 +140,33 @@ const Admins = () => {
                     <TableCell>{r.profiles?.full_name ?? "—"}</TableCell>
                     <TableCell className="font-mono">{emailToAccount(r.profiles?.email) || "—"}</TableCell>
                     <TableCell>{r.colleges?.name ?? "（未绑定）"}</TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="outline" className="text-danger" onClick={() => setPendingRemove(r)}>
+                        移除
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
+        <AlertDialog open={!!pendingRemove} onOpenChange={(o) => !o && setPendingRemove(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>移除管理员 “{pendingRemove?.profiles?.full_name ?? ""}”？</AlertDialogTitle>
+              <AlertDialogDescription>
+                将撤销其学院管理员权限，账号本身保留。可随时通过「新建管理员」重新授权。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { if (pendingRemove) { void removeAdmin(pendingRemove); setPendingRemove(null); } }}>
+                确认移除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
