@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { NavLink, useNavigate, useLocation, matchPath } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useCollegeTheme } from "@/hooks/useCollegeTheme";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
@@ -11,7 +12,7 @@ import StaffAiAssistant from "@/components/StaffAiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
   Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags, History, Cpu, IdCard,
-  Activity,
+  Activity, Palette, Building2, Shield,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -30,7 +31,16 @@ const adminItems: Item[] = [
   { title: "批量导入账号", url: "/admin/import", icon: Upload },
   { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
   { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
+  { title: "学院品牌主题", url: "/admin/branding", icon: Palette },
   { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
+];
+
+const superAdminItems: Item[] = [
+  { title: "学院管理", url: "/super/colleges", icon: Building2 },
+  { title: "学院管理员", url: "/super/admins", icon: Shield },
+  { title: "数据看板", url: "/admin/dashboard", icon: BarChart3 },
+  { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
+  { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
 ];
 
 const teacherItems: Item[] = [
@@ -61,9 +71,13 @@ const extraTitles: { pattern: string; title: string }[] = [
 const AppSidebar = () => {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const { hasRole } = useAuth();
+  const { hasRole, isSuperAdmin } = useAuth();
   const location = useLocation();
-  const items = hasRole("admin") ? adminItems : hasRole("teacher") ? teacherItems : studentItems;
+  const items = isSuperAdmin
+    ? superAdminItems
+    : hasRole("admin") ? adminItems
+    : hasRole("teacher") ? teacherItems
+    : studentItems;
 
   const isItemActive = (url: string) =>
     url === "/"
@@ -113,6 +127,7 @@ const AppSidebar = () => {
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
   const { user, roles, signOut, hasRole } = useAuth();
+  const college = useCollegeTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const handleSignOut = async () => {
@@ -121,7 +136,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   };
   const account = user?.email?.split("@")[0] ?? "";
 
-  const allMenuItems = [...adminItems, ...teacherItems, ...studentItems];
+  const allMenuItems = [...superAdminItems, ...adminItems, ...teacherItems, ...studentItems];
   const currentTitle =
     allMenuItems.find((it) =>
       it.url === "/"
@@ -139,7 +154,10 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-3 sm:px-4">
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               <SidebarTrigger />
-              <span className="truncate font-semibold">学分认证系统</span>
+              {college?.badge_url && (
+                <img src={college.badge_url} alt="" className="h-7 w-7 rounded object-contain" />
+              )}
+              <span className="truncate font-semibold">{college?.system_title ?? "学分认证系统"}</span>
               {currentTitle && (
                 <>
                   <span className="hidden text-muted-foreground sm:inline">·</span>
