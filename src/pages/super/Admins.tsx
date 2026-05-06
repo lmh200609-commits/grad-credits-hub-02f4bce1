@@ -30,12 +30,27 @@ const Admins = () => {
   const load = async () => {
     const [{ data: cs }, { data: rs }] = await Promise.all([
       supabase.from("colleges").select("id, name, code").eq("active", true).order("name"),
-      supabase.from("user_roles")
-        .select("user_id, college_id, profiles!inner(full_name, email), colleges(name)")
-        .eq("role", "admin"),
+      supabase.from("user_roles").select("user_id, college_id").eq("role", "admin"),
     ]);
     setColleges((cs as College[]) ?? []);
-    setRows((rs as any) ?? []);
+    const roles = (rs as { user_id: string; college_id: string | null }[]) ?? [];
+    if (roles.length === 0) { setRows([]); return; }
+    const userIds = roles.map((r) => r.user_id);
+    const collegeIds = Array.from(new Set(roles.map((r) => r.college_id).filter(Boolean) as string[]));
+    const [{ data: profs }, { data: cols }] = await Promise.all([
+      supabase.from("profiles").select("user_id, full_name, email").in("user_id", userIds),
+      collegeIds.length
+        ? supabase.from("colleges").select("id, name").in("id", collegeIds)
+        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    ]);
+    const pMap = new Map((profs ?? []).map((p: any) => [p.user_id, p]));
+    const cMap = new Map((cols ?? []).map((c: any) => [c.id, c]));
+    setRows(roles.map((r) => ({
+      user_id: r.user_id,
+      college_id: r.college_id,
+      profiles: pMap.get(r.user_id) ? { full_name: pMap.get(r.user_id).full_name, email: pMap.get(r.user_id).email } : null,
+      colleges: r.college_id && cMap.get(r.college_id) ? { name: cMap.get(r.college_id).name } : null,
+    })));
   };
   useEffect(() => { void load(); }, []);
 
