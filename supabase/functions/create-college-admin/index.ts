@@ -49,11 +49,24 @@ Deno.serve(async (req) => {
     const { data: c } = await admin.from("colleges").select("id").eq("id", college_id).maybeSingle();
     if (!c) return json({ error: "学院不存在" }, 400);
 
+    // Pre-check: account (email) already taken?
+    {
+      const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+      const exists = list?.users?.some((x) => (x.email ?? "").toLowerCase() === email.toLowerCase());
+      if (exists) return json({ error: `该账号已存在：${email.split("@")[0]}` }, 400);
+    }
+
     const { data: u, error: ce } = await admin.auth.admin.createUser({
       email, password, email_confirm: true,
       user_metadata: { full_name },
     });
-    if (ce) return json({ error: `创建账号失败: ${ce.message}` }, 400);
+    if (ce) {
+      const msg = ce.message || "";
+      if (/already|registered|exists/i.test(msg)) {
+        return json({ error: `该账号已存在：${email.split("@")[0]}` }, 400);
+      }
+      return json({ error: `创建账号失败: ${msg}` }, 400);
+    }
     const uid = u.user!.id;
 
     await admin.from("profiles").update({

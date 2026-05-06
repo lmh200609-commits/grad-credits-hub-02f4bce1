@@ -335,7 +335,7 @@ const ReviewHub = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap items-center gap-1">
-                            <StatusBadge status={r.status} />
+                            <StatusBadge status={r.status as any} />
                             {r.status === "pending_review" && <ReviewSourceBadge source={r.review_source} />}
                           </div>
                         </TableCell>
