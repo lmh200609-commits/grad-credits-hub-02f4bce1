@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 type AppRole = "super_admin" | "admin" | "teacher" | "student";
 
 const RoleRoute = ({ role, children }: { role: AppRole | AppRole[]; children: ReactNode }) => {
-  const { user, loading, hasRole } = useAuth();
+  const { user, loading, hasRole, isSuperAdmin } = useAuth();
   const roles = Array.isArray(role) ? role : [role];
   if (loading) {
     return (
@@ -15,7 +15,7 @@ const RoleRoute = ({ role, children }: { role: AppRole | AppRole[]; children: Re
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (!roles.some((r) => hasRole(r))) return <Navigate to="/" replace />;
+  if (!isSuperAdmin && !roles.some((r) => hasRole(r))) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 

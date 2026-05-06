@@ -39,8 +39,19 @@ const superAdminItems: Item[] = [
   { title: "学院管理", url: "/super/colleges", icon: Building2 },
   { title: "学院管理员", url: "/super/admins", icon: Shield },
   { title: "数据看板", url: "/admin/dashboard", icon: BarChart3 },
+  { title: "复核中心", url: "/admin/review", icon: Inbox },
+  { title: "全部审核", url: "/reviews", icon: ClipboardCheck },
+  { title: "提交记录", url: "/submissions", icon: History },
+  { title: "学分排名", url: "/admin/credits", icon: Trophy },
+  { title: "规则库", url: "/admin/rules", icon: BookOpen },
+  { title: "关键词库", url: "/admin/keywords", icon: Tags },
+  { title: "案例库", url: "/admin/cases", icon: Library },
+  { title: "学生管理", url: "/admin/users/students", icon: Users },
+  { title: "教师管理", url: "/admin/users/teachers", icon: UserCog },
+  { title: "批量导入账号", url: "/admin/import", icon: Upload },
   { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
   { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
+  { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 
 const teacherItems: Item[] = [

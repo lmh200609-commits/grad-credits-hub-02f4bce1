@@ -11,6 +11,10 @@ import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import EmptyState from "@/components/EmptyState";
 
 type College = {
@@ -32,6 +36,7 @@ const Colleges = () => {
   const [editing, setEditing] = useState<College | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
+  const [pendingDisable, setPendingDisable] = useState<College | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -76,9 +81,13 @@ const Colleges = () => {
     void load();
   };
 
-  const toggleActive = async (c: College) => {
-    const { error } = await supabase.from("colleges").update({ active: !c.active }).eq("id", c.id);
-    if (error) toast.error(error.message); else void load();
+  const setActive = async (c: College, next: boolean) => {
+    const { error } = await supabase.from("colleges").update({ active: next }).eq("id", c.id);
+    if (error) toast.error(error.message); else { toast.success(next ? "已启用" : "已停用"); void load(); }
+  };
+  const requestToggle = (c: College) => {
+    if (c.active) setPendingDisable(c);
+    else void setActive(c, true);
   };
 
   return (
@@ -127,7 +136,12 @@ const Colleges = () => {
                       <TableCell>{c.name}</TableCell>
                       <TableCell>{c.system_title}</TableCell>
                       <TableCell>{c.badge_url ? <img src={c.badge_url} alt="" className="h-8 w-8 rounded" /> : "—"}</TableCell>
-                      <TableCell><Switch checked={c.active} onCheckedChange={() => toggleActive(c)} /></TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch checked={c.active} onCheckedChange={() => requestToggle(c)} />
+                          <span className="text-xs text-muted-foreground">{c.active ? "启用中" : "已停用"}</span>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="outline" onClick={() => openEdit(c)}>编辑</Button>
                       </TableCell>
@@ -137,6 +151,22 @@ const Colleges = () => {
             </Table>
           </CardContent>
         </Card>
+        <AlertDialog open={!!pendingDisable} onOpenChange={(o) => !o && setPendingDisable(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>停用学院 “{pendingDisable?.name}”？</AlertDialogTitle>
+              <AlertDialogDescription>
+                停用后，该学院的管理员、教师、学生将无法使用本系统。数据保留，可随时重新启用。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { if (pendingDisable) { void setActive(pendingDisable, false); setPendingDisable(null); } }}>
+                确认停用
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
