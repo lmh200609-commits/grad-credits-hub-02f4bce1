@@ -59,17 +59,16 @@ const Colleges = () => {
       return;
     }
     setSaving(true);
-    const payload: Record<string, unknown> = {
+    const base = {
       name: form.name.trim(),
       system_title: form.system_title.trim() || "学分认证系统",
     };
-    if (!editing) {
-      // auto-generate code (DB NOT NULL + unique)
-      payload.code = `C${Date.now().toString(36).toUpperCase()}`;
-    }
     const { error } = editing
-      ? await supabase.from("colleges").update(payload).eq("id", editing.id)
-      : await supabase.from("colleges").insert(payload as { code: string; name: string; system_title: string });
+      ? await supabase.from("colleges").update(base).eq("id", editing.id)
+      : await supabase.from("colleges").insert({
+          ...base,
+          code: `C${Date.now().toString(36).toUpperCase()}`,
+        });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(editing ? "已更新" : "学院已创建");
