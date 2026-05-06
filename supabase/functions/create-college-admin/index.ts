@@ -60,12 +60,7 @@ Deno.serve(async (req) => {
 
     let uid: string;
     if (existingId) {
-      // Reject only if already an admin somewhere
-      const { data: roleRow } = await admin.from("user_roles")
-        .select("user_id, college_id").eq("user_id", existingId).eq("role", "admin").maybeSingle();
-      if (roleRow) return json({ error: `该账号已是学院管理员：${email.split("@")[0]}` }, 400);
       uid = existingId;
-      // Reset password & metadata for adoption
       await admin.auth.admin.updateUserById(uid, { password, user_metadata: { full_name } });
     } else {
       const { data: u, error: ce } = await admin.auth.admin.createUser({
@@ -79,10 +74,12 @@ Deno.serve(async (req) => {
       full_name, email, college_id,
     }).eq("user_id", uid);
 
+    // Upsert admin role for this college; remove any other admin rows to avoid dupes
+    await admin.from("user_roles").delete().eq("user_id", uid).eq("role", "admin");
     const { error: re } = await admin.from("user_roles")
       .insert({ user_id: uid, role: "admin", college_id });
     if (re) {
-      await admin.auth.admin.deleteUser(uid).catch(() => {});
+      if (!existingId) await admin.auth.admin.deleteUser(uid).catch(() => {});
       return json({ error: `分配角色失败: ${re.message}` }, 500);
     }
 
