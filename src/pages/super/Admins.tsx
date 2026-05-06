@@ -31,6 +31,9 @@ const Admins = () => {
   const [form, setForm] = useState({ account: "", password: "", full_name: "", college_id: "" });
   const [saving, setSaving] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<AdminRow | null>(null);
+  const [resetting, setResetting] = useState<AdminRow | null>(null);
+  const [newPwd, setNewPwd] = useState("");
+  const [resetSaving, setResetSaving] = useState(false);
 
   const load = async () => {
     const [{ data: cs }, { data: rs }] = await Promise.all([
@@ -64,6 +67,23 @@ const Admins = () => {
     if (error) { toast.error(error.message); return; }
     toast.success("已撤销管理员权限");
     void load();
+  };
+
+  const submitReset = async () => {
+    if (!resetting) return;
+    if (newPwd.length < 6) { toast.error("密码至少 6 位"); return; }
+    setResetSaving(true);
+    const { data, error } = await supabase.functions.invoke("reset-admin-password", {
+      body: { user_id: resetting.user_id, password: newPwd },
+    });
+    setResetSaving(false);
+    if (error || (data as any)?.error) {
+      toast.error((data as any)?.error ?? error?.message ?? "重置失败");
+      return;
+    }
+    toast.success(`已重置 ${resetting.profiles?.full_name ?? ""} 的密码`);
+    setResetting(null);
+    setNewPwd("");
   };
   useEffect(() => { void load(); }, []);
 
@@ -141,6 +161,9 @@ const Admins = () => {
                     <TableCell className="font-mono">{emailToAccount(r.profiles?.email) || "—"}</TableCell>
                     <TableCell>{r.colleges?.name ?? "（未绑定）"}</TableCell>
                     <TableCell className="text-right">
+                      <Button size="sm" variant="outline" className="mr-2" onClick={() => { setResetting(r); setNewPwd(""); }}>
+                        重置密码
+                      </Button>
                       <Button size="sm" variant="outline" className="text-danger" onClick={() => setPendingRemove(r)}>
                         移除
                       </Button>
@@ -151,6 +174,24 @@ const Admins = () => {
             </Table>
           </CardContent>
         </Card>
+        <Dialog open={!!resetting} onOpenChange={(o) => { if (!o) { setResetting(null); setNewPwd(""); } }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>重置 {resetting?.profiles?.full_name ?? ""} 的密码</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                出于安全设计，原始密码不可读取。设定一个新密码后请告知该管理员。
+              </p>
+              <div>
+                <Label>新密码 (≥6 位)</Label>
+                <Input type="text" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setResetting(null); setNewPwd(""); }}>取消</Button>
+              <Button onClick={submitReset} disabled={resetSaving}>{resetSaving ? "重置中…" : "确认重置"}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <AlertDialog open={!!pendingRemove} onOpenChange={(o) => !o && setPendingRemove(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
