@@ -374,8 +374,9 @@ const TeacherWorkbench = () => {
 };
 
 const Index = () => {
-  const { hasRole, loading } = useAuth();
+  const { hasRole, isSuperAdmin, loading } = useAuth();
   if (loading) return <AppLayout><div className="h-32 animate-pulse rounded-md bg-muted" /></AppLayout>;
+  if (isSuperAdmin) return <Navigate to="/super/colleges" replace />;
   if (hasRole("admin")) return <Navigate to="/admin/dashboard" replace />;
   return (
     <AppLayout>
