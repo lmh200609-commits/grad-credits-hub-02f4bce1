@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 
-type AppRole = "admin" | "teacher" | "student";
+type AppRole = "super_admin" | "admin" | "teacher" | "student";
 
 const RoleRoute = ({ role, children }: { role: AppRole | AppRole[]; children: ReactNode }) => {
   const { user, loading, hasRole } = useAuth();
