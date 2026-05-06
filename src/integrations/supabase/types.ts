@@ -178,6 +178,7 @@ export type Database = {
           ai_suggested_credit: number | null
           certificate_issued_at: string | null
           certificate_no: string | null
+          college_id: string | null
           created_at: string
           custom_keywords: string[]
           description: string
@@ -226,6 +227,7 @@ export type Database = {
           ai_suggested_credit?: number | null
           certificate_issued_at?: string | null
           certificate_no?: string | null
+          college_id?: string | null
           created_at?: string
           custom_keywords?: string[]
           description: string
@@ -274,6 +276,7 @@ export type Database = {
           ai_suggested_credit?: number | null
           certificate_issued_at?: string | null
           certificate_no?: string | null
+          college_id?: string | null
           created_at?: string
           custom_keywords?: string[]
           description?: string
@@ -300,6 +303,13 @@ export type Database = {
             columns: ["ai_matched_rule_id"]
             isOneToOne: false
             referencedRelation: "rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "applications_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
             referencedColumns: ["id"]
           },
         ]
@@ -537,6 +547,48 @@ export type Database = {
         }
         Relationships: []
       }
+      colleges: {
+        Row: {
+          active: boolean
+          badge_url: string | null
+          code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          short_name: string | null
+          system_title: string
+          theme: Json
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          badge_url?: string | null
+          code: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          short_name?: string | null
+          system_title?: string
+          theme?: Json
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          badge_url?: string | null
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          short_name?: string | null
+          system_title?: string
+          theme?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       keywords: {
         Row: {
           active: boolean
@@ -617,6 +669,7 @@ export type Database = {
           bed_no: string | null
           birth_date: string | null
           class_name: string | null
+          college_id: string | null
           created_at: string
           department: string | null
           dorm_room: string | null
@@ -645,6 +698,7 @@ export type Database = {
           bed_no?: string | null
           birth_date?: string | null
           class_name?: string | null
+          college_id?: string | null
           created_at?: string
           department?: string | null
           dorm_room?: string | null
@@ -673,6 +727,7 @@ export type Database = {
           bed_no?: string | null
           birth_date?: string | null
           class_name?: string | null
+          college_id?: string | null
           created_at?: string
           department?: string | null
           dorm_room?: string | null
@@ -694,7 +749,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       rule_library: {
         Row: {
@@ -938,24 +1001,35 @@ export type Database = {
       }
       user_roles: {
         Row: {
+          college_id: string | null
           created_at: string
           id: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Insert: {
+          college_id?: string | null
           created_at?: string
           id?: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Update: {
+          college_id?: string | null
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -1007,6 +1081,7 @@ export type Database = {
           last4: string
         }[]
       }
+      current_user_college_id: { Args: never; Returns: string }
       dedupe_keywords: {
         Args: never
         Returns: {
@@ -1022,6 +1097,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_super_admin: { Args: { _user_id: string }; Returns: boolean }
       normalize_keyword: { Args: { s: string }; Returns: string }
       refresh_certificate_types: { Args: never; Returns: number }
       strip_time_tokens: { Args: { s: string }; Returns: string }
