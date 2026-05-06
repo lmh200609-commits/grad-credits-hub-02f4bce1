@@ -11,7 +11,16 @@ import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EmptyState from "@/components/EmptyState";
+
+type Theme = {
+  primary?: string;
+  accent?: string;
+  background?: string;
+  radius?: string;
+  layout?: "sidebar" | "top-nav" | "compact";
+};
 
 type College = {
   id: string;
@@ -21,13 +30,26 @@ type College = {
   system_title: string;
   badge_url: string | null;
   active: boolean;
+  theme: Theme;
+};
+
+const emptyForm = {
+  code: "",
+  name: "",
+  short_name: "",
+  system_title: "学分认证系统",
+  primary: "",
+  accent: "",
+  radius: "0.5",
+  layout: "sidebar" as Theme["layout"],
 };
 
 const Colleges = () => {
   const [rows, setRows] = useState<College[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ code: "", name: "", short_name: "", system_title: "学分认证系统" });
+  const [editing, setEditing] = useState<College | null>(null);
+  const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -38,23 +60,54 @@ const Colleges = () => {
   };
   useEffect(() => { void load(); }, []);
 
-  const create = async () => {
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...emptyForm });
+    setOpen(true);
+  };
+
+  const openEdit = (c: College) => {
+    setEditing(c);
+    const t = c.theme ?? {};
+    setForm({
+      code: c.code,
+      name: c.name,
+      short_name: c.short_name ?? "",
+      system_title: c.system_title,
+      primary: t.primary ?? "",
+      accent: t.accent ?? "",
+      radius: t.radius ? t.radius.replace("rem", "") : "0.5",
+      layout: (t.layout ?? "sidebar") as Theme["layout"],
+    });
+    setOpen(true);
+  };
+
+  const submit = async () => {
     if (!form.code.trim() || !form.name.trim()) {
       toast.error("代号和名称必填");
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("colleges").insert({
+    const theme: Theme = {
+      ...(form.primary.trim() && { primary: form.primary.trim() }),
+      ...(form.accent.trim() && { accent: form.accent.trim() }),
+      ...(form.radius.trim() && { radius: `${form.radius.trim()}rem` }),
+      ...(form.layout && { layout: form.layout }),
+    };
+    const payload = {
       code: form.code.trim(),
       name: form.name.trim(),
       short_name: form.short_name.trim() || null,
       system_title: form.system_title.trim() || "学分认证系统",
-    });
+      theme,
+    };
+    const { error } = editing
+      ? await supabase.from("colleges").update(payload).eq("id", editing.id)
+      : await supabase.from("colleges").insert(payload);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success("学院已创建");
+    toast.success(editing ? "已更新" : "学院已创建");
     setOpen(false);
-    setForm({ code: "", name: "", short_name: "", system_title: "学分认证系统" });
     void load();
   };
 
@@ -68,55 +121,108 @@ const Colleges = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">学院管理</h1>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">新增学院</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>新增学院</DialogTitle></DialogHeader>
-              <div className="space-y-3">
+          <Button size="sm" onClick={openCreate}>新增学院</Button>
+        </div>
+
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader><DialogTitle>{editing ? "编辑学院" : "新增学院"}</DialogTitle></DialogHeader>
+            <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>代号 *</Label>
-                  <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="如 INFO" />
-                </div>
-                <div>
-                  <Label>名称 *</Label>
-                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="如 信息工程学院" />
+                  <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="如 INFO" disabled={!!editing} />
                 </div>
                 <div>
                   <Label>简称</Label>
                   <Input value={form.short_name} onChange={(e) => setForm({ ...form, short_name: e.target.value })} placeholder="如 信工" />
                 </div>
-                <div>
-                  <Label>系统标题</Label>
-                  <Input value={form.system_title} onChange={(e) => setForm({ ...form, system_title: e.target.value })} />
-                </div>
               </div>
-              <DialogFooter>
-                <Button onClick={create} disabled={saving}>{saving ? "保存中…" : "创建"}</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+              <div>
+                <Label>名称 *</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="如 信息工程学院" />
+              </div>
+              <div>
+                <Label>系统标题</Label>
+                <Input value={form.system_title} onChange={(e) => setForm({ ...form, system_title: e.target.value })} />
+              </div>
+              <div className="pt-2 border-t">
+                <div className="text-sm font-semibold mb-2">主题配置</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>主色 (HSL)</Label>
+                    <Input value={form.primary} onChange={(e) => setForm({ ...form, primary: e.target.value })} placeholder="如 222 80% 50%" />
+                  </div>
+                  <div>
+                    <Label>辅助色 (HSL)</Label>
+                    <Input value={form.accent} onChange={(e) => setForm({ ...form, accent: e.target.value })} placeholder="如 210 40% 96%" />
+                  </div>
+                  <div>
+                    <Label>圆角 (rem)</Label>
+                    <Input value={form.radius} onChange={(e) => setForm({ ...form, radius: e.target.value })} placeholder="0.5" />
+                  </div>
+                  <div>
+                    <Label>布局</Label>
+                    <Select value={form.layout} onValueChange={(v) => setForm({ ...form, layout: v as Theme["layout"] })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sidebar">侧边栏</SelectItem>
+                        <SelectItem value="top-nav">顶部导航</SelectItem>
+                        <SelectItem value="compact">紧凑</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {form.primary && (
+                  <div className="mt-3 flex items-center gap-2 text-sm">
+                    <span>预览：</span>
+                    <span
+                      className="inline-block h-6 w-6 rounded border"
+                      style={{ background: `hsl(${form.primary})` }}
+                    />
+                    <span className="text-muted-foreground">hsl({form.primary})</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
+              <Button onClick={submit} disabled={saving}>{saving ? "保存中…" : "保存"}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Card>
           <CardHeader><CardTitle className="text-base">共 {rows.length} 个学院</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow>
                 <TableHead>代号</TableHead><TableHead>名称</TableHead><TableHead>简称</TableHead>
-                <TableHead>系统标题</TableHead><TableHead>院徽</TableHead><TableHead>启用</TableHead>
+                <TableHead>系统标题</TableHead><TableHead>主色</TableHead><TableHead>院徽</TableHead>
+                <TableHead>启用</TableHead><TableHead className="text-right">操作</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {loading ? <TableRow><TableCell colSpan={6}>加载中…</TableCell></TableRow>
-                  : rows.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyState title="暂无学院" description="点击右上角「新增学院」开始" /></TableCell></TableRow>
+                {loading ? <TableRow><TableCell colSpan={8}>加载中…</TableCell></TableRow>
+                  : rows.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState title="暂无学院" description="点击右上角「新增学院」开始" /></TableCell></TableRow>
                   : rows.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="font-mono">{c.code}</TableCell>
                       <TableCell>{c.name}</TableCell>
                       <TableCell>{c.short_name ?? "—"}</TableCell>
                       <TableCell>{c.system_title}</TableCell>
+                      <TableCell>
+                        {c.theme?.primary ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="inline-block h-4 w-4 rounded border" style={{ background: `hsl(${c.theme.primary})` }} />
+                            <span className="text-xs text-muted-foreground">{c.theme.primary}</span>
+                          </span>
+                        ) : "—"}
+                      </TableCell>
                       <TableCell>{c.badge_url ? <img src={c.badge_url} alt="" className="h-8 w-8 rounded" /> : "—"}</TableCell>
                       <TableCell><Switch checked={c.active} onCheckedChange={() => toggleActive(c)} /></TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" variant="outline" onClick={() => openEdit(c)}>编辑</Button>
+                      </TableCell>
                     </TableRow>
                   ))}
               </TableBody>
