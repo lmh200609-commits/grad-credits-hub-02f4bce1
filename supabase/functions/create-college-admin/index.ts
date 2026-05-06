@@ -49,25 +49,31 @@ Deno.serve(async (req) => {
     const { data: c } = await admin.from("colleges").select("id").eq("id", college_id).maybeSingle();
     if (!c) return json({ error: "学院不存在" }, 400);
 
-    // Pre-check: account (email) already taken?
-    {
-      const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-      const exists = list?.users?.some((x) => (x.email ?? "").toLowerCase() === email.toLowerCase());
-      if (exists) return json({ error: `该账号已存在：${email.split("@")[0]}` }, 400);
+    // Find existing auth user with this email (paginate)
+    let existingId: string | null = null;
+    for (let page = 1; page <= 20; page++) {
+      const { data: list } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+      const hit = list?.users?.find((x) => (x.email ?? "").toLowerCase() === email.toLowerCase());
+      if (hit) { existingId = hit.id; break; }
+      if (!list?.users || list.users.length < 200) break;
     }
 
-    const { data: u, error: ce } = await admin.auth.admin.createUser({
-      email, password, email_confirm: true,
-      user_metadata: { full_name },
-    });
-    if (ce) {
-      const msg = ce.message || "";
-      if (/already|registered|exists/i.test(msg)) {
-        return json({ error: `该账号已存在：${email.split("@")[0]}` }, 400);
-      }
-      return json({ error: `创建账号失败: ${msg}` }, 400);
+    let uid: string;
+    if (existingId) {
+      // Reject only if already an admin somewhere
+      const { data: roleRow } = await admin.from("user_roles")
+        .select("user_id, college_id").eq("user_id", existingId).eq("role", "admin").maybeSingle();
+      if (roleRow) return json({ error: `该账号已是学院管理员：${email.split("@")[0]}` }, 400);
+      uid = existingId;
+      // Reset password & metadata for adoption
+      await admin.auth.admin.updateUserById(uid, { password, user_metadata: { full_name } });
+    } else {
+      const { data: u, error: ce } = await admin.auth.admin.createUser({
+        email, password, email_confirm: true, user_metadata: { full_name },
+      });
+      if (ce) return json({ error: `创建账号失败: ${ce.message}` }, 400);
+      uid = u.user!.id;
     }
-    const uid = u.user!.id;
 
     await admin.from("profiles").update({
       full_name, email, college_id,
