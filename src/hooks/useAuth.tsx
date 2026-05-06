@@ -2,16 +2,18 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-type AppRole = "admin" | "teacher" | "student";
+type AppRole = "super_admin" | "admin" | "teacher" | "student";
 
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   roles: AppRole[];
+  collegeId: string | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   hasRole: (role: AppRole) => boolean;
+  isSuperAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -20,11 +22,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [collegeId, setCollegeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchRoles = async (userId: string) => {
-    const { data } = await supabase.from("user_roles").select("role").eq("user_id", userId);
-    setRoles((data?.map((r) => r.role as AppRole)) ?? []);
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role, college_id")
+      .eq("user_id", userId);
+    const rs = (data?.map((r) => r.role as AppRole)) ?? [];
+    setRoles(rs);
+    // Pick college_id from first non-super_admin row that has one
+    const cid = (data ?? []).find((r) => r.role !== "super_admin" && r.college_id)?.college_id ?? null;
+    setCollegeId(cid as string | null);
   };
 
   useEffect(() => {
@@ -37,6 +47,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setTimeout(() => fetchRoles(newSession.user.id), 0);
       } else {
         setRoles([]);
+        setCollegeId(null);
       }
     });
 
@@ -64,9 +75,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const hasRole = (role: AppRole) => roles.includes(role);
+  const isSuperAdmin = roles.includes("super_admin");
 
   return (
-    <AuthContext.Provider value={{ user, session, roles, loading, signIn, signOut, hasRole }}>
+    <AuthContext.Provider value={{ user, session, roles, collegeId, loading, signIn, signOut, hasRole, isSuperAdmin }}>
       {children}
     </AuthContext.Provider>
   );

@@ -34,6 +34,7 @@ async function createOneUser(
   admin: ReturnType<typeof createClient>,
   r: Row,
   idx: number,
+  callerCollegeId: string | null,
 ): Promise<{ user_id: string; student_no: string }> {
   const sno = r.student_no.trim();
   // 合成邮箱必须只包含 ASCII 字母/数字/.-_，否则 Supabase Auth 会拒绝
@@ -65,6 +66,7 @@ async function createOneUser(
       class_name: r.class_name?.trim() || null,
       department: r.department?.trim() || null,
       major: r.major?.trim() || null,
+      college_id: callerCollegeId,
       email,
       gender: r.gender?.trim() || null,
       ethnicity: r.ethnicity?.trim() || null,
@@ -81,7 +83,7 @@ async function createOneUser(
 
   const { error: re } = await admin
     .from("user_roles")
-    .insert({ user_id: uid, role: r.role });
+    .insert({ user_id: uid, role: r.role, college_id: callerCollegeId });
   if (re) throw new Error(`第 ${idx + 2} 行分配角色失败: ${re.message}`);
 
   return { user_id: uid, student_no: sno };
@@ -112,11 +114,12 @@ Deno.serve(async (req) => {
     );
     const { data: roleRow } = await admin
       .from("user_roles")
-      .select("role")
+      .select("role, college_id")
       .eq("user_id", callerId)
-      .eq("role", "admin")
+      .in("role", ["admin", "super_admin"])
       .maybeSingle();
     if (!roleRow) return json({ error: "Forbidden: admin role required" }, 403);
+    const callerCollegeId = (roleRow as any).college_id ?? null;
 
     const body = await req.json();
     const rows = body.rows as Row[];
@@ -188,7 +191,7 @@ Deno.serve(async (req) => {
         for (let i = 0; i < chunk.length; i += CONCURRENCY) {
           const batch = chunk.slice(i, i + CONCURRENCY);
           const results = await Promise.allSettled(
-            batch.map((r, j) => createOneUser(admin, r, cStart + i + j)),
+            batch.map((r, j) => createOneUser(admin, r, cStart + i + j, callerCollegeId)),
           );
           results.forEach((res, j) => {
             const absIdx = cStart + i + j;
