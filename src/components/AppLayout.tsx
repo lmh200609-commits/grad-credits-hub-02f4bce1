@@ -145,7 +145,11 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     await signOut();
     navigate("/login", { replace: true });
   };
-  const account = user?.email?.split("@")[0] ?? "";
+  const roleLabel = roles.includes("super_admin") ? "超级管理员"
+    : roles.includes("admin") ? "学院管理员"
+    : roles.includes("teacher") ? "教师"
+    : roles.includes("student") ? "学生"
+    : "未分配";
 
   const allMenuItems = [...superAdminItems, ...adminItems, ...teacherItems, ...studentItems];
   const currentTitle =
@@ -180,7 +184,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
             </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="hidden max-w-[40vw] truncate text-muted-foreground md:inline">
-                {account} · {roles.join(", ") || "未分配"}
+                {roleLabel}
               </span>
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
                 <LogOut className="h-4 w-4 sm:mr-1" />
