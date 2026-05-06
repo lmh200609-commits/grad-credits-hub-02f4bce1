@@ -1,53 +1,114 @@
-## 问题诊断
+# 多学院（多租户）改造方案 v2
 
-预览表里出现"格式异常 / 无法导入"的根因，是 `src/pages/admin/ImportUsers.tsx` 里的 `validateRow` 校验规则与真实 Excel 数据不匹配，加上 `ai-parse-roster` 解析层兜底不够。最常踩中的几条：
+把当前单租户系统升级为按"学院"隔离的多租户系统：超级管理员创建并管理学院与学院管理员；每个学院管理员可上传本学院院徽，自动作为系统主题/UI 视觉参考；师生数据严格按学院隔离。
 
-1. **床号 `bed_no`** 当前正则 `/^[A-Za-z0-9\-]{1,8}$/` 不允许中文。实际表里常见 `1床` / `上铺` / `下铺` / `2号床` / `A床`，全部会被标红。
-2. **出生日期 `birth_date`** 校验要求严格 `YYYY-MM-DD`。如果 Excel 里是 `2003/5/8`、`2003-5-8`、`2003年5月8日`、或 Excel 序列号（如 `37756`），`ai-parse-roster` 仅在能匹配到 `YYYY-M-D` 才会补零，其它格式会原样回填或丢弃，落到前端就标红。
-3. **性别 `gender`** 只接受"男/女"。表里常见 `M`/`F`/`male`/`female`/带全角空格的 `男 `——解析层虽然有归一化，但只在能匹配时才转，其它原样透传，被前端判错。
-4. **手机号 `phone`** 含 `+86`、`-`、空格在解析层未清洗，前端按 `digits` 计数虽 OK，但带 `+86` 会变 13 位以上仍可能误报；同时空字符串 `""` 不应当报错（已正确，但要确认）。
-5. **入学年份 `enrollment_year`** 当源列是"大二/2023级/23级"时，AI 可能识别成 23、`undefined` 或 NaN，前端报"年级超出范围"。
-6. **密码 `password`** 当电话为空时按现规则会被左侧补 0 至 6 位，仍能通过 ≥6 位检查；但若学号也异常短，会触发"密码不足 6 位"。需在解析层加最低长度兜底。
-7. **公寓号/宿舍号** 长度 20 一般够用，保留。
+## 1. 角色体系
 
-校验本身的目的是阻止脏数据进库，不是阻止真实数据。所以策略应当是：**解析层尽量归一化、前端只对真正不可接受的数据报错**，并把"轻微不规范"降级为警告（黄色），不阻断导入。
+| 角色 | 来源 | 视野 | 主要职责 |
+|---|---|---|---|
+| `super_admin`（新增） | 系统初始 / 由现有 admin 升级 | 全平台 | 创建/停用学院、创建学院管理员、跨学院看板、AI 模型设置 |
+| `admin`（学院管理员） | **仅由 super_admin 在后台创建**（不可自助注册） | 仅本学院 | 现有 admin 全部功能（自动按学院过滤）+ 上传本学院院徽 / 调整主题 |
+| `teacher` | 学院 admin 导入 | 仅本学院 | 现有 teacher 功能 |
+| `student` | 学院 admin 导入 | 仅本人 | 现有 student 功能 |
 
-## 修复方案
+## 2. 数据模型
 
-### 1. 解析层 `supabase/functions/ai-parse-roster/index.ts` 增强归一化
+### 新增 `colleges` 表
+- `id` `code` `name` `short_name` `system_title`
+- `badge_url` (text) — 院徽图片，存储桶 URL
+- `theme` (jsonb) — 自动 + 手动：
+  - `primary` / `accent` / `background` (HSL，初始由院徽主色提取，可手动覆盖)
+  - `font_pair`（字体对 preset）
+  - `layout`（`sidebar` | `top-nav` | `compact`）
+  - `radius`
+- `active` (boolean)
+- `created_by` (uuid → super_admin)
 
-- **birth_date**：在现有 `YYYY-M-D` 之外，加：
-  - 支持 `YYYY/M/D`、`YYYY.M.D`、`YYYY年M月D日`
-  - 支持 Excel 序列号（数字字符串，如 `37756`）→ 转 `YYYY-MM-DD`
-  - 解析失败不写脏值，留 `undefined`（表示该字段缺失，前端不再报错）
-- **gender**：扩大映射 —— `M/m/male/Male/1/先生 → 男`；`F/f/female/Female/0/女士 → 女`；其它无法识别一律归 `undefined`。
-- **phone**：去掉所有非数字字符；若以 `86` 开头且总长 13 位，截掉前 2 位；最终长度不在 `[7, 15]` → `undefined`。
-- **bed_no**：保留中文+字母+数字+横线，去掉空格，长度 ≤ 12；解析不出来 → `undefined`。
-- **enrollment_year**：在 `(19|20)\d{2}` 之外，再支持 `\d{2}级` → 自动 `2000+xx` 或 `1900+xx`（按当前年份兜底）。
-- **密码兜底**：若计算出的密码 < 6 位，左侧用学号字符或 `0` 补足到 6 位，确保始终 ≥ 6。
+### 新增存储桶 `college-badges`（public）
+- 路径：`{college_id}/badge.{ext}`
+- RLS：所有人可读；仅本学院 admin 与 super_admin 可写/覆盖
 
-### 2. 前端 `src/pages/admin/ImportUsers.tsx` 校验放宽
+### 现有表扩展
+- `profiles.college_id uuid`（与 `department` 共存）
+- `applications.college_id uuid`（trigger 自动从学生 profile 写入）
+- `user_roles` 增加可空 `college_id`；枚举 `app_role` 增加 `super_admin`
 
-- **bed_no** 正则改为 `^[\u4e00-\u9fa5A-Za-z0-9\-]{1,12}$`（允许中文、最长 12）。
-- **birth_date** 因解析层已统一归一，前端保留严格校验即可（解析失败的字段已是 `undefined`，不会报错）。
-- **gender** 同上，解析层归一后前端校验自然通过。
-- **phone** 校验放宽到 `[7, 15]` 数字（保持），不报"位数异常"——解析层已清洗，若传到前端必然合法或 `undefined`。
-- **password** 最低长度仍是 6，但因解析层兜底后必然 ≥ 6。
-- **新增「警告」分级**：把"过长截断"等非阻断性问题用黄色提示展示，而不是红色阻断。这一版可以先把上述四类降为可通过，是否需要黄色警告留作后续。
-- **顶部错误条**文案补一句："如长期出现同类型异常，可点这里反馈" → 仅文案优化（可选）。
+### 安全函数
+- `current_user_college_id()` security definer
+- `is_super_admin(uid)` security definer
+- 所有业务表 RLS 加学院过滤；super_admin 跨学院全开
 
-### 3. AI 助手 prompt 微调（`import-assistant-chat`）
+## 3. 超级管理员后台（新增）
 
-在用户问"为什么标红 / 怎么修"时，明确说明常见原因（出生日期写法、性别非男/女、床号含空格等），并提示这一版已自动归一化，多数情况下重新上传即可。
+新增路由：
+- `/super/dashboard` — 跨学院汇总看板（按学院切片）
+- `/super/colleges` — 学院 CRUD：创建学院（code/name/short_name/system_title），停用/启用
+- `/super/admins` — 创建学院管理员：
+  - 输入邮箱、姓名、所属学院
+  - Edge Function `create-college-admin` 调用 `auth.admin.createUser` 生成账号 + 写 `user_roles(role=admin, college_id=X)` + 写 `profiles`
+  - 一键重置密码、转移管理员、停用
+  - **学院管理员账号无法通过普通注册流程产生，只能由 super_admin 创建**
+- `/super/audit` — 全平台审计
 
-## 涉及文件
+## 4. 学院管理员的院徽与主题
 
-- `supabase/functions/ai-parse-roster/index.ts`（归一化增强 + 密码兜底）
-- `src/pages/admin/ImportUsers.tsx`（`validateRow` 中 `bed_no` 正则放宽）
-- `supabase/functions/import-assistant-chat/index.ts`（prompt 增加常见异常原因说明，可选）
+新增 `/admin/branding` 页面（仅本学院 admin 可见）：
+1. **上传院徽**（PNG/SVG/JPG，≤2MB）→ 存入 `college-badges/{college_id}/badge.xxx`
+2. 上传后调用 Edge Function `extract-badge-palette`：
+   - 用 `node-vibrant` 兼容方案在浏览器端提取主色 / 辅色（轻量，纯前端实现，不必走 edge）
+   - 自动转换为 HSL，写入 `colleges.theme.primary` / `accent` / `background`
+3. **可视化微调**：管理员看到实时预览（侧边栏、按钮、卡片），可手动覆盖主色、字体对、布局变体（sidebar / top-nav / compact）、圆角强度
+4. 保存后所有本学院师生下次刷新即生效
 
-## 验收标准
+院徽用途：
+- 系统 Header 左上角 Logo（替换"学分认证系统"前的图标）
+- 登录页学院 Logo
+- 证书 PDF 加水印 / 抬头
+- 主题色取色参考
 
-1. 上传一份典型的中文宿舍 Excel（床号写"1床/上铺"、出生日期写"2003/5/8"、性别写"男 "/"M"），预览表 **不再** 出现红色标红。
-2. 上传一份脏数据（学号空、姓名空、性别填"未知"），相应字段仍正确标红，且"确认导入"按钮被禁用。
-3. 修复后，使用真实数据上传 → 预览全绿 → 点击确认 → 出现绿色成功卡片 + 跳转按钮 → 在 `/admin/users/students` 立即可见新账号。
+## 5. UI 主题注入机制
+
+- `useCollegeTheme()` hook：登录后根据 `college_id` 拉取 `colleges.theme` + `badge_url`
+- 注入 CSS 变量到 `:root`，覆盖 `index.css` 中的 `--primary`、`--accent`、`--background`、`--radius`
+- 切换字体对（动态 link Google Fonts）
+- `AppLayout.tsx` 根据 `theme.layout` 渲染 `sidebar` / `top-nav` / `compact` 三种布局变体
+- `system_title` 替换 header 文案
+- super_admin 默认主题 = 平台中性主题；预览某学院时可临时切换
+
+## 6. 批量导入归属
+
+`ImportUsers.tsx` + `import-users` Edge Function：
+- 学院 admin 导入：自动写其 `college_id`；Excel 中"学院"列若与本院不一致则报错
+- super_admin 导入：必须在 Excel 提供"学院"列（按 `code` 或 `name` 匹配）
+- AI 解析助手 (`ai-parse-roster`) 输出新增 `college` 字段
+
+## 7. RLS 策略改写
+
+- `applications` `submission_records` `application_reviews` `audit_logs` `profiles`：admin/teacher 限本学院；super_admin 全部；student 仍按 `student_id`
+- `colleges`：全员可读自己学院；super_admin 可全部增删改；学院 admin 仅可改本学院 `theme` 与 `badge_url`、`system_title`
+- `user_roles`：仅 super_admin 可创建/修改 admin 行；学院 admin 仅可创建/修改本学院 teacher/student 行
+- `rules` `keywords` `cases` `certificate_types` 保持全局共享
+
+## 8. 数据迁移
+
+1. Migration：建表、加字段、加枚举值、建存储桶
+2. 数据回填：把现有 `profiles.department` 聚合为 colleges → 回填 `college_id`、`applications.college_id`
+3. 把当前唯一 admin 升级为 `super_admin`，由其登录后在 `/super/admins` 给各学院创建管理员
+4. RLS 一次性切换为新策略
+
+## 9. 影响文件
+
+- 新增：`src/pages/super/Dashboard.tsx` `Colleges.tsx` `Admins.tsx` `Audit.tsx`、`src/pages/admin/Branding.tsx`、`src/hooks/useCollegeTheme.ts`、`src/lib/extractPalette.ts`、Edge Function `create-college-admin`
+- 修改：`useAuth.tsx`（暴露 `collegeId` / `isSuperAdmin`）、`RoleRoute.tsx`、`App.tsx`、`AppLayout.tsx`（主题/布局/Logo）、`ImportUsers.tsx`、`import-users` / `ai-parse-roster` Edge Functions、菜单按角色与学院过滤
+- 列表页（Dashboard/Credits/Reviews/SubmissionRecords/UsersManage/Students/AuditLogs）查询逻辑无需改动，由 RLS 自动收紧；仅替换"全平台"等文案
+
+## 10. 风险
+
+- 主题 CSS 变量必须用 HSL，避免破坏现有设计系统
+- 院徽取色若是单色 Logo 可能不适合做背景，需做"对比度兜底"——当提取色对比不足时自动回退到中性色
+- 历史 `applications` / `audit_logs` 必须迁移到位，否则 RLS 收紧后看不到任何数据
+- 规则库默认全局共享；如某学院希望规则也独立，请告知，可后续扩展为 `rules.college_id`（null = 全局）
+
+---
+
+确认即开始实施。
