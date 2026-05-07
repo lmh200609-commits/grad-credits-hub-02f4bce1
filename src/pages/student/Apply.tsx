@@ -341,6 +341,9 @@ const ApplyPage = () => {
   const fileTooBig = !!file && file.size > 10 * 1024 * 1024;
 
   const submit = async () => {
+    if (!collegeId) {
+      return toast({ title: "账号未分配学院", description: "请联系管理员分配所属学院后再提交", variant: "destructive" });
+    }
     if (!openWindow) {
       return toast({ title: "当前不在开放提交时间内", description: "请等待管理员开放下一批次", variant: "destructive" });
     }
@@ -436,15 +439,32 @@ const ApplyPage = () => {
               <Button variant="outline" asChild>
                 <Link to="/my-applications"><ArrowLeft className="mr-1 h-4 w-4" /> 我的申请</Link>
               </Button>
-              <Button onClick={submit} disabled={submitting || (windowChecked && !openWindow)} className="bg-gradient-to-r from-primary to-primary/80">
-                {windowChecked && !openWindow ? <Lock className="mr-1 h-4 w-4" /> : <Send className="mr-1 h-4 w-4" />}
-                {submitting ? "提交中…" : windowChecked && !openWindow ? "未开放提交" : "提交申请"}
+              <Button onClick={submit} disabled={submitting || !collegeId || (windowChecked && !openWindow)} className="bg-gradient-to-r from-primary to-primary/80">
+                {!collegeId || (windowChecked && !openWindow) ? <Lock className="mr-1 h-4 w-4" /> : <Send className="mr-1 h-4 w-4" />}
+                {submitting
+                  ? "提交中…"
+                  : !collegeId
+                    ? "账号未分配学院"
+                    : windowChecked && !openWindow
+                      ? "未开放提交"
+                      : "提交申请"}
               </Button>
             </>
           }
         />
 
-        {windowChecked && !openWindow && (
+        {!collegeId && (
+          <Card className="border-destructive/40 bg-destructive/5">
+            <CardContent className="flex items-center gap-3 py-4">
+              <Lock className="h-5 w-5 text-destructive" />
+              <div className="text-sm">
+                <div className="font-medium">账号未分配学院</div>
+                <div className="text-muted-foreground">请联系管理员为你的账号分配所属学院后再提交申请。</div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {collegeId && windowChecked && !openWindow && (
           <Card className="border-warning/40 bg-warning/5">
             <CardContent className="flex items-center gap-3 py-4">
               <Lock className="h-5 w-5 text-warning" />
@@ -455,7 +475,7 @@ const ApplyPage = () => {
             </CardContent>
           </Card>
         )}
-        {openWindow && (
+        {collegeId && openWindow && (
           <Card className="border-primary/30 bg-primary/5">
             <CardContent className="flex items-center gap-3 py-4">
               <Clock className="h-5 w-5 text-primary" />
