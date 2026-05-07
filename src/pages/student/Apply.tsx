@@ -20,7 +20,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   Send, Sparkles, X, Search, ChevronRight, Plus, FileText, Image as ImageIcon, File as FileIcon,
   Upload, CheckCircle2, Circle, ArrowLeft, RefreshCw, Trash2, Lightbulb, BookOpen, HelpCircle, ChevronDown,
-  Wand2,
+  Wand2, Clock, Lock,
 } from "lucide-react";
 import { applySchema } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
@@ -101,7 +101,9 @@ const STEPS = [
 
 const ApplyPage = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, collegeId } = useAuth();
+  const [openWindow, setOpenWindow] = useState<{ id: string; name: string; ends_at: string } | null>(null);
+  const [windowChecked, setWindowChecked] = useState(false);
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [picked, setPicked] = useState<Picked>({});
@@ -154,6 +156,25 @@ const ApplyPage = () => {
       setLoading(false);
     })();
   }, []);
+
+  // 检查当前是否在开放提交窗口内
+  useEffect(() => {
+    (async () => {
+      if (!collegeId) { setWindowChecked(true); return; }
+      const nowIso = new Date().toISOString();
+      const { data } = await supabase
+        .from("submission_windows")
+        .select("id, name, ends_at")
+        .eq("college_id", collegeId)
+        .eq("active", true)
+        .lte("starts_at", nowIso)
+        .gte("ends_at", nowIso)
+        .order("ends_at", { ascending: true })
+        .limit(1);
+      setOpenWindow(((data ?? [])[0] as any) ?? null);
+      setWindowChecked(true);
+    })();
+  }, [collegeId]);
 
   // 文件预览
   useEffect(() => {
@@ -320,6 +341,9 @@ const ApplyPage = () => {
   const fileTooBig = !!file && file.size > 10 * 1024 * 1024;
 
   const submit = async () => {
+    if (!openWindow) {
+      return toast({ title: "当前不在开放提交时间内", description: "请等待管理员开放下一批次", variant: "destructive" });
+    }
     const selected_keywords = DIMS.map((d) => picked[d]).filter(Boolean) as string[];
     const parsed = applySchema.safeParse({
       description, selected_keywords, custom_keywords: customKeywords,
@@ -412,12 +436,36 @@ const ApplyPage = () => {
               <Button variant="outline" asChild>
                 <Link to="/my-applications"><ArrowLeft className="mr-1 h-4 w-4" /> 我的申请</Link>
               </Button>
-              <Button onClick={submit} disabled={submitting} className="bg-gradient-to-r from-primary to-primary/80">
-                <Send className="mr-1 h-4 w-4" /> {submitting ? "提交中…" : "提交申请"}
+              <Button onClick={submit} disabled={submitting || (windowChecked && !openWindow)} className="bg-gradient-to-r from-primary to-primary/80">
+                {windowChecked && !openWindow ? <Lock className="mr-1 h-4 w-4" /> : <Send className="mr-1 h-4 w-4" />}
+                {submitting ? "提交中…" : windowChecked && !openWindow ? "未开放提交" : "提交申请"}
               </Button>
             </>
           }
         />
+
+        {windowChecked && !openWindow && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="flex items-center gap-3 py-4">
+              <Lock className="h-5 w-5 text-warning" />
+              <div className="text-sm">
+                <div className="font-medium">当前不在开放提交时间内</div>
+                <div className="text-muted-foreground">请等待管理员开放新的提交批次后再行提交。</div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {openWindow && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="flex items-center gap-3 py-4">
+              <Clock className="h-5 w-5 text-primary" />
+              <div className="text-sm">
+                <div className="font-medium">当前批次：{openWindow.name}</div>
+                <div className="text-muted-foreground">截止时间：{new Date(openWindow.ends_at).toLocaleString()}</div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="shadow-card">
           <CardContent className="py-5">

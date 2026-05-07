@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.admin-purge-and-bootstrap]
 verify_jwt = false
+
+[functions.generate-window-report]
+verify_jwt = false

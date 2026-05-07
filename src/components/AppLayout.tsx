@@ -12,7 +12,7 @@ import StaffAiAssistant from "@/components/StaffAiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
   Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags, History, Cpu, IdCard,
-  Activity, Palette, Building2, Shield,
+  Activity, Palette, Building2, Shield, CalendarRange,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -32,6 +32,7 @@ const adminItems: Item[] = [
   { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
   { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
   { title: "学院界面风格", url: "/admin/branding", icon: Palette },
+  { title: "提交时间窗口", url: "/admin/submission-windows", icon: CalendarRange },
   { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 
@@ -51,6 +52,7 @@ const superAdminItems: Item[] = [
   { title: "批量导入账号", url: "/admin/import", icon: Upload },
   { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
   { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
+  { title: "提交时间窗口", url: "/admin/submission-windows", icon: CalendarRange },
   { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 

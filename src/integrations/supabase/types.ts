@@ -855,6 +855,86 @@ export type Database = {
         }
         Relationships: []
       }
+      submission_window_reports: {
+        Row: {
+          college_id: string
+          file_path: string | null
+          generated_at: string
+          generated_by: string | null
+          id: string
+          summary: Json
+          window_id: string
+        }
+        Insert: {
+          college_id: string
+          file_path?: string | null
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          summary?: Json
+          window_id: string
+        }
+        Update: {
+          college_id?: string
+          file_path?: string | null
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          summary?: Json
+          window_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "submission_window_reports_window_id_fkey"
+            columns: ["window_id"]
+            isOneToOne: false
+            referencedRelation: "submission_windows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      submission_windows: {
+        Row: {
+          active: boolean
+          college_id: string
+          created_at: string
+          created_by: string | null
+          ends_at: string
+          id: string
+          name: string
+          report_generated_at: string | null
+          report_path: string | null
+          starts_at: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          college_id: string
+          created_at?: string
+          created_by?: string | null
+          ends_at: string
+          id?: string
+          name: string
+          report_generated_at?: string | null
+          report_path?: string | null
+          starts_at: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          college_id?: string
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string
+          id?: string
+          name?: string
+          report_generated_at?: string | null
+          report_path?: string | null
+          starts_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           college_id: string | null
@@ -945,6 +1025,15 @@ export type Database = {
           id: string
         }[]
       }
+      current_open_window: {
+        Args: { _college: string }
+        Returns: {
+          ends_at: string
+          id: string
+          name: string
+          starts_at: string
+        }[]
+      }
       current_user_college_id: { Args: never; Returns: string }
       dashboard_stats: {
         Args: { _college?: string; _pass_threshold?: number }
@@ -965,6 +1054,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_submission_open: { Args: { _college: string }; Returns: boolean }
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
       mark_ai_eval_done: { Args: { _id: string }; Returns: undefined }
       mark_ai_eval_failed: {
