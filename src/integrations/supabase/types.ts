@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_eval_failures: {
+        Row: {
+          application_id: string
+          attempts: number
+          failed_at: string
+          id: string
+          last_error: string | null
+        }
+        Insert: {
+          application_id: string
+          attempts: number
+          failed_at?: string
+          id?: string
+          last_error?: string | null
+        }
+        Update: {
+          application_id?: string
+          attempts?: number
+          failed_at?: string
+          id?: string
+          last_error?: string | null
+        }
+        Relationships: []
+      }
+      ai_eval_queue: {
+        Row: {
+          application_id: string
+          attempts: number
+          created_at: string
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          max_attempts: number
+          next_run_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          application_id: string
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_run_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          application_id?: string
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_run_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_function_bindings: {
         Row: {
           function_key: string
@@ -874,6 +937,14 @@ export type Database = {
           last4: string
         }[]
       }
+      claim_ai_eval_jobs: {
+        Args: { _limit?: number }
+        Returns: {
+          application_id: string
+          attempts: number
+          id: string
+        }[]
+      }
       current_user_college_id: { Args: never; Returns: string }
       dashboard_stats: {
         Args: { _college?: string; _pass_threshold?: number }
@@ -895,6 +966,11 @@ export type Database = {
         Returns: boolean
       }
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
+      mark_ai_eval_done: { Args: { _id: string }; Returns: undefined }
+      mark_ai_eval_failed: {
+        Args: { _error: string; _id: string }
+        Returns: undefined
+      }
       normalize_keyword: { Args: { s: string }; Returns: string }
       refresh_certificate_types: { Args: never; Returns: number }
       show_limit: { Args: never; Returns: number }

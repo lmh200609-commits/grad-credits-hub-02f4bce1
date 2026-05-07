@@ -361,10 +361,7 @@ const ApplyPage = () => {
         .select().single();
       if (error) throw error;
       toast({ title: "提交成功", description: "正在等待审核" });
-      // 后台静默触发审核流程，不向学生暴露
-      supabase.functions.invoke("evaluate-application", {
-        body: { application_id: (app as any).id },
-      }).catch(() => { /* 静默失败，转人工 */ });
+      // AI 评估由数据库 trigger 自动入队（ai_eval_queue），后台 worker 异步处理。
       // 后台静默触发人脸比对（不影响材料有效性，仅作教师端提示）
       supabase.functions.invoke("face-compare", {
         body: { application_id: (app as any).id },
