@@ -83,7 +83,7 @@ const Branding = () => {
   return (
     <AppLayout>
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">学院主题与院徽</h1>
+        <h1 className="text-2xl font-bold">学院界面风格</h1>
         <Card>
           <CardHeader><CardTitle className="text-base">院徽</CardTitle></CardHeader>
           <CardContent className="flex items-center gap-4">
