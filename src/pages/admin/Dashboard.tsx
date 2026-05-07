@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSerializedReload } from "@/hooks/useSerializedReload";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -35,6 +36,7 @@ const PASS_THRESHOLD = 4;
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const { collegeId, isSuperAdmin } = useAuth();
   const [apps, setApps] = useState<App[]>([]);
   const [studentCount, setStudentCount] = useState(0);
   const [teacherCount, setTeacherCount] = useState(0);
@@ -67,8 +69,9 @@ const AdminDashboard = () => {
   const reload = useSerializedReload(load);
   useEffect(() => { reload(); }, [reload, load]);
 
-  useRealtimeTable("applications", reload);
-  useRealtimeTable("profiles", reload);
+  const collegeFilter = isSuperAdmin ? undefined : (collegeId ? `college_id=eq.${collegeId}` : null);
+  useRealtimeTable("applications", reload, { filter: collegeFilter });
+  useRealtimeTable("profiles", reload, { filter: collegeFilter });
 
   const stats = useMemo(() => {
     const approved = apps.filter((a) => APPROVED.includes(a.status));
