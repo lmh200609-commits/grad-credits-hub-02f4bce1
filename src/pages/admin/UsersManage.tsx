@@ -238,7 +238,7 @@ const UsersManage = () => {
                 </>
               )}
               <div className="flex items-center text-sm text-muted-foreground">
-                共 {filtered.length} / {rows.length}
+                共 {total} 人
               </div>
             </div>
           </CardContent>
@@ -295,8 +295,8 @@ const UsersManage = () => {
                 })}
               </TableBody>
             </Table>
-            {!loading && filtered.length > PAGE_SIZE && (
-              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            {!loading && total > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
             )}
           </CardContent>
         </Card>
