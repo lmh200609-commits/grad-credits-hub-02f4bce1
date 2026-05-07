@@ -436,12 +436,36 @@ const ApplyPage = () => {
               <Button variant="outline" asChild>
                 <Link to="/my-applications"><ArrowLeft className="mr-1 h-4 w-4" /> 我的申请</Link>
               </Button>
-              <Button onClick={submit} disabled={submitting} className="bg-gradient-to-r from-primary to-primary/80">
-                <Send className="mr-1 h-4 w-4" /> {submitting ? "提交中…" : "提交申请"}
+              <Button onClick={submit} disabled={submitting || (windowChecked && !openWindow)} className="bg-gradient-to-r from-primary to-primary/80">
+                {windowChecked && !openWindow ? <Lock className="mr-1 h-4 w-4" /> : <Send className="mr-1 h-4 w-4" />}
+                {submitting ? "提交中…" : windowChecked && !openWindow ? "未开放提交" : "提交申请"}
               </Button>
             </>
           }
         />
+
+        {windowChecked && !openWindow && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="flex items-center gap-3 py-4">
+              <Lock className="h-5 w-5 text-warning" />
+              <div className="text-sm">
+                <div className="font-medium">当前不在开放提交时间内</div>
+                <div className="text-muted-foreground">请等待管理员开放新的提交批次后再行提交。</div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {openWindow && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="flex items-center gap-3 py-4">
+              <Clock className="h-5 w-5 text-primary" />
+              <div className="text-sm">
+                <div className="font-medium">当前批次：{openWindow.name}</div>
+                <div className="text-muted-foreground">截止时间：{new Date(openWindow.ends_at).toLocaleString()}</div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="shadow-card">
           <CardContent className="py-5">
