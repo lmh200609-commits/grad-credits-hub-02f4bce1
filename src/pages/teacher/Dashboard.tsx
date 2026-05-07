@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSerializedReload } from "@/hooks/useSerializedReload";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart,
@@ -34,6 +35,7 @@ const PASS_COLORS = ["#10b981", "#ef4444"];
 
 const TeacherDashboard = () => {
   const navigate = useNavigate();
+  const { collegeId, isSuperAdmin } = useAuth();
   const [apps, setApps] = useState<App[]>([]);
   const [studentIds, setStudentIds] = useState<Set<string>>(new Set());
   const [deptStats, setDeptStats] = useState<{ name: string; value: number }[]>([]);
@@ -58,8 +60,9 @@ const TeacherDashboard = () => {
   const reload = useSerializedReload(load);
   useEffect(() => { reload(); }, [reload, load]);
 
-  useRealtimeTable("applications", reload);
-  useRealtimeTable("profiles", reload);
+  const collegeFilter = isSuperAdmin ? undefined : (collegeId ? `college_id=eq.${collegeId}` : null);
+  useRealtimeTable("applications", reload, { filter: collegeFilter });
+  useRealtimeTable("profiles", reload, { filter: collegeFilter });
 
   const stats = useMemo(() => {
     const approved = apps.filter((a) => APPROVED.includes(a.status));

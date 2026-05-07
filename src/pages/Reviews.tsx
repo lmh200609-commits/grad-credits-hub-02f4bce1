@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSerializedReload } from "@/hooks/useSerializedReload";
+import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +45,7 @@ const FILTERS: Record<string, string[]> = {
 
 const ReviewsList = () => {
   const navigate = useNavigate();
+  const { collegeId, isSuperAdmin } = useAuth();
   const [params] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
@@ -142,7 +144,8 @@ const ReviewsList = () => {
   // Coalesce concurrent invocations and prevent stale-response overwrites.
   const reload = useSerializedReload(load);
   useEffect(() => { reload(); }, [reload, load]);
-  useRealtimeTable("applications", reload);
+  const collegeFilter = isSuperAdmin ? undefined : (collegeId ? `college_id=eq.${collegeId}` : null);
+  useRealtimeTable("applications", reload, { filter: collegeFilter });
 
   const tabLabel = useMemo(() => ({
     all: "全部", pending_review: "待复核", auto_approved: "系统已通过",

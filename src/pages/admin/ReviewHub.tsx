@@ -158,7 +158,9 @@ const ReviewHub = () => {
     await Promise.all([loadCounts(), loadList()]);
   }, [loadCounts, loadList]));
   useEffect(() => { reload(); }, [reload]);
-  useRealtimeTable("applications", reload);
+  const { collegeId, isSuperAdmin } = useAuth();
+  const collegeFilter = isSuperAdmin ? undefined : (collegeId ? `college_id=eq.${collegeId}` : null);
+  useRealtimeTable("applications", reload, { filter: collegeFilter });
 
   const allSelectedOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const toggleAll = () => {

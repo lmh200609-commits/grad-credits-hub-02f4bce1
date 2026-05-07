@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSerializedReload } from "@/hooks/useSerializedReload";
+import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -38,6 +39,7 @@ type Profile = {
 const ALL = "__all__";
 
 const Students = () => {
+  const { collegeId, isSuperAdmin } = useAuth();
   const [rows, setRows] = useState<Profile[]>([]);
   const [studentIds, setStudentIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -70,8 +72,11 @@ const Students = () => {
   const reload = useSerializedReload(load);
   useEffect(() => { reload(); }, [reload, load]);
 
-  useRealtimeTable("profiles", reload);
-  useRealtimeTable("applications", reload);
+  // Scope realtime to current user's college so we don't receive events
+  // for other colleges (server-side filter, fewer broadcasts at scale).
+  const collegeFilter = isSuperAdmin ? undefined : (collegeId ? `college_id=eq.${collegeId}` : null);
+  useRealtimeTable("profiles", reload, { filter: collegeFilter });
+  useRealtimeTable("applications", reload, { filter: collegeFilter });
 
   const departments = useMemo(
     () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(),

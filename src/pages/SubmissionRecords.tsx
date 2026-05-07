@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSerializedReload } from "@/hooks/useSerializedReload";
+import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -48,6 +49,7 @@ const PAGE_SIZE = 50;
 
 const SubmissionRecords = () => {
   const navigate = useNavigate();
+  const { collegeId, isSuperAdmin } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
@@ -130,7 +132,8 @@ const SubmissionRecords = () => {
 
   const reload = useSerializedReload(load);
   useEffect(() => { reload(); }, [reload, load]);
-  useRealtimeTable("applications", reload);
+  const collegeFilter = isSuperAdmin ? undefined : (collegeId ? `college_id=eq.${collegeId}` : null);
+  useRealtimeTable("applications", reload, { filter: collegeFilter });
 
   const current = openIdx != null ? rows[openIdx] : null;
 
