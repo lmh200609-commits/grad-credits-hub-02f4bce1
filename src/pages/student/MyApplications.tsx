@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
+import { Clock, Lock } from "lucide-react";
 
 type Row = {
   id: string;
@@ -25,10 +26,43 @@ type Row = {
 };
 
 const MyApplications = () => {
-  const { user } = useAuth();
+  const { user, collegeId } = useAuth();
   const navigate = useNavigate();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openWindow, setOpenWindow] = useState<{ id: string; name: string; starts_at: string; ends_at: string } | null>(null);
+  const [nextWindow, setNextWindow] = useState<{ name: string; starts_at: string } | null>(null);
+  const [windowChecked, setWindowChecked] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      if (!collegeId) { setWindowChecked(true); return; }
+      const nowIso = new Date().toISOString();
+      const { data: cur } = await supabase
+        .from("submission_windows")
+        .select("id, name, starts_at, ends_at")
+        .eq("college_id", collegeId)
+        .eq("active", true)
+        .lte("starts_at", nowIso)
+        .gte("ends_at", nowIso)
+        .order("ends_at", { ascending: true })
+        .limit(1);
+      const open = ((cur ?? [])[0] as any) ?? null;
+      setOpenWindow(open);
+      if (!open) {
+        const { data: nx } = await supabase
+          .from("submission_windows")
+          .select("name, starts_at")
+          .eq("college_id", collegeId)
+          .eq("active", true)
+          .gt("starts_at", nowIso)
+          .order("starts_at", { ascending: true })
+          .limit(1);
+        setNextWindow(((nx ?? [])[0] as any) ?? null);
+      }
+      setWindowChecked(true);
+    })();
+  }, [collegeId]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -74,6 +108,34 @@ const MyApplications = () => {
           <h1 className="text-2xl font-bold">我的申请</h1>
           <Button size="sm" onClick={() => navigate("/apply")}>新申请</Button>
         </div>
+        {windowChecked && openWindow && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="flex items-center gap-3 py-3 text-sm">
+              <Clock className="h-5 w-5 text-primary" />
+              <div>
+                <div className="font-medium">当前提交批次：{openWindow.name}</div>
+                <div className="text-muted-foreground">
+                  开放时间：{new Date(openWindow.starts_at).toLocaleString()} 至 {new Date(openWindow.ends_at).toLocaleString()}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {windowChecked && !openWindow && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="flex items-center gap-3 py-3 text-sm">
+              <Lock className="h-5 w-5 text-warning" />
+              <div>
+                <div className="font-medium">当前不在开放提交时间内，无法提交新申请</div>
+                <div className="text-muted-foreground">
+                  {nextWindow
+                    ? `下一批次「${nextWindow.name}」将于 ${new Date(nextWindow.starts_at).toLocaleString()} 开放`
+                    : "请等待管理员开放新的提交批次"}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader><CardTitle className="text-base">共 {rows.length} 条</CardTitle></CardHeader>
           <CardContent>
