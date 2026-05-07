@@ -109,18 +109,18 @@ const Branding = () => {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">主题（HSL 格式：H S% L%）</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">配色与样式</CardTitle></CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
-            <div><Label>主色 primary</Label>
+            <div><Label>主色</Label>
               <Input value={theme.primary ?? ""} onChange={(e) => setTheme({ ...theme, primary: e.target.value })} placeholder="222 76% 38%" />
             </div>
-            <div><Label>辅色 accent</Label>
+            <div><Label>辅色</Label>
               <Input value={theme.accent ?? ""} onChange={(e) => setTheme({ ...theme, accent: e.target.value })} placeholder="210 40% 96%" />
             </div>
-            <div><Label>背景 background</Label>
+            <div><Label>背景色</Label>
               <Input value={theme.background ?? ""} onChange={(e) => setTheme({ ...theme, background: e.target.value })} placeholder="220 20% 98%" />
             </div>
-            <div><Label>圆角 radius</Label>
+            <div><Label>圆角大小</Label>
               <Input value={theme.radius ?? ""} onChange={(e) => setTheme({ ...theme, radius: e.target.value })} placeholder="0.5rem" />
             </div>
             <div><Label>布局变体</Label>
