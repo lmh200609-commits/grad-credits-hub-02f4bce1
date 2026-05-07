@@ -100,7 +100,7 @@ const AdminDashboard = () => {
           <StatCard label="已通过" value={stats.approved} accent="text-emerald-600" />
           <StatCard label="待复核" value={stats.pending} accent="text-amber-600" />
           <StatCard label="已拒绝" value={stats.rejected} accent="text-rose-600" />
-          <StatCard label="累计学分" value={stats.totalCredit.toFixed(1)} accent="text-fuchsia-600" />
+          <StatCard label="累计学分" value={Number(stats.total_credit).toFixed(1)} accent="text-fuchsia-600" />
           <StatCard label="规则 / 师生" value={`${ruleCount} / ${teacherCount}+${studentCount}`} accent="text-cyan-600" />
         </div>
 
