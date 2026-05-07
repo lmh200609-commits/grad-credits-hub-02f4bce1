@@ -9,6 +9,36 @@ const corsHeaders = {
 
 const CONCURRENCY = 10; // parallel user creation within a batch
 const BATCH_SIZE = 200; // chunk size to avoid Auth API burst limits
+const MAX_RETRIES = 3;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 对瞬时错误（429 / 5xx / network）做指数退避重试，避免 Auth API 短时抖动整批失败。 */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message ?? e).toLowerCase();
+      const transient =
+        msg.includes("429") ||
+        msg.includes("rate limit") ||
+        msg.includes("too many") ||
+        msg.includes("timeout") ||
+        msg.includes("etimedout") ||
+        msg.includes("econnreset") ||
+        msg.includes("503") ||
+        msg.includes("502") ||
+        msg.includes("504");
+      if (!transient || i === MAX_RETRIES - 1) throw e;
+      // 200ms, 600ms, 1800ms + 抖动
+      await sleep(200 * Math.pow(3, i) + Math.random() * 150);
+    }
+  }
+  throw lastErr;
+}
 
 type Row = {
   student_no: string;
@@ -44,16 +74,18 @@ async function createOneUser(
   }
   const email = `${localPart}@admin.local`;
 
-  const { data: u, error: ce } = await admin.auth.admin.createUser({
-    email,
-    password: r.password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: r.full_name.trim(),
-      student_no: sno,
-      department: r.department?.trim() ?? null,
-    },
-  });
+  const { data: u, error: ce } = await withRetry(() =>
+    admin.auth.admin.createUser({
+      email,
+      password: r.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: r.full_name.trim(),
+        student_no: sno,
+        department: r.department?.trim() ?? null,
+      },
+    }),
+  );
   if (ce) throw new Error(`第 ${idx + 2} 行创建账号失败: ${ce.message}`);
   const uid = u.user!.id;
 
