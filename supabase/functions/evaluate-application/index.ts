@@ -59,17 +59,22 @@ Deno.serve(async (req) => {
     if (!authHeader?.startsWith("Bearer ")) {
       return json({ error: "Unauthorized" }, 401);
     }
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const isServiceCall = authHeader === `Bearer ${serviceKey}`;
     const userClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } },
     );
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) {
-      return json({ error: "Unauthorized" }, 401);
+    let callerId = "";
+    if (!isServiceCall) {
+      const token = authHeader.replace("Bearer ", "");
+      const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
+      if (claimsErr || !claimsData?.claims) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      callerId = claimsData.claims.sub as string;
     }
-    const callerId = claimsData.claims.sub as string;
 
     const body = await req.json();
     application_id = body?.application_id ?? null;
@@ -88,7 +93,7 @@ Deno.serve(async (req) => {
     if (appErr || !app) return json({ error: "Application not found" }, 404);
 
     // ---- AuthZ: caller must own the application OR be teacher/admin ----
-    if (app.student_id !== callerId) {
+    if (!isServiceCall && app.student_id !== callerId) {
       const [{ data: isTeacher }, { data: isAdmin }] = await Promise.all([
         admin.rpc("has_role", { _user_id: callerId, _role: "teacher" }),
         admin.rpc("has_role", { _user_id: callerId, _role: "admin" }),
