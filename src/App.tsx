@@ -33,6 +33,7 @@ import NotFound from "./pages/NotFound.tsx";
 import RealtimeDiagnostics from "./pages/RealtimeDiagnostics.tsx";
 import PurgeAndBootstrap from "./pages/admin/PurgeAndBootstrap.tsx";
 import Branding from "./pages/admin/Branding.tsx";
+import SubmissionWindows from "./pages/admin/SubmissionWindows.tsx";
 import SuperColleges from "./pages/super/Colleges.tsx";
 import SuperAdmins from "./pages/super/Admins.tsx";
 
@@ -62,6 +63,7 @@ const App = () => (
             <Route path="/admin/ai-models" element={<RoleRoute role="admin"><AiModels /></RoleRoute>} />
             <Route path="/admin/reset" element={<RoleRoute role="admin"><PurgeAndBootstrap /></RoleRoute>} />
             <Route path="/admin/branding" element={<RoleRoute role="admin"><Branding /></RoleRoute>} />
+            <Route path="/admin/submission-windows" element={<RoleRoute role={["admin", "super_admin"]}><SubmissionWindows /></RoleRoute>} />
             <Route path="/super/colleges" element={<RoleRoute role="super_admin"><SuperColleges /></RoleRoute>} />
             <Route path="/super/admins" element={<RoleRoute role="super_admin"><SuperAdmins /></RoleRoute>} />
             <Route path="/apply" element={<RoleRoute role="student"><Apply /></RoleRoute>} />
