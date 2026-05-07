@@ -15,18 +15,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
 } from "recharts";
 import { Link, useNavigate } from "react-router-dom";
-import type { Database } from "@/integrations/supabase/types";
-import { fetchAll } from "@/lib/fetchAll";
 import { Inbox, Sparkles } from "lucide-react";
-
-type App = Pick<
-  Database["public"]["Tables"]["applications"]["Row"],
-  "id" | "status" | "submitted_at" | "final_credit" | "ai_suggested_credit" | "student_id"
->;
-
-const APPROVED: App["status"][] = ["approved", "auto_approved"];
-const REJECTED: App["status"][] = ["rejected", "rejected_by_ai"];
-const PENDING: App["status"][] = ["pending_ai", "pending_review"];
 
 // 高对比度多彩配色
 const COLORS = ["#10b981", "#ef4444", "#f59e0b", "#3b82f6", "#a855f7", "#06b6d4"];
@@ -34,37 +23,29 @@ const DEPT_COLORS = ["#6366f1", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#0e
 const PASS_COLORS = ["#10b981", "#ef4444"];
 const PASS_THRESHOLD = 4;
 
+type DashboardStats = {
+  kpi: { total: number; approved: number; pending: number; rejected: number; total_credit: number };
+  status: { name: string; value: number }[];
+  pass: { pass: number; fail: number; total: number };
+  trend: { date: string; count: number }[];
+  dept: { name: string; value: number }[];
+  rule_count: number;
+  student_count: number;
+  teacher_count: number;
+};
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { collegeId, isSuperAdmin } = useAuth();
-  const [apps, setApps] = useState<App[]>([]);
-  const [studentCount, setStudentCount] = useState(0);
-  const [teacherCount, setTeacherCount] = useState(0);
-  const [ruleCount, setRuleCount] = useState(0);
-  const [deptStats, setDeptStats] = useState<{ name: string; value: number }[]>([]);
-  const [studentIds, setStudentIds] = useState<Set<string>>(new Set());
+  const [data, setData] = useState<DashboardStats | null>(null);
 
   const load = useCallback(async () => {
-    const [a, roles, { count: rc }, profiles] = await Promise.all([
-      fetchAll<App>(supabase.from("applications").select("id, status, submitted_at, final_credit, ai_suggested_credit, student_id")),
-      fetchAll<{ user_id: string; role: string }>(supabase.from("user_roles").select("user_id, role")),
-      supabase.from("rules").select("id", { count: "exact", head: true }).eq("active", true),
-      fetchAll<{ user_id: string; department: string | null }>(supabase.from("profiles").select("user_id, department")),
-    ]);
-    setApps(a);
-    setStudentCount(roles.filter((r) => r.role === "student").length);
-    setTeacherCount(roles.filter((r) => r.role === "teacher").length);
-    setRuleCount(rc ?? 0);
-
-    const sids = new Set(roles.filter((r) => r.role === "student").map((r) => r.user_id));
-    setStudentIds(sids);
-    const deptMap = new Map<string, number>();
-    profiles.filter((p) => sids.has(p.user_id)).forEach((p) => {
-      const k = p.department ?? "未填写";
-      deptMap.set(k, (deptMap.get(k) ?? 0) + 1);
+    const { data: res, error } = await supabase.rpc("dashboard_stats", {
+      _college: isSuperAdmin ? null : (collegeId ?? null),
+      _pass_threshold: PASS_THRESHOLD,
     });
-    setDeptStats(Array.from(deptMap, ([name, value]) => ({ name, value })));
-  }, []);
+    if (!error && res) setData(res as unknown as DashboardStats);
+  }, [collegeId, isSuperAdmin]);
 
   const reload = useSerializedReload(load);
   useEffect(() => { reload(); }, [reload, load]);
@@ -73,33 +54,14 @@ const AdminDashboard = () => {
   useRealtimeTable("applications", reload, { filter: collegeFilter });
   useRealtimeTable("profiles", reload, { filter: collegeFilter });
 
-  const stats = useMemo(() => {
-    const approved = apps.filter((a) => APPROVED.includes(a.status));
-    const totalCredit = approved.reduce(
-      (s, a) => s + Number(a.final_credit ?? a.ai_suggested_credit ?? 0), 0,
-    );
-    return {
-      total: apps.length,
-      approved: approved.length,
-      rejected: apps.filter((a) => REJECTED.includes(a.status)).length,
-      pending: apps.filter((a) => PENDING.includes(a.status)).length,
-      totalCredit,
-    };
-  }, [apps]);
-
-  const passStats = useMemo(() => {
-    const credit = new Map<string, number>();
-    apps.forEach((a) => {
-      if (!APPROVED.includes(a.status)) return;
-      const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
-      credit.set(a.student_id, (credit.get(a.student_id) ?? 0) + c);
-    });
-    let pass = 0, fail = 0;
-    studentIds.forEach((id) => {
-      if ((credit.get(id) ?? 0) >= PASS_THRESHOLD) pass++; else fail++;
-    });
-    return { pass, fail, total: pass + fail };
-  }, [apps, studentIds]);
+  const stats = data?.kpi ?? { total: 0, approved: 0, pending: 0, rejected: 0, total_credit: 0 };
+  const passStats = data?.pass ?? { pass: 0, fail: 0, total: 0 };
+  const trend = data?.trend ?? [];
+  const statusPie = data?.status ?? [];
+  const deptStats = data?.dept ?? [];
+  const ruleCount = data?.rule_count ?? 0;
+  const studentCount = data?.student_count ?? 0;
+  const teacherCount = data?.teacher_count ?? 0;
 
   const passPie = useMemo(() => {
     if (!passStats.total) return [];
@@ -110,30 +72,6 @@ const AdminDashboard = () => {
   }, [passStats]);
 
   const fmtPct = (n: number) => passStats.total ? `${((n / passStats.total) * 100).toFixed(1)}%` : "—";
-
-  const trend = useMemo(() => {
-    const map = new Map<string, number>();
-    const now = new Date();
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      map.set(d.toISOString().slice(5, 10), 0);
-    }
-    apps.forEach((a) => {
-      const k = a.submitted_at.slice(5, 10);
-      if (map.has(k)) map.set(k, map.get(k)! + 1);
-    });
-    return Array.from(map, ([date, count]) => ({ date, count }));
-  }, [apps]);
-
-  const statusPie = useMemo(() => [
-    { name: "系统初审通过", value: apps.filter((a) => a.status === "auto_approved").length },
-    { name: "系统未通过", value: apps.filter((a) => a.status === "rejected_by_ai").length },
-    { name: "待教师复核", value: apps.filter((a) => a.status === "pending_review").length },
-    { name: "人工已通过", value: apps.filter((a) => a.status === "approved").length },
-    { name: "人工已驳回", value: apps.filter((a) => a.status === "rejected").length },
-    { name: "系统核验中", value: apps.filter((a) => a.status === "pending_ai").length },
-  ].filter((d) => d.value > 0), [apps]);
 
   return (
     <AppLayout>
@@ -162,7 +100,7 @@ const AdminDashboard = () => {
           <StatCard label="已通过" value={stats.approved} accent="text-emerald-600" />
           <StatCard label="待复核" value={stats.pending} accent="text-amber-600" />
           <StatCard label="已拒绝" value={stats.rejected} accent="text-rose-600" />
-          <StatCard label="累计学分" value={stats.totalCredit.toFixed(1)} accent="text-fuchsia-600" />
+          <StatCard label="累计学分" value={Number(stats.total_credit).toFixed(1)} accent="text-fuchsia-600" />
           <StatCard label="规则 / 师生" value={`${ruleCount} / ${teacherCount}+${studentCount}`} accent="text-cyan-600" />
         </div>
 

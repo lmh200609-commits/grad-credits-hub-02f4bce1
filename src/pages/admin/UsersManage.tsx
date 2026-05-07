@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/select";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
-import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
 import BulkUserDialog from "@/components/BulkUserDialog";
 import { useAuth } from "@/hooks/useAuth";
@@ -55,6 +54,8 @@ const UsersManage = () => {
 
   const [rows, setRows] = useState<Profile[]>([]);
   const [credits, setCredits] = useState<Map<string, { total: number; count: number }>>(new Map());
+  const [total, setTotal] = useState(0);
+  const [facets, setFacets] = useState<{ departments: string[]; majors: string[]; classes: string[] }>({ departments: [], majors: [], classes: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch);
   const [dept, setDept] = useState(ALL);
@@ -67,50 +68,88 @@ const UsersManage = () => {
   const [page, setPage] = useState(0);
   const [bulkMode, setBulkMode] = useState<"delete" | "reset" | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const [roles, profiles, apps] = await Promise.all([
-      fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", role)),
-      fetchAll<Profile>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, email, phone")),
-      role === "student"
-        ? fetchAll<{ student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }>(
-            supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit"))
-        : Promise.resolve([] as { student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }[]),
-    ]);
-    const ids = new Set(roles.map((r) => r.user_id));
-    setRows(profiles.filter((p) => ids.has(p.user_id)));
-    const m = new Map<string, { total: number; count: number }>();
-    apps.forEach((a) => {
-      if (!["approved", "auto_approved"].includes(a.status)) return;
-      const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
-      const cur = m.get(a.student_id) ?? { total: 0, count: 0 };
-      m.set(a.student_id, { total: cur.total + c, count: cur.count + 1 });
-    });
-    setCredits(m);
-    setLoading(false);
-  };
+    // 1) 取角色用户ID（每学院通常 < 5000，可承受）
+    const { data: roleRows } = await supabase.from("user_roles").select("user_id").eq("role", role);
+    const roleIds = (roleRows ?? []).map((r) => r.user_id);
+    if (roleIds.length === 0) {
+      setRows([]); setTotal(0); setCredits(new Map()); setFacets({ departments: [], majors: [], classes: [] });
+      setLoading(false);
+      return;
+    }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [role]);
+    // 2) Facets：只取去重列（distinct via group），低开销
+    const { data: facetRows } = await supabase
+      .from("profiles")
+      .select("department, major, class_name")
+      .in("user_id", roleIds);
+    const facetSetD = new Set<string>(); const facetSetM = new Set<string>(); const facetSetC = new Set<string>();
+    (facetRows ?? []).forEach((r) => {
+      if (r.department) facetSetD.add(r.department);
+      if (r.major) facetSetM.add(r.major);
+      if (r.class_name) facetSetC.add(r.class_name);
+    });
+    setFacets({
+      departments: Array.from(facetSetD).sort(),
+      majors: Array.from(facetSetM).sort(),
+      classes: Array.from(facetSetC).sort(),
+    });
+
+    // 3) 服务端筛选 + 分页
+    let q = supabase
+      .from("profiles")
+      .select("user_id, full_name, student_no, department, major, class_name, email, phone", { count: "exact" })
+      .in("user_id", roleIds);
+    if (dept !== ALL) q = q.eq("department", dept);
+    if (role === "student" && major !== ALL) q = q.eq("major", major);
+    if (role === "student" && klass !== ALL) q = q.eq("class_name", klass);
+    const s = search.trim();
+    if (s) {
+      const esc = s.replace(/[,()]/g, " ");
+      q = q.or(
+        `full_name.ilike.%${esc}%,student_no.ilike.%${esc}%,email.ilike.%${esc}%,phone.ilike.%${esc}%,class_name.ilike.%${esc}%,department.ilike.%${esc}%,major.ilike.%${esc}%`
+      );
+    }
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data: profileRows, count } = await q
+      .order("student_no", { ascending: true, nullsFirst: false })
+      .range(from, to);
+    setRows((profileRows ?? []) as Profile[]);
+    setTotal(count ?? 0);
+
+    // 4) 学分仅对当前页学生
+    if (role === "student" && profileRows && profileRows.length > 0) {
+      const ids = profileRows.map((r) => r.user_id);
+      const { data: apps } = await supabase
+        .from("applications")
+        .select("student_id, status, final_credit, ai_suggested_credit")
+        .in("student_id", ids)
+        .in("status", ["approved", "auto_approved"]);
+      const m = new Map<string, { total: number; count: number }>();
+      (apps ?? []).forEach((a) => {
+        const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
+        const cur = m.get(a.student_id) ?? { total: 0, count: 0 };
+        m.set(a.student_id, { total: cur.total + c, count: cur.count + 1 });
+      });
+      setCredits(m);
+    } else {
+      setCredits(new Map());
+    }
+    setLoading(false);
+  }, [role, dept, major, klass, search, page]);
+
+  // 搜索/筛选变化时回到第一页
+  useEffect(() => { setPage(0); }, [search, role, dept, major, klass]);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { setSearch(sp.get("search") ?? ""); }, [sp]);
 
-  const departments = useMemo(() => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(), [rows]);
-  const majors = useMemo(() => Array.from(new Set(rows.map((r) => r.major).filter(Boolean) as string[])).sort(), [rows]);
-  const classes = useMemo(() => Array.from(new Set(rows.map((r) => r.class_name).filter(Boolean) as string[])).sort(), [rows]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (dept !== ALL && r.department !== dept) return false;
-      if (role === "student" && major !== ALL && r.major !== major) return false;
-      if (role === "student" && klass !== ALL && r.class_name !== klass) return false;
-      if (!q) return true;
-      return [r.full_name, r.student_no, r.email, r.phone, r.class_name, r.department, r.major]
-        .filter(Boolean).some((v) => v!.toLowerCase().includes(q));
-    });
-  }, [rows, search, dept, major, klass, role]);
-
-  useEffect(() => { setPage(0); }, [search, role, dept, major, klass]);
-  const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
+  const departments = facets.departments;
+  const majors = facets.majors;
+  const classes = facets.classes;
+  const filtered = rows; // 服务端已筛选
+  const paged = rows;
 
   const resetPassword = async () => {
     if (!resetTarget) return;
@@ -199,7 +238,7 @@ const UsersManage = () => {
                 </>
               )}
               <div className="flex items-center text-sm text-muted-foreground">
-                共 {filtered.length} / {rows.length}
+                共 {total} 人
               </div>
             </div>
           </CardContent>
@@ -256,8 +295,8 @@ const UsersManage = () => {
                 })}
               </TableBody>
             </Table>
-            {!loading && filtered.length > PAGE_SIZE && (
-              <TablePagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+            {!loading && total > PAGE_SIZE && (
+              <TablePagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
             )}
           </CardContent>
         </Card>
