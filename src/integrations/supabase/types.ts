@@ -875,6 +875,10 @@ export type Database = {
         }[]
       }
       current_user_college_id: { Args: never; Returns: string }
+      dashboard_stats: {
+        Args: { _college?: string; _pass_threshold?: number }
+        Returns: Json
+      }
       dedupe_keywords: {
         Args: never
         Returns: {
