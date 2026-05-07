@@ -108,7 +108,18 @@ const MyApplications = () => {
           <h1 className="text-2xl font-bold">我的申请</h1>
           <Button size="sm" onClick={() => navigate("/apply")}>新申请</Button>
         </div>
-        {windowChecked && openWindow && (
+        {windowChecked && !collegeId && (
+          <Card className="border-destructive/40 bg-destructive/5">
+            <CardContent className="flex items-center gap-3 py-3 text-sm">
+              <Lock className="h-5 w-5 text-destructive" />
+              <div>
+                <div className="font-medium">账号未分配学院，无法提交新申请</div>
+                <div className="text-muted-foreground">请联系管理员为你的账号分配所属学院。</div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {windowChecked && collegeId && openWindow && (
           <Card className="border-primary/30 bg-primary/5">
             <CardContent className="flex items-center gap-3 py-3 text-sm">
               <Clock className="h-5 w-5 text-primary" />
@@ -121,7 +132,7 @@ const MyApplications = () => {
             </CardContent>
           </Card>
         )}
-        {windowChecked && !openWindow && (
+        {windowChecked && collegeId && !openWindow && (
           <Card className="border-warning/40 bg-warning/5">
             <CardContent className="flex items-center gap-3 py-3 text-sm">
               <Lock className="h-5 w-5 text-warning" />
