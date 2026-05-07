@@ -31,7 +31,7 @@ const adminItems: Item[] = [
   { title: "批量导入账号", url: "/admin/import", icon: Upload },
   { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
   { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
-  { title: "学院品牌主题", url: "/admin/branding", icon: Palette },
+  { title: "学院界面风格", url: "/admin/branding", icon: Palette },
   { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 
