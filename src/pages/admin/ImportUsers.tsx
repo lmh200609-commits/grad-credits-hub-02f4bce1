@@ -194,8 +194,8 @@ const ImportUsers = () => {
     try {
       lastFileNameRef.current = file.name;
       const result = await parseRosterWorkbook(file, defaults.role);
-      if (!result.ok) {
-        push({ kind: "ai", text: `❌ ${result.error}` });
+      if (result.ok !== true) {
+        push({ kind: "ai", text: `❌ ${(result as { error: string }).error}` });
         return;
       }
       const rows = result.rows;
