@@ -192,47 +192,21 @@ const ImportUsers = () => {
   const handleFile = async (file: File) => {
     setLoading(true);
     try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-
-      if (rawRows.length === 0) {
-        push({ kind: "ai", text: "❌ 没有读到任何行，请确认文件第一行是表头、之后是数据。" });
-        return;
-      }
-
-      push({ kind: "file", name: file.name, rowCount: rawRows.length });
       lastFileNameRef.current = file.name;
-      push({ kind: "ai", text: `已读取 ${rawRows.length} 行原始数据，正在让 AI 识别字段并规范化…` });
-
-      const { data, error } = await supabase.functions.invoke("ai-parse-roster", {
-        body: { rows: rawRows, defaultRole: defaults.role },
-      });
-
-      if (error) {
-        const ctx: any = (error as any).context;
-        let detail = error.message;
-        try {
-          const t = await ctx?.text?.();
-          if (t) detail = JSON.parse(t).error ?? detail;
-        } catch {}
-        push({ kind: "ai", text: `❌ 解析失败：${detail}` });
+      const result = await parseRosterWorkbook(file, defaults.role);
+      if (!result.ok) {
+        push({ kind: "ai", text: `❌ ${result.error}` });
         return;
       }
-
-      const rows = (data?.rows ?? []) as ParsedRow[];
-      if (rows.length === 0) {
-        push({ kind: "ai", text: "❌ AI 没有识别出任何有效行。请检查表格内容。" });
-        return;
-      }
+      const rows = result.rows;
+      push({ kind: "file", name: file.name, rowCount: rows.length });
 
       // Per-row format validation BEFORE allowing import.
       const rowErrors = rows.map(validateRow);
       const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
 
       setPendingRows(rows);
-      push({ kind: "preview", rows, notes: data?.notes, rowErrors });
+      push({ kind: "preview", rows, rowErrors });
       if (badCount > 0) {
         // Collect first few sample errors for the chat hint
         const samples = rowErrors
@@ -246,12 +220,12 @@ const ImportUsers = () => {
         push({
           kind: "ai",
           text:
-            `识别完成 ⚠️ 共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传，或修改后再确认导入。\n\n示例：\n${samples}`,
+            `解析完成 ⚠️ 共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传。\n\n示例：\n${samples}`,
         });
       } else {
         push({
           kind: "ai",
-          text: `识别完成 ✅ 共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方 "确认导入"。`,
+          text: `解析完成 ✅ 共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方 "确认导入"。`,
         });
       }
     } catch (e) {
