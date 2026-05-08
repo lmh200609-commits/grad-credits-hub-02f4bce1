@@ -1,115 +1,80 @@
-# 学分认定系统 自托管部署文档 — 编写计划
 
-参照上传的 LMS 部署指南风格，针对本系统（综合素质学分认定 / Graduate Credits Hub）输出一份**完整、可复制粘贴执行**的部署文档。
+# 学分认定系统 · 自托管部署完整指南（计划）
 
----
+参照你上传的 `deployment-guide-2.md` 结构，结合本项目实际情况（23 个 Edge Function、2 个 Storage bucket、pg_cron 队列、AI 多 Provider、Sightengine、人脸对比、超管/学院管理员/教师/学生四级角色）撰写一份完整的中文部署文档。
 
-## 1. 交付物
+## 输出物
 
-| 文件 | 路径 | 用途 |
-|---|---|---|
-| 中文 Markdown 文档 | `docs/self-hosted-deployment.md` | 进 Git，团队协作维护 |
-| Word 文档 | `/mnt/documents/学分认定系统-自托管部署指南.docx` | 给运维 / 学校 IT 直接下载 |
+一个 Word 文档：`/mnt/documents/学分认定系统-自托管部署指南-v2.docx`
 
-两份内容**完全一致**，由同一份 Markdown 源用 docx-js 生成 Word。
+不修改项目源码，仅生成文档。
 
----
+## 文档目录（13 章 + 附录）
 
-## 2. 文档章节结构（针对本系统重写）
+```
+1.  前置准备（域名、ECS、阿里云安全组）
+2.  服务器初始化（apt 包、Node 20、Nginx、certbot）
+3.  安装 1Panel
+4.  部署自托管 Supabase
+    4.1 拉取 supabase/docker
+    4.2 generate-keys.sh / add-new-auth-keys.sh 判断
+    4.3 .env 关键变量（SITE_URL、ENABLE_EMAIL_AUTOCONFIRM、DASHBOARD_*）
+    4.4 docker compose up -d 启动 + 健康检查
+5.  数据库初始化（跑本仓库 supabase/migrations 全部迁移）
+    - 用 supabase CLI db push 或 docker exec 顺序执行 *.sql
+    - 必装扩展：pgcrypto、pg_trgm、vector、pg_cron、pg_net
+    - 创建 2 个 Storage bucket：application-files（私有）、college-badges（公开）
+    - bucket RLS 策略
+6.  部署 23 个 Edge Functions
+    - 列出全部函数清单与作用（评估、队列、AI 助手、导入、人脸、报告、超管授权…）
+    - 上传到 volumes/functions/，restart functions
+    - 列出每个函数依赖的 secret
+7.  配置 Edge Function Secrets（写入 supabase-project/.env）
+    - SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY（自托管自动注入）
+    - SUPABASE_PUBLISHABLE_KEY、SUPABASE_JWKS
+    - AI_KEY_ENCRYPTION_SECRET（自定义 ≥16 位）
+    - DEEPSEEK_API_KEY、DASHSCOPE_API_KEY、LOVABLE_API_KEY（AI 路由后备）
+    - SIGHTENGINE_API_USER / SIGHTENGINE_API_SECRET（AI 图片检测）
+    - 获取方式（DeepSeek/通义/Sightengine 各自后台地址）
+8.  pg_cron 定时任务（AI 评估队列每分钟跑）
+    - 跑一段 SQL 在 Studio SQL Editor，包含本项目 URL + ANON_KEY
+    - 验证 cron.job 表
+9.  创建超管账号 + 一键授权
+    - Studio Auth → Add user，勾 Auto Confirm
+    - 用 bootstrap-admin Edge Function 或直接 SQL 写入 user_roles(super_admin)
+    - 创建第 1 个学院 + 学院管理员
+10. （可选）从 Lovable Cloud 迁移现有数据
+    - supabase db dump --role-only / schema / data
+    - 顺序导入 + 重跑迁移
+11. 前端构建与部署
+    - .env.production：VITE_SUPABASE_URL=https://your-domain/supabase
+    - npm run build → 上传 dist/ 到 /var/www/credits/
+12. Nginx + HTTPS
+    - SPA fallback、/supabase/ 反代、WebSocket、client_max_body_size 50M（学生上传证明材料）
+    - certbot 自动签发
+13. 验收清单
+    - 所有容器 healthy
+    - 学生注册→完善资料→提交申请（带图片）→AI 评估→教师审核→生成证书
+    - 超管能切换学院、模型绑定页能看到 Provider
 
-域名暂用占位符 `credits.example.edu`（生成时全局可替换）。
-
-```text
-0. 关于本文档（适用版本 / 系统拓扑图）
-1. 前置准备
-   ├─ 服务器规格（4c8g 起，pg + 容器吃内存）
-   ├─ 安全组：22 / 80 / 443 / 1Panel 端口
-   ├─ 域名 + 备案 + DNS A 记录
-   └─ 需要提前准备的密钥清单：
-        DASHSCOPE_API_KEY、DEEPSEEK_API_KEY、AI_KEY_ENCRYPTION_SECRET
-2. 服务器初始化（apt / docker / nginx / certbot / node20）
-3. 安装 1Panel
-4. 部署自托管 Supabase
-   ├─ 4.1 generate-keys / add-new-auth-keys 判定
-   ├─ 4.2 .env 关键变量（SITE_URL、AUTOCONFIRM、3 个 AI 密钥）
-   ├─ 4.3 docker compose up -d
-   └─ 4.4 临时验证
-5. 跑仓库 init.sql（重建 trigger + 创建 2 个 bucket）
-   ├─ 触发器：on_auth_user_created → handle_new_user（写 profiles）
-   └─ Bucket：application-files（私有）、college-badges（公开）
-6. 部署 Edge Functions（按本系统真实清单列出 23 个）
-   manage-admin / bootstrap-admin / reset-admin-password /
-   create-college-admin / delete-user / bulk-delete-users /
-   bulk-reset-password / import-users / ai-parse-roster /
-   ai-explain-import / import-assistant-chat /
-   evaluate-application / process-eval-queue /
-   ai-eval-stress-test / ask-credit-assistant / staff-ai-assistant /
-   polish-answer / face-compare / generate-window-report /
-   audit-log / dev-seed / admin-purge-and-bootstrap /
-   ai-provider-admin
-7. 创建超管 + 一键授权（写入 user_roles.super_admin）
-8. 从 Lovable Cloud 云端 Supabase 迁移数据（可选）
-   ├─ 8.1 本地装 supabase CLI
-   ├─ 8.2 拿连接串（含 ref = eceqokilpppnwtfzgbvq）
-   ├─ 8.3 dump roles/schema/data
-   ├─ 8.4 导入顺序：roles → schema → data → init.sql 重跑
-   └─ 8.5 校对 user_roles.college_id 是否齐全
-9. 前端部署
-   ├─ .env.production 三个变量
-   ├─ npm run build → /var/www/credits/
-   └─ 权限设置
-10. Nginx + HTTPS
-    ├─ drop-in 配置
-    ├─ /supabase/ 反代 + WebSocket（ai_eval_queue 实时刷新需要）
-    └─ certbot 自动签
-11. 验收清单（10 项勾选）
-12. 常见问题 FAQ（结合本系统的高频报错：
-    submission_window 不开放、profiles 缺失、application-files 403、
-    process-eval-queue 不消费、AI key 未配置、face-compare 等）
-13. 下次再迁移：精简版命令
-14. 高并发调优（针对学分认定特有场景）
-    ├─ 14.1 PostgreSQL 参数（4c8g 基线）
-    ├─ 14.2 PostgREST 连接池
-    ├─ 14.3 ai_eval_queue 处理节奏
-    │      （process-eval-queue 定时调用、claim_ai_eval_jobs 锁机制）
-    ├─ 14.4 Kong 限流（保护 evaluate-application）
-    ├─ 14.5 Nginx 调优 + gzip
-    └─ 14.6 提交窗口集中开闭时段的容量评估
-15. 附录
-    ├─ A. 完整 .env 模板（按本系统所有 secret 列出）
-    ├─ B. 数据库表清单 + 用途速查（19 张业务表）
-    ├─ C. Storage Bucket 与 RLS 速查
-    └─ D. 联系 / 升级路径
+附录 A 常见问题（注册失败、AI 评估卡 queued、Sightengine 401、人脸对比超时、cron 未跑）
+附录 B 高并发调优（Postgres、PostgREST、Kong 限流、Nginx）
+附录 C 一键再部署精简命令
 ```
 
-## 3. 与原 LMS 文档的关键差异
+## 关键差异（相比上传参考文档）
 
-| 原文档 | 本系统 |
-|---|---|
-| 阿里云 VOD 4 个变量 | **删除**，改为 3 个 AI 网关密钥 |
-| 3 个 bucket（avatars/courses/contents） | **2 个**（application-files / college-badges） |
-| 假邮箱 `{phone}@phone.lms.local` | 本系统使用真实邮箱注册，**保留** AUTOCONFIRM |
-| 8 个 Edge Functions | **23 个**，分组列出（账号管理 / 导入 / AI 评估 / 报表 / 工具） |
-| LMS 高并发：考试交卷 | 本系统高并发：**提交窗口截止前夜 + AI 评估队列堆积** |
+- **业务域不同**：学分认定，不是 LMS；表名/bucket 名/Edge Function 名全部按本项目
+- **23 个 Edge Function**：完整列出而非 8 个
+- **AI Provider 多源**：要讲 ai_providers 表 + AI_KEY_ENCRYPTION_SECRET 加密机制
+- **pg_cron 队列**：必须配，且要包含本项目 URL 和 service-role key（用 vault 或 settings）
+- **没有阿里云 VOD**：去掉 VOD 相关配置
+- **审核窗口**：要提到 submission_windows 控制学生何时能提交
+- **角色四级**：super_admin / admin（学院）/ teacher / student
+- **不依赖仓库未沉淀的 init.sql/snippet/lms.conf**：本项目暂未沉淀这些资产，文档内联给出 SQL 与 Nginx 模板
 
-## 4. 待用户确认的内容
+## 不在范围
 
-我会把以下两处用 `__FILL_ME__` 占位符标出，方便用户一次替换：
-
-- 域名：`credits.example.edu`
-- 服务器目录：`/var/www/credits/`、`/root/supabase-project/`
-
-## 5. 实现步骤（点 Implement 后我会执行）
-
-1. 写 `docs/self-hosted-deployment.md`（约 600 行，结构同上）
-2. 在 `/tmp/` 写一个 docx-js 脚本，把 Markdown 转 .docx：
-   - US Letter / 1 寸边距 / Arial / 中文用 Microsoft YaHei fallback
-   - H1/H2/H3 样式按规范注册
-   - 表格用 DXA + columnWidths 双宽度
-   - 代码块单独段落 + 等宽字体 + 浅灰底
-3. `npm i -g docx`，运行脚本生成 .docx 到 `/mnt/documents/`
-4. 用 LibreOffice 把 .docx 转 PDF 截首页 + 抽样 3 页做 QA，确认无溢出 / 无空页
-5. 输出 `<lov-artifact>` 链接给用户下载
-
-预计耗时 5–8 分钟，全部自动化。
-
+- 不创建 `supabase/self-hosted/` 目录或 Nginx 配置文件（如需我也可以一起沉淀，请告知）
+- 不修改任何源码
+- 不运行实际部署
