@@ -498,6 +498,20 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (result.logic_ok === false)          failedChecks.push("逻辑性核验");
     if (result.completeness_ok === false)   failedChecks.push("材料完整性");
 
+    // Sightengine 强制规则：AI 生成概率超阈值 → 真实性强制不通过
+    if (sightengine.score != null && sightengine.score >= SIGHTENGINE_REJECT_THRESHOLD) {
+      const pct = (sightengine.score * 100).toFixed(1);
+      const note = `Sightengine 检测显示该图片为 AI 生成的概率为 ${pct}%（阈值 ${(SIGHTENGINE_REJECT_THRESHOLD * 100).toFixed(0)}%），判定为伪造素材`;
+      if (result.authenticity_ok !== false) {
+        result.authenticity_ok = false;
+        if (!failedChecks.includes("真实性")) failedChecks.push("真实性");
+      }
+      overrideNotes.push(`服务端校验：${note}，已强制改判为「驳回」。`);
+    } else if (sightengine.score != null) {
+      // 通过：在 reasoning 末尾轻量提示，便于教师查看
+      overrideNotes.push(`Sightengine AI 生成概率 ${(sightengine.score * 100).toFixed(1)}%，低于阈值。`);
+    }
+
     // 学校兜底：detected_school 非空且不属于默认学校族 → 强制身份不符
     const detSchool = (result.detected_school ?? "").toString().trim().toLowerCase();
     if (detSchool && detSchool !== "未识别") {
