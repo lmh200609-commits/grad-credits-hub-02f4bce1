@@ -379,11 +379,15 @@ const ImportUsers = () => {
               <Upload className="h-5 w-5" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium">第一步：上传 Excel / CSV 文件</p>
+              <p className="text-sm font-medium">使用统一模板导入账号</p>
               <p className="text-xs text-muted-foreground">
-                聊天问答不会真正创建账号 —— 必须先在这里上传文件，识别后再点「确认导入」。
+                先下载模板按列填写，再上传 Excel；系统按固定表头解析，避免列名歧义。
               </p>
             </div>
+            <Button onClick={downloadRosterTemplate} variant="outline" size="sm">
+              <Download className="mr-2 h-4 w-4" />
+              下载导入模板
+            </Button>
             <Button onClick={() => fileRef.current?.click()} disabled={loading} size="sm">
               <Upload className="mr-2 h-4 w-4" />
               选择文件
