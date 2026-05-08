@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -9,27 +8,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle, Upload, ArrowRight } from "lucide-react";
-
-type ParsedRow = {
-  student_no: string;
-  full_name: string;
-  phone?: string;
-  class_name?: string;
-  department?: string;
-  major?: string;
-  role: "admin" | "teacher" | "student";
-  password: string;
-  gender?: string;
-  ethnicity?: string;
-  political_status?: string;
-  birth_date?: string;
-  enrollment_year?: number;
-  advisor?: string;
-  apartment_no?: string;
-  dorm_room?: string;
-  bed_no?: string;
-};
+import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle, Upload, ArrowRight, Download } from "lucide-react";
+import {
+  downloadRosterTemplate,
+  parseRosterWorkbook,
+  TEMPLATE_COLUMNS,
+  type ParsedRow,
+} from "@/lib/parseRoster";
 
 type ChatMsg =
   | { kind: "ai"; text: string }
@@ -116,7 +101,9 @@ const ImportUsers = () => {
     {
       kind: "ai",
       text:
-        "你好👋，我是名册导入助手。\n\n📋 导入规则：\n• 仅支持 Excel（.xlsx/.xls）和 CSV，第一行必须是表头\n• 必填列：学号/工号、姓名；其他列可选\n• 可识别字段：学院、专业班级、年级、学号、姓名、性别、民族、政治面貌、出生日期、辅导员、学生联系电话、公寓号、宿舍号、床号\n• 默认角色可在输入框调整（如「默认角色=学生」）\n• 🔑 密码规则：统一为「学号 + 电话号码后 6 位」，电话不足 6 位时左侧补 0\n• ⚠️ 表格中已填写的「角色」列以表格数据为准，仅当为空时才用默认角色\n\n你可以直接📎上传 Excel/CSV，也可以问我任何关于导入的问题。",
+        "你好👋，请使用统一「账号导入模板」批量创建账号。\n\n步骤：\n1) 点击右上角「下载导入模板」获取 .xlsx\n2) 按列填写（必填：学号/工号、姓名、角色）\n3) 点击「上传文件」选择填好的 Excel\n4) 核对预览后点击「确认导入」\n\n模板列（共 16 列，顺序固定）：\n" +
+        TEMPLATE_COLUMNS.map((c) => `• ${c.header}${c.required ? "（必填）" : ""} — ${c.note}`).join("\n") +
+        "\n\n密码规则：自动生成 = 学号 + 手机号后 6 位（不足左补 0；无手机号则补 6 个 0）。无需在表中填写。",
     },
   ]);
   const [input, setInput] = useState("");
@@ -207,47 +194,21 @@ const ImportUsers = () => {
   const handleFile = async (file: File) => {
     setLoading(true);
     try {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-
-      if (rawRows.length === 0) {
-        push({ kind: "ai", text: "❌ 没有读到任何行，请确认文件第一行是表头、之后是数据。" });
-        return;
-      }
-
-      push({ kind: "file", name: file.name, rowCount: rawRows.length });
       lastFileNameRef.current = file.name;
-      push({ kind: "ai", text: `已读取 ${rawRows.length} 行原始数据，正在让 AI 识别字段并规范化…` });
-
-      const { data, error } = await supabase.functions.invoke("ai-parse-roster", {
-        body: { rows: rawRows, defaultRole: defaults.role },
-      });
-
-      if (error) {
-        const ctx: any = (error as any).context;
-        let detail = error.message;
-        try {
-          const t = await ctx?.text?.();
-          if (t) detail = JSON.parse(t).error ?? detail;
-        } catch {}
-        push({ kind: "ai", text: `❌ 解析失败：${detail}` });
+      const result = await parseRosterWorkbook(file, defaults.role);
+      if (result.ok !== true) {
+        push({ kind: "ai", text: `❌ ${(result as { error: string }).error}` });
         return;
       }
-
-      const rows = (data?.rows ?? []) as ParsedRow[];
-      if (rows.length === 0) {
-        push({ kind: "ai", text: "❌ AI 没有识别出任何有效行。请检查表格内容。" });
-        return;
-      }
+      const rows = result.rows;
+      push({ kind: "file", name: file.name, rowCount: rows.length });
 
       // Per-row format validation BEFORE allowing import.
       const rowErrors = rows.map(validateRow);
       const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
 
       setPendingRows(rows);
-      push({ kind: "preview", rows, notes: data?.notes, rowErrors });
+      push({ kind: "preview", rows, rowErrors });
       if (badCount > 0) {
         // Collect first few sample errors for the chat hint
         const samples = rowErrors
@@ -261,12 +222,12 @@ const ImportUsers = () => {
         push({
           kind: "ai",
           text:
-            `识别完成 ⚠️ 共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传，或修改后再确认导入。\n\n示例：\n${samples}`,
+            `解析完成 ⚠️ 共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传。\n\n示例：\n${samples}`,
         });
       } else {
         push({
           kind: "ai",
-          text: `识别完成 ✅ 共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方 "确认导入"。`,
+          text: `解析完成 ✅ 共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方 "确认导入"。`,
         });
       }
     } catch (e) {
@@ -418,11 +379,15 @@ const ImportUsers = () => {
               <Upload className="h-5 w-5" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium">第一步：上传 Excel / CSV 文件</p>
+              <p className="text-sm font-medium">使用统一模板导入账号</p>
               <p className="text-xs text-muted-foreground">
-                聊天问答不会真正创建账号 —— 必须先在这里上传文件，识别后再点「确认导入」。
+                先下载模板按列填写，再上传 Excel；系统按固定表头解析，避免列名歧义。
               </p>
             </div>
+            <Button onClick={downloadRosterTemplate} variant="outline" size="sm">
+              <Download className="mr-2 h-4 w-4" />
+              下载导入模板
+            </Button>
             <Button onClick={() => fileRef.current?.click()} disabled={loading} size="sm">
               <Upload className="mr-2 h-4 w-4" />
               选择文件
