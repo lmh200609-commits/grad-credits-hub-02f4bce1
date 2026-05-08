@@ -1,91 +1,58 @@
-## 功能：提交时间区间（批次）+ 到期报告
 
-### 一、数据库
+## 目标
 
-新增表 `submission_windows`（每个学院多批次）：
-- `id`、`college_id`（学院隔离）、`name`（批次名，如「2026春季」）
-- `starts_at`、`ends_at`（提交起止时间）
-- `active`（是否启用）、`created_by`、`created_at`、`updated_at`
-- `report_generated_at`、`report_path`（到期报告快照路径，存 storage）
+将"AI 名册导入助手"改造为**统一固定格式**的 Excel 导入：管理员先下载模板 → 按列填写 → 上传 → 系统按固定表头解析并校验 → 确认导入。不再让 AI 猜列名，避免列名歧义和解析失败。
 
-新增表 `submission_window_reports`（保留历史报告快照）：
-- `id`、`window_id`、`college_id`
-- `summary`（jsonb：KPI、状态分布、未提交名单 user_id 数组、学生汇总数组、申请明细数组、图表数据）
-- `file_path`（CSV/Excel 在 `application-files` 桶下的路径，可下载）
-- `generated_at`、`generated_by`（NULL=系统自动）
+## 统一 Excel 模板（第一行为表头，列顺序固定）
 
-辅助函数 `public.current_open_window(_college uuid)`：返回当前 `now()` 落在 `[starts_at, ends_at]` 且 `active=true` 的窗口 id（任一即可）。
+| 列名（中文表头） | 字段 | 必填 | 说明/格式 |
+|---|---|---|---|
+| 学号/工号 | student_no | ✅ | 唯一，仅字母/数字/._-；学生填学号，教师/管理员填工号 |
+| 姓名 | full_name | ✅ | 1–30 字符 |
+| 角色 | role | ✅ | 取值：`学生` / `教师` / `管理员` |
+| 性别 | gender | ⬜ | `男` / `女` |
+| 民族 | ethnicity | ⬜ | 例：汉族 |
+| 政治面貌 | political_status | ⬜ | 例：群众 / 共青团员 / 中共党员 |
+| 出生日期 | birth_date | ⬜ | `YYYY-MM-DD`（Excel 日期格式也可，自动转换） |
+| 手机号 | phone | ⬜ | 7–15 位数字（用于生成默认密码） |
+| 院系 | department | ⬜ | 文本 |
+| 专业 | major | ⬜ | 文本（学生用） |
+| 班级 | class_name | ⬜ | 文本（学生用） |
+| 年级 | enrollment_year | ⬜ | 4 位年份，如 2024 |
+| 辅导员 | advisor | ⬜ | 文本 |
+| 公寓号 | apartment_no | ⬜ | ≤20 字符 |
+| 宿舍号 | dorm_room | ⬜ | ≤20 字符 |
+| 床号 | bed_no | ⬜ | 中文/字母/数字/横线，≤12 位 |
 
-辅助函数 `public.is_submission_open(_college uuid)`：上面的布尔包装。
+**密码规则**（不在表中、不可填）：统一为 `学号 + 手机号后 6 位`，手机号不足 6 位左侧补 0；无手机号则以 `0` 补齐 6 位。
 
-### 二、RLS
+## 改动点
 
-`submission_windows`：
-- 学院 admin 增删改查本学院
-- super_admin ALL
-- 已认证用户 SELECT 本学院（学生需要看「截止时间」倒计时）
+### 1. 新增模板下载
+- 在 `src/pages/admin/ImportUsers.tsx` 顶部"上传"卡片中加一个 **"下载导入模板（.xlsx）"** 按钮。
+- 用 `xlsx` 在前端生成模板：第 1 行表头（上表 16 列）+ 1 行示例数据 + 1 个隐藏的"说明"工作表（列出每列规则、必填、示例）。文件名：`账号导入模板.xlsx`。
 
-`submission_window_reports`：
-- 学院 admin / super_admin SELECT + INSERT 本学院
-- 学生不可见
+### 2. 重写解析逻辑（不再调用 AI）
+- 删除对 `ai-parse-roster` 边缘函数的调用（保留函数本身，仅前端不再使用）。
+- 新增 `src/lib/parseRoster.ts`：
+  - 严格按固定中文表头读取（容忍前后空白、全角冒号）。
+  - 缺少必填表头列 → 返回顶层错误并提示"请使用最新模板"。
+  - 出生日期支持 Excel 日期序列号 → 转 `YYYY-MM-DD`。
+  - 角色字段中文 → 英文（学生/教师/管理员 → student/teacher/admin）；空值用界面"默认角色"。
+  - 自动生成 password = `student_no + (phone 后 6 位，左补 0)`。
+  - 复用现有 `validateRow` 做行级校验。
 
-### 三、提交拦截（关键）
+### 3. UI 简化
+- 把首屏欢迎语改为强调"请下载并使用统一模板"，列出 16 个列名概览。
+- 移除"默认密码"相关交互（已不支持）。
+- 默认角色选择保留（处理表中"角色"列为空的行）。
 
-在 `applications` 表增加 BEFORE INSERT 触发器 `enforce_submission_window`：
-- 若调用者是学生（非 teacher/admin/super_admin），且 `is_submission_open(NEW.college_id)` 为 false → `RAISE EXCEPTION '当前不在开放提交时间内'`
-- 教师/管理员补录、AI 重评不受影响
+### 4. 后端 `import-users` 不变
+- 已支持完整字段，无需修改 SQL 或边缘函数签名。
 
-学生端 `Apply.tsx` 增加：
-- 加载本学院当前开放窗口；若无 → 禁用提交按钮 + 显示「未开放，下次开放：xxx」
-- 显示倒计时（剩余 X 天 X 小时）
+## 不在范围
+- 不改库表结构、不改 RLS。
+- 不改 `BulkUserDialog`（那是删除/重置，不是导入）。
+- 保留 `ai-parse-roster` 边缘函数代码（仅前端不再使用），如需彻底清理可后续单独删除。
 
-### 四、管理员 UI
-
-新页面 `/admin/submission-windows`（学院 admin 可见）：
-- 列表：批次名 / 起止时间 / 状态（未开始/进行中/已结束）/ 报告状态
-- 新建/编辑批次（DateTimePicker）
-- 操作：启用/停用、删除（无报告才能删）
-- 「立即生成报告」按钮 → 调用 edge function
-
-超级管理员页 `/super/submission-windows`：可切换学院查看所有批次。
-
-### 五、报告生成
-
-Edge function `generate-window-report`：
-- 入参 `window_id`，权限：admin/super_admin/service_role
-- 按学院范围聚合 `applications`、`profiles`、`user_roles`：
-  - **学生级汇总**：每个学生的提交数、通过数、累计学分、是否达标
-  - **申请明细**：所有申请条目（状态、AI 学分、最终学分、关键词、规则、提交时间）
-  - **图表数据**：状态分布、按日提交趋势、按院系分布、按规则 Top10
-  - **未提交名单**：本学院 student 角色中没有 application 落在窗口期内的
-- 生成 `.xlsx`（用 `xlsx` 库，多 sheet：汇总/明细/未提交/图表数据）上传到 storage `application-files/reports/<window_id>.xlsx`
-- 写入 `submission_window_reports`，更新 `submission_windows.report_generated_at` 与 `report_path`
-- 返回下载 signed URL
-
-### 六、自动到期触发
-
-在 `pg_cron` 中加任务（每 10 分钟）：扫描 `ends_at < now() AND report_generated_at IS NULL AND active=true` 的窗口，调用 `net.http_post` 触发 `generate-window-report`。该 cron 创建 SQL 由用户在 SQL Editor 手动执行（包含 service-role key，不能进 migration）。我会在实现完成后给出一段可直接粘贴的 SQL。
-
-### 七、报告下载
-
-管理员页面：每个已生成报告的批次显示「下载 Excel」按钮 → `supabase.storage.createSignedUrl(...)`，60s 有效期。历史报告走 `submission_window_reports` 列表。
-
-### 技术细节
-
-- 时间统一存 `timestamptz`，前端用 `date-fns` + `Calendar` + 时间输入框组合
-- Excel 生成使用 Deno 兼容的 `https://esm.sh/xlsx@0.18.5`
-- 拦截触发器使用 `SECURITY DEFINER` + `search_path=public`，通过 `has_role` 判断角色
-- 学生端窗口信息查询走 RLS SELECT，不走 edge function，降低延迟
-- 触发器只在 INSERT 时拦截，UPDATE 不拦截（学生改自己 pending_ai 的允许，已有 guard）
-
-### 路由
-
-- `/admin/submission-windows`（admin 角色）
-- `/super/submission-windows`（super_admin）
-
-### 验收
-
-1. 学院 admin 创建窗口 → 学生在窗口期内可提交，期外提交报错
-2. 多批次并存：任一开放即可
-3. 窗口 `ends_at` 到达后 10 分钟内自动生成 Excel，管理员可下载
-4. 管理员可手动「立即生成」（窗口未结束也允许，生成中间报告）
+请确认列清单与必填项是否符合预期，确认后我开始实施。
