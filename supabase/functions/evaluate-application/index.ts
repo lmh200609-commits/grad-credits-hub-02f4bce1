@@ -13,6 +13,48 @@ const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
 const DEFAULT_SCHOOL = "长春财经学院";
 const SCHOOL_ALIASES: string[] = ["长春财经学院", "长财", "ccufe", "changchun university of finance"];
 
+/** Sightengine AI-generated image detection.
+ *  返回 { score: 0~1, label: "ai_generated"|"genuine"|"unknown", raw }，
+ *  失败时返回 { score: null, error }，由调用方决定是否放行。 */
+async function sightengineDetectAi(
+  blob: Blob,
+  filename: string,
+): Promise<{ score: number | null; label: string; error?: string; raw?: any }> {
+  const user = Deno.env.get("SIGHTENGINE_API_USER");
+  const secret = Deno.env.get("SIGHTENGINE_API_SECRET");
+  if (!user || !secret) {
+    return { score: null, label: "unknown", error: "未配置 Sightengine 凭证" };
+  }
+  try {
+    const fd = new FormData();
+    fd.append("media", blob, filename);
+    fd.append("models", "genai");
+    fd.append("api_user", user);
+    fd.append("api_secret", secret);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    const resp = await fetch("https://api.sightengine.com/1.0/check.json", {
+      method: "POST",
+      body: fd,
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data?.status === "failure") {
+      return { score: null, label: "unknown", error: data?.error?.message || `HTTP ${resp.status}`, raw: data };
+    }
+    const score = typeof data?.type?.ai_generated === "number" ? data.type.ai_generated : null;
+    const label = score == null ? "unknown" : score >= 0.5 ? "ai_generated" : "genuine";
+    return { score, label, raw: data };
+  } catch (e) {
+    return { score: null, label: "unknown", error: (e as Error).message };
+  }
+}
+
+const SIGHTENGINE_REJECT_THRESHOLD = Number(
+  Deno.env.get("SIGHTENGINE_GENAI_THRESHOLD") ?? "0.5",
+);
+
 /** 简易联网检索：用 r.jina.ai 抓取 DuckDuckGo HTML 摘要，无需新 secret。 */
 async function webSearch(query: string): Promise<string> {
   try {
