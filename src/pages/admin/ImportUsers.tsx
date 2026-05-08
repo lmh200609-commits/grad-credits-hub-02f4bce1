@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -9,27 +8,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle, Upload, ArrowRight } from "lucide-react";
-
-type ParsedRow = {
-  student_no: string;
-  full_name: string;
-  phone?: string;
-  class_name?: string;
-  department?: string;
-  major?: string;
-  role: "admin" | "teacher" | "student";
-  password: string;
-  gender?: string;
-  ethnicity?: string;
-  political_status?: string;
-  birth_date?: string;
-  enrollment_year?: number;
-  advisor?: string;
-  apartment_no?: string;
-  dorm_room?: string;
-  bed_no?: string;
-};
+import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle, Upload, ArrowRight, Download } from "lucide-react";
+import {
+  downloadRosterTemplate,
+  parseRosterWorkbook,
+  TEMPLATE_COLUMNS,
+  type ParsedRow,
+} from "@/lib/parseRoster";
 
 type ChatMsg =
   | { kind: "ai"; text: string }
