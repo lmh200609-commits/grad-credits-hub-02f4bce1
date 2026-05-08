@@ -13,6 +13,48 @@ const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
 const DEFAULT_SCHOOL = "长春财经学院";
 const SCHOOL_ALIASES: string[] = ["长春财经学院", "长财", "ccufe", "changchun university of finance"];
 
+/** Sightengine AI-generated image detection.
+ *  返回 { score: 0~1, label: "ai_generated"|"genuine"|"unknown", raw }，
+ *  失败时返回 { score: null, error }，由调用方决定是否放行。 */
+async function sightengineDetectAi(
+  blob: Blob,
+  filename: string,
+): Promise<{ score: number | null; label: string; error?: string; raw?: any }> {
+  const user = Deno.env.get("SIGHTENGINE_API_USER");
+  const secret = Deno.env.get("SIGHTENGINE_API_SECRET");
+  if (!user || !secret) {
+    return { score: null, label: "unknown", error: "未配置 Sightengine 凭证" };
+  }
+  try {
+    const fd = new FormData();
+    fd.append("media", blob, filename);
+    fd.append("models", "genai");
+    fd.append("api_user", user);
+    fd.append("api_secret", secret);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    const resp = await fetch("https://api.sightengine.com/1.0/check.json", {
+      method: "POST",
+      body: fd,
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data?.status === "failure") {
+      return { score: null, label: "unknown", error: data?.error?.message || `HTTP ${resp.status}`, raw: data };
+    }
+    const score = typeof data?.type?.ai_generated === "number" ? data.type.ai_generated : null;
+    const label = score == null ? "unknown" : score >= 0.5 ? "ai_generated" : "genuine";
+    return { score, label, raw: data };
+  } catch (e) {
+    return { score: null, label: "unknown", error: (e as Error).message };
+  }
+}
+
+const SIGHTENGINE_REJECT_THRESHOLD = Number(
+  Deno.env.get("SIGHTENGINE_GENAI_THRESHOLD") ?? "0.5",
+);
+
 /** 简易联网检索：用 r.jina.ai 抓取 DuckDuckGo HTML 摘要，无需新 secret。 */
 async function webSearch(query: string): Promise<string> {
   try {
@@ -150,6 +192,10 @@ Deno.serve(async (req) => {
     // 下载附件图片
     let imageDataUrl: string | null = null;
     let attachmentNote = "无附件";
+    let sightengine: { score: number | null; label: string; error?: string } = {
+      score: null,
+      label: "unknown",
+    };
     if (app.file_path) {
       if (IMAGE_EXT.test(app.file_path)) {
         const { data: blob, error: dlErr } = await admin.storage
@@ -164,6 +210,19 @@ Deno.serve(async (req) => {
           const mime = ext === "jpg" ? "jpeg" : ext;
           imageDataUrl = `data:image/${mime};base64,${b64}`;
           attachmentNote = "已附图片";
+          // Sightengine AI 生成检测（与 AI 视觉评估并行执行，失败不阻断）
+          try {
+            const fname = app.file_path.split("/").pop() || `image.${ext}`;
+            const fresh = new Blob([buf], { type: `image/${mime}` });
+            sightengine = await sightengineDetectAi(fresh, fname);
+            if (sightengine.score != null) {
+              attachmentNote = `已附图片；Sightengine AI 生成概率 ${(sightengine.score * 100).toFixed(1)}%`;
+            } else if (sightengine.error) {
+              console.warn("[sightengine] skip:", sightengine.error);
+            }
+          } catch (e) {
+            console.warn("[sightengine] error:", (e as Error).message);
+          }
         } else {
           attachmentNote = "附件下载失败";
         }
@@ -439,6 +498,20 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (result.logic_ok === false)          failedChecks.push("逻辑性核验");
     if (result.completeness_ok === false)   failedChecks.push("材料完整性");
 
+    // Sightengine 强制规则：AI 生成概率超阈值 → 真实性强制不通过
+    if (sightengine.score != null && sightengine.score >= SIGHTENGINE_REJECT_THRESHOLD) {
+      const pct = (sightengine.score * 100).toFixed(1);
+      const note = `Sightengine 检测显示该图片为 AI 生成的概率为 ${pct}%（阈值 ${(SIGHTENGINE_REJECT_THRESHOLD * 100).toFixed(0)}%），判定为伪造素材`;
+      if (result.authenticity_ok !== false) {
+        result.authenticity_ok = false;
+        if (!failedChecks.includes("真实性")) failedChecks.push("真实性");
+      }
+      overrideNotes.push(`服务端校验：${note}，已强制改判为「驳回」。`);
+    } else if (sightengine.score != null) {
+      // 通过：在 reasoning 末尾轻量提示，便于教师查看
+      overrideNotes.push(`Sightengine AI 生成概率 ${(sightengine.score * 100).toFixed(1)}%，低于阈值。`);
+    }
+
     // 学校兜底：detected_school 非空且不属于默认学校族 → 强制身份不符
     const detSchool = (result.detected_school ?? "").toString().trim().toLowerCase();
     if (detSchool && detSchool !== "未识别") {
@@ -629,6 +702,12 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       success: true,
       status: nextStatus,
       vision_used: !!imageDataUrl,
+      sightengine: {
+        score: sightengine.score,
+        label: sightengine.label,
+        threshold: SIGHTENGINE_REJECT_THRESHOLD,
+        error: sightengine.error ?? null,
+      },
       ...result,
       matched_rule_id: matchedRuleId,
     });
