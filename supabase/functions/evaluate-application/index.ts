@@ -192,6 +192,10 @@ Deno.serve(async (req) => {
     // 下载附件图片
     let imageDataUrl: string | null = null;
     let attachmentNote = "无附件";
+    let sightengine: { score: number | null; label: string; error?: string } = {
+      score: null,
+      label: "unknown",
+    };
     if (app.file_path) {
       if (IMAGE_EXT.test(app.file_path)) {
         const { data: blob, error: dlErr } = await admin.storage
@@ -206,6 +210,19 @@ Deno.serve(async (req) => {
           const mime = ext === "jpg" ? "jpeg" : ext;
           imageDataUrl = `data:image/${mime};base64,${b64}`;
           attachmentNote = "已附图片";
+          // Sightengine AI 生成检测（与 AI 视觉评估并行执行，失败不阻断）
+          try {
+            const fname = app.file_path.split("/").pop() || `image.${ext}`;
+            const fresh = new Blob([buf], { type: `image/${mime}` });
+            sightengine = await sightengineDetectAi(fresh, fname);
+            if (sightengine.score != null) {
+              attachmentNote = `已附图片；Sightengine AI 生成概率 ${(sightengine.score * 100).toFixed(1)}%`;
+            } else if (sightengine.error) {
+              console.warn("[sightengine] skip:", sightengine.error);
+            }
+          } catch (e) {
+            console.warn("[sightengine] error:", (e as Error).message);
+          }
         } else {
           attachmentNote = "附件下载失败";
         }
