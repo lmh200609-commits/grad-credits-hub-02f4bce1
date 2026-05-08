@@ -702,6 +702,12 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       success: true,
       status: nextStatus,
       vision_used: !!imageDataUrl,
+      sightengine: {
+        score: sightengine.score,
+        label: sightengine.label,
+        threshold: SIGHTENGINE_REJECT_THRESHOLD,
+        error: sightengine.error ?? null,
+      },
       ...result,
       matched_rule_id: matchedRuleId,
     });
