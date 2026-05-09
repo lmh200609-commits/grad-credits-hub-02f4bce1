@@ -32,7 +32,10 @@ Deno.serve(async (req) => {
       _user_id: callerId,
       _role: "admin",
     });
-    if (!isAdmin) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
+    const { data: isSuper } = await admin.rpc("is_super_admin", {
+      _user_id: callerId,
+    });
+    if (!isAdmin && !isSuper) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
 
     const { user_id } = await req.json();
     if (!user_id || typeof user_id !== "string") {
