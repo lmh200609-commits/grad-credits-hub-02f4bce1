@@ -1,28 +1,44 @@
 ## 问题
-工作助手悬浮面板有时整块"透明"，文字与下层表格重叠看不清。
 
-## 根因分析
-1. **面板背景不够稳健**：`StaffAiAssistant.tsx` 第 119 行使用 `bg-background`。该变量被 `useCollegeTheme` 在登录后通过 `document.documentElement.style.setProperty("--background", ...)` 动态覆盖，如果某个学院主题里写了带 alpha 或浅色低对比的 HSL，整个面板就会"看不见"。
-2. **缺少独立堆叠上下文**：面板没有 `isolate`，如果父级里有 `mix-blend-*` 或半透明遮罩（登录页背景动画、AI 评估卡片等）会污染它。
-3. **header 渐变失效**：第 120 行用 `to-primary-glow`，但 `tailwind.config.ts` 的 `colors` 里没有定义 `primary-glow`，这个类不生成 CSS，渐变退化为 `primary → transparent`，所以顶栏色条也会"消失"。
+工作助手目前没有"账号导入溯源"工具，因此无法回答「某账号是谁导入的、什么时候导入的」。所有导入事件实际上都已写入 `public.audit_logs`（action = `import_users`，actor_email、target_ids、target_labels、created_at、metadata 都齐全），只是 AI 拿不到。
 
-## 改动计划
+## 关于「信息工程学院 · 张三」的答案（直接查库已得到）
 
-### 1. `src/components/StaffAiAssistant.tsx`
-- 面板根 `<div>`：把 `bg-background` 换成 **`bg-card`** 并新增 `isolate`，再加一层兜底内联色 `style={{ backgroundColor: "hsl(var(--card))" }}`，确保不论主题如何覆盖 `--background` 都不会透明。
-- 顶栏 header：把 `bg-gradient-to-r from-primary to-primary-glow` 换成已注册的 token 写法 `style={{ background: "linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary-glow)))" }}`，避免依赖未注册的 Tailwind 颜色。
+该院有两个张三，导入信息分别为：
 
-### 2. `tailwind.config.ts`
-- 在 `colors` 里补充 `"primary-glow": "hsl(var(--primary-glow))"`，让其它使用 `from-primary-glow / to-primary-glow / bg-primary-glow` 的地方也能正常渲染（顺手修，不破坏现有）。
+- 张三 / 学号 20240001：2026-05-09 07:10:03（北京时间 15:10:03），由 `13647488835@admin.local` 通过批量导入（文件 `账号导入模板.xlsx`）创建。
+- 张三 / 学号 20240002：2026-05-09 07:18:18（北京时间 15:18:18），同一管理员 `13647488835@admin.local`，同一模板文件再次导入。
 
-### 3. 防止重复渲染
-- 全项目搜索 `<StaffAiAssistant`，确认只在 `AppLayout` 渲染一次；若存在多处再清理。
+回答完整问题时建议要求用户提供学号区分。
 
-## 不改动
-- 助手的逻辑、消息存储、调用 edge function 全部保持不变。
-- 不动登录页背景与其他页面样式。
+## 修复方案
 
-## 验收
-- 切换不同学院/主题进入 `/admin/credits` 打开工作助手，面板背景始终为不透明卡片色。
-- 顶部标题栏显示完整的主色 → 主色亮色 渐变。
-- 面板与下层表格不再透视重叠。
+只改一份 edge function：`supabase/functions/staff-ai-assistant/index.ts`。
+
+1. 新增工具 `account_provenance(query)`：
+   - 入参：学号或姓名（可加院系修饰，函数内部只取关键词）。
+   - 实现步骤：
+     a. 在 `profiles` 中按 `student_no = query` 精确匹配；若无，再按 `full_name ilike %query%` 匹配，必要时按 `department` 进一步过滤。
+     b. 收集匹配到的 `user_id` 与 `student_no` 列表。
+     c. 查询 `audit_logs`：`action = 'import_users'` 且 (`target_ids && {user_ids}` 或 `target_labels && {student_nos}`)，按 `created_at` 升序。
+     d. 返回结构：`{ matches: [{ user_id, full_name, student_no, department, class_name, imported_at, imported_by_email, file_name, audit_log_id }], note }`。命中 0 条时返回 `{ matches: [], note: "audit_logs 中无导入记录" }`，禁止 AI 编造。
+   - 同名多人时返回多条，让 AI 在回复中列出并提示用学号区分。
+
+2. 在 `TOOLS` 数组里追加该工具的 OpenAI function schema。
+
+3. 更新 `SYSTEM_PROMPT`：
+   - 在能力清单里加 `account_provenance(query)：查询某账号是谁、什么时候、用什么文件导入的（来源 audit_logs）`。
+   - 在行为约束里追加：「询问"账号是谁导入的/什么时候创建的/导入来源"必须先调用 account_provenance；返回为空时如实回答"审计日志中没有该账号的导入记录"，不得猜测。」
+
+4. 不改前端、不改数据库、不改其它 edge functions。`audit_logs` 已有 RLS，且本函数走 service-role client，可直接读。
+
+## 技术细节
+
+- 数组重叠查询用 supabase-js 的 `.overlaps('target_ids', userIds)` / `.overlaps('target_labels', studentNos)`，分两次查再在 JS 里按 `id` 去重合并，避免 `or` 子句中数组操作符的转义麻烦。
+- 时间戳返回 ISO，外加一个 `imported_at_cn`（`Asia/Shanghai`，`zh-CN` 本地化字符串）方便模型直接朗读。
+- `imported_by_email` 来自 `actor_email`；如为 null 则 fallback 到 `actor_id`。
+- 工具结果保持 ≤ 20 条，超过截断并附 `truncated: true`。
+
+## 验证
+
+修复后在工作助手里再问「信息工程学院的张三这个账号是什么时候导入的，由谁导入的」，期望模型先调用 `account_provenance("张三")`，返回上面两条记录，然后用表格列出 学号 / 导入时间 / 导入人 / 导入文件，并提示按学号区分两个同名学生。
