@@ -224,7 +224,7 @@ const Branding = () => {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { void save(); }} className="bg-foreground text-background hover:bg-foreground/90">确认提交</AlertDialogAction>
+              <AlertDialogAction onClick={() => { void save(); }} className="bg-action text-action-foreground hover:bg-action/90">确认提交</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
