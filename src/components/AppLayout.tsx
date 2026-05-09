@@ -114,14 +114,14 @@ const AppSidebar = () => {
                         className={
                           `relative flex h-full min-h-[2.25rem] w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
                             active
-                              ? "bg-primary/15 font-medium text-primary hover:bg-primary/15 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-primary"
-                              : ""
+                              ? "bg-accent text-accent-foreground font-semibold hover:bg-accent before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-foreground"
+                              : "hover:bg-muted/60"
                           }`
                         }
                       >
                         <it.icon
-                          className={`h-4 w-4 shrink-0 ${active ? "text-primary" : ""}`}
-                          strokeWidth={1.75}
+                          className={`h-4 w-4 shrink-0 ${active ? "text-foreground" : ""}`}
+                          strokeWidth={active ? 2.25 : 1.75}
                         />
                         {!collapsed && <span className="truncate">{it.title}</span>}
                       </NavLink>
