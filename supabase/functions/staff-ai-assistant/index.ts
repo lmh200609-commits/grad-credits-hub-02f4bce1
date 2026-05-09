@@ -20,6 +20,7 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 - student_submission_history(student_no_or_name, limit?)：查询某学生历次提交的申请清单（含 AI 初审与教师复核结论），以学号/姓名为锚
 - submission_timeline(application_id)：查询单份申请的完整事件时间线（提交→AI审→教师审→...）
 - certificate_type_lookup(keyword)：在「证书类型字典」中检索证书/成果类型，返回典型学分、关联规则数、关联案例数
+- account_provenance(query)：根据姓名/学号查询某账号的导入来源（谁、什么时候、用什么文件导入），数据来自 audit_logs
 - query_stats(metric)：查询统计数据。可用 metric：
     · pending_review        — 待人工复核的申请数
     · pending_ai            — 系统核验中的申请数
@@ -67,6 +68,8 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 7. 如果用户问的统计指标不在上面 metric 列表中，回复"暂不支持该统计"，不要编造。
 8. 【数据来源严格基于数据库】凡涉及具体学生、申请、证书类型、AI/教师审核内容，必须先调用对应工具读取数据库。工具返回为空时必须明确回复"数据库中暂无相关记录"，绝不编造姓名、学号、学分、审核意见、证书类型、典型学分等任何细节。
 9. 询问"某学生的资料/记录/申请/AI审/教师审"时，优先用 student_full_profile + student_submission_history；询问"某次申请怎么走的"用 submission_timeline；询问"某证书几学分/属于哪类"用 certificate_type_lookup。`;
+
+const PROVENANCE_RULE = `\n11. 询问"某账号是谁导入的/什么时候创建的/什么时候导入的/导入来源/由谁创建"等问题，必须先调用 account_provenance；返回为空时如实回答"审计日志中没有该账号的导入记录"，绝不猜测。同名多人时把所有候选连同学号、院系、导入时间、导入人一并列出，提示用学号区分。`;
 
 const IDENTITY_RULE = `\n10. 当用户问"我是谁/我叫什么/我什么角色/我哪个学院/我哪个部门/我邮箱"等关于自身身份的问题时，必须严格基于下方系统消息中"当前登录用户"段落如实回答（姓名、角色、所属学院等），绝不允许说不知道或编造。`;
 
@@ -193,6 +196,18 @@ const TOOLS = [
         type: "object",
         properties: { keyword: { type: "string" } },
         required: ["keyword"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "account_provenance",
+      description: "查询某账号是谁、什么时候、用什么文件导入的。来源为 audit_logs 中的 import_users 事件。入参为姓名或学号。",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "姓名或学号" } },
+        required: ["query"],
       },
     },
   },
@@ -519,6 +534,91 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     };
   }
 
+  if (name === "account_provenance") {
+    const q = String(args?.query || "").trim();
+    if (!q) return { matches: [], note: "查询关键词为空" };
+
+    // 1) 找到候选 profile（精确学号 / 精确姓名 / 模糊姓名）
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, student_no, department, class_name, major")
+      .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
+      .limit(20);
+    if (!profs || profs.length === 0) {
+      return { matches: [], note: "数据库中没有匹配的账号" };
+    }
+
+    const userIds: string[] = profs.map((p: any) => p.user_id).filter(Boolean);
+    const studentNos: string[] = profs.map((p: any) => p.student_no).filter(Boolean);
+
+    // 2) 在 audit_logs 中按 user_id 或 student_no 查找 import_users 事件
+    const logMap = new Map<string, any>(); // dedupe by audit_log id
+    const collectLogs = async (col: "target_ids" | "target_labels", arr: string[]) => {
+      if (!arr.length) return;
+      const { data } = await supabase
+        .from("audit_logs")
+        .select("id, action, actor_id, actor_email, target_ids, target_labels, metadata, created_at")
+        .eq("action", "import_users")
+        .overlaps(col, arr)
+        .order("created_at", { ascending: true })
+        .limit(100);
+      (data || []).forEach((row: any) => logMap.set(row.id, row));
+    };
+    await collectLogs("target_ids", userIds);
+    await collectLogs("target_labels", studentNos);
+
+    const fmtCn = (iso: string) => {
+      try {
+        return new Date(iso).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+      } catch { return iso; }
+    };
+
+    // 3) 把 audit log 反向映射到具体的 profile
+    const matches: any[] = [];
+    for (const p of profs as any[]) {
+      const hits = Array.from(logMap.values()).filter((log: any) => {
+        const ids: string[] = log.target_ids || [];
+        const labels: string[] = log.target_labels || [];
+        return (p.user_id && ids.includes(p.user_id))
+          || (p.student_no && labels.includes(p.student_no));
+      });
+      if (hits.length === 0) {
+        matches.push({
+          full_name: p.full_name,
+          student_no: p.student_no,
+          department: p.department,
+          class_name: p.class_name,
+          imported: false,
+          note: "audit_logs 中未找到该账号的导入事件",
+        });
+      } else {
+        for (const log of hits) {
+          matches.push({
+            full_name: p.full_name,
+            student_no: p.student_no,
+            department: p.department,
+            class_name: p.class_name,
+            imported: true,
+            imported_at: log.created_at,
+            imported_at_cn: fmtCn(log.created_at),
+            imported_by_email: log.actor_email || null,
+            imported_by_id: log.actor_id || null,
+            file_name: log?.metadata?.file_name ?? null,
+            audit_log_id: log.id,
+          });
+        }
+      }
+    }
+
+    const truncated = matches.length > 20;
+    return {
+      query: q,
+      candidate_count: profs.length,
+      matches: truncated ? matches.slice(0, 20) : matches,
+      truncated,
+    };
+  }
+
   return { error: `unknown tool: ${name}` };
 }
 
@@ -583,7 +683,7 @@ Deno.serve(async (req) => {
     const model = aiCfg.model;
     const provider = aiCfg.vendor;
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
