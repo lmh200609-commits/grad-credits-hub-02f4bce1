@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
@@ -49,6 +50,7 @@ const statusOf = (w: Window) => {
 
 const SubmissionWindows = () => {
   const { collegeId, isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   const [colleges, setColleges] = useState<College[]>([]);
   const [activeCollege, setActiveCollege] = useState<string | null>(null);
   const [items, setItems] = useState<Window[]>([]);
@@ -153,10 +155,10 @@ const SubmissionWindows = () => {
         body: { window_id: w.id },
       });
       if (error) throw error;
-      toast.success("报告已生成");
+      toast.success("报告已生成，正在打开…");
       const route = (data as any)?.report_route ?? `/admin/window-report/${w.id}`;
-      window.open(route, "_blank");
       void load();
+      navigate(route);
     } catch (e: any) {
       toast.error(e.message ?? "生成失败");
     } finally {
@@ -165,7 +167,7 @@ const SubmissionWindows = () => {
   };
 
   const viewReport = (w: Window) => {
-    window.open(`/admin/window-report/${w.id}`, "_blank");
+    navigate(`/admin/window-report/${w.id}`);
   };
 
   return (

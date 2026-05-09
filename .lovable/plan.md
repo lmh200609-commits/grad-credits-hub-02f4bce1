@@ -1,54 +1,52 @@
-## 问题诊断
+# 问题诊断
 
-下载报告打开后显示的是 HTML 源码 + 中文乱码，原因有二：
+| 现象 | 根因 |
+|---|---|
+| 点「查看报告/导出 PDF」跳到登录页（图二） | `window.open(route, "_blank")` 在 Lovable 预览 iframe 中开新标签时，新标签会跳到**已发布域名**（`grad-credits-hub.lovable.app`），而该域名的 localStorage 里没有 session，于是 `RoleRoute` 把用户踢回 `/login`。预览域名和发布域名是两个独立 origin，session 不互通。 |
+| 点「查看报告」出现裸 "not found"（图一） | 同上跳到了发布域名，但发布版本是上一次部署的旧 bundle，其中还没有 `/admin/window-report/:windowId` 路由，于是被 Lovable 的边缘 404（纯文本 `not found`）拦截。 |
+| 「生成报告」感觉"看不到结果" | 现在点击后只 toast 一条「报告已生成」+ 试图开新标签（被上面两个问题阻断），用户感知不到任何变化。 |
+| 自托管 / 局域网部署能否导出 PDF | **能**。新方案完全不依赖外网：报告数据存在数据库 `submission_window_reports.summary`（jsonb），前端直接渲染，PDF 由浏览器内置 `window.print()` 输出，中文字体使用系统字体（PingFang SC / 微软雅黑），无需任何外部字体或 Storage 服务。只要部署的 Supabase + 前端在同一局域网，PDF 导出 100% 可用。 |
 
-1. **Supabase Storage 的签名 URL 不会按 `Content-Type: text/html; charset=utf-8` 渲染**——它强制以 `application/octet-stream` 或 `text/plain` 形式返回（带 `Content-Disposition`），导致浏览器把 HTML 当纯文本展示。
-2. 即便部分浏览器把它当 HTML 解析，由于响应头没有 `charset=utf-8`，中文 UTF-8 字节会被默认按 GBK 解码 → 出现"鍐 介 樿"这种乱码。
+# 方案：同标签页内打开报告 + 兜底体验
 
-存储桶里放 HTML 文件这条路天然有这两个坑，最稳妥的做法是**不再把 HTML 当文件存**，改为前端路由内联渲染。
+## 1. `src/pages/admin/SubmissionWindows.tsx`：改为同页跳转
 
-## 方案：前端路由直接渲染报告
+把所有 `window.open(..., "_blank")` 换成 react-router `navigate(...)`，session 一定带得过去：
 
-### 1. Edge Function 调整（`supabase/functions/generate-window-report/index.ts`）
-- 继续生成完整的 `summary` JSON（含 KPI、状态分布、班级聚合、不合格名单、未提交名单、申请明细、14 天趋势等所有字段，与现有 HTML 同等详细）。
-- **不再** 拼接 HTML、不再 upload 到 storage、不再返回 `download_url`。
-- 把 `summary` 完整写入 `submission_window_reports.summary`（jsonb），同时把 `submission_windows.report_path` 设为前端路由形式：`/admin/window-report/{window_id}`，并写入 `report_generated_at`。
-- 返回 `{ ok: true, report_route: "/admin/window-report/{id}", summary }`。
+- `generateReport(w)`：成功后改为 `navigate(\`/admin/window-report/\${w.id}\`)`。toast 改为「报告已生成，正在打开…」。
+- `viewReport(w)`：改为 `navigate(\`/admin/window-report/\${w.id}\`)`。
+- 给报告按钮（`FileText` 图标）旁加一个明显的文字标签「查看报告」（小屏只显示图标，桌面显示文字 + 图标），消除"看不到结果"的感觉。
+- 「生成报告」按钮在没有 `report_generated_at` 时是主操作，给它加文字标签「生成报告」。
 
-### 2. 新前端路由 `/admin/window-report/:windowId`
-新建 `src/pages/admin/WindowReport.tsx`：
-- 通过 `submission_window_reports` 拉取 `summary` JSON（管理员/超管 RLS 已具备）。
-- 用项目现有 design tokens（`bg-background`、`text-foreground`、`border`、`primary` 等）渲染成与原 HTML 一样详细的报告：
-  - 顶部封面（批次名、学院、时间窗口、生成时间）。
-  - KPI 卡片网格（总学生 / 已提交 / 提交率 / 申请数 / 通过 / 驳回 / 平均学分 / 合格人数 / 合格率 等 9–12 项）。
-  - 状态分布水平条形图（CSS div 实现）。
-  - ≥2 / ≥4 / ≥6 学分三档合格率对比。
-  - 14 天提交趋势柱状图。
-  - 院系 / 专业 / 班级三级聚合表（合格率 < 60% 红色高亮）。
-  - **按班级分块的"不合格学生"清单**（每班一个 card，标题 `班级 (专业) — 不合格 X/Y 人 — 合格率 Z%`，按"距合格差值"降序，列出姓名/学号/已得学分/差距）。
-  - 未提交学生清单（按班级分组）。
-  - 全量申请明细表（带状态彩色 badge）。
-- 顶部 sticky 工具栏：「打印 / 导出 PDF」按钮 → `window.print()`；「返回」按钮。
-- 使用 `@media print` 规则隐藏工具栏、收紧间距，浏览器原生打印即可输出高质量 PDF（中文字体由用户系统提供，无需额外加载）。
+> 用户若仍想新标签查看，可在浏览器里右键按钮→新标签打开；同标签页是默认行为，避开 origin/session 坑。
 
-### 3. 触发链路调整（`src/pages/admin/SubmissionWindows.tsx`）
-- `generateReport`：成功后用 `navigate(data.report_route)`（或 `window.open` 同源新标签）打开新路由，去掉对 `download_url` 的处理。
-- `downloadReport`（已生成的批次"下载报告"按钮）：改为打开 `/admin/window-report/{window.id}`，不再走 storage signed URL。
-- 按钮文案从"下载报告"改为"查看报告"，更贴近实际行为；用户可在报告页内自行打印为 PDF。
+## 2. `src/pages/admin/WindowReport.tsx`：增强健壮性
 
-### 4. 路由注册
-在 `src/App.tsx`（或现有路由文件）的管理员路由组里新增 `<Route path="/admin/window-report/:windowId" element={<WindowReport />} />`。
+- 顶部工具栏「返回」按钮：`navigate("/admin/submission-windows")`（避免 `navigate(-1)` 在直接访问时返回到空白历史）。
+- 数据库取不到报告时：不再只 toast，而是渲染一张友好卡片：「该批次尚未生成报告」+ 一个「立即生成」按钮（直接调 `supabase.functions.invoke("generate-window-report", { body: { window_id }})`，成功后刷新本页）。这样从任何入口直达 `/admin/window-report/:id` 都不会出现"没反应"。
+- 给打印按钮加一行小字提示「Windows 打印对话框中选择"另存为 PDF"，Mac 选左下角"PDF → 存储为 PDF"」，降低用户门槛。
 
-### 5. 清理
-- 删除 edge function 内 HTML 模板字符串与 storage upload 逻辑。
-- 不动数据库 schema、RLS、触发器、bucket 配置。
-- `report_path` 列继续复用，但语义改为"前端路由"，旧的 `.html` 路径数据不影响（前端按 windowId 重新跳转）。
+## 3. 清理历史脏数据（可选但推荐）
 
-### 技术细节速查
-- 中文渲染：完全依赖浏览器 + 系统字体（PingFang SC / Microsoft YaHei），不再有任何 storage MIME / charset 风险。
-- PDF 输出：`window.print()` + `@page { size: A4; margin: 14mm }`，比 jsPDF 体积小、无内存上限、字体完美。
-- 数据一致性：报告数据全部来自 `summary` JSON 快照，与原 HTML 报告字段完全一致，确保"和数据看板一样详细"。
+之前的批次 `submission_windows.report_path` 里可能残留 `.html` 的 storage 路径字符串。新代码已经不再读取它，但为了语义干净，在 edge function 写入新路径时已经覆盖为 `/admin/window-report/{id}`，无需迁移脚本。
 
-## 交付效果
+## 4. 局域网/自托管说明（写到文档不改代码）
 
-点"生成报告" → 直接在新标签打开排版精美的中文报告页，KPI / 图表 / 班级合格率 / 不合格学生分班级清单一应俱全；点右上角"导出 PDF"由浏览器原生导出。彻底告别乱码与源码裸奔。
+在 `docs/self-hosted-deployment.md` 末尾追加一节「批次报告 PDF 导出」：
+- 报告页是纯前端 React 路由，渲染数据来自自托管的 PostgreSQL `submission_window_reports.summary` 列。
+- PDF 通过 `window.print()` + `@media print` 由浏览器原生导出，**不依赖**外网、Lovable Cloud 函数运行时、jsPDF、字体 CDN 或对象存储。
+- 中文字体来自客户端操作系统：Win 用微软雅黑/等线；macOS 用 PingFang SC；Linux 推荐安装 `fonts-noto-cjk`。
+- 唯一需要联网/可达的服务：Supabase（数据库 + Edge Function），均可完全自托管在同一台/同一局域网。
+
+# 交付效果
+
+- 「生成报告」一键完成"生成 → 打开报告"，全程在当前标签页内完成，session 100% 携带，绝不再跳到登录或裸 404。
+- 「查看报告」直接进入排版精美的报告页，浏览器原生打印即得 PDF。
+- 自托管 / 局域网部署的 PDF 导出能力得到明确保证并写入部署文档。
+
+# 改动文件清单
+
+- `src/pages/admin/SubmissionWindows.tsx`：替换 `window.open` 为 `navigate`，按钮加文字标签。
+- `src/pages/admin/WindowReport.tsx`：兜底"未生成报告"卡片 + 立即生成按钮；返回按钮改为固定路径；打印小贴士。
+- `docs/self-hosted-deployment.md`：追加 PDF 导出说明段。
+- 不动数据库 schema、edge function、RLS、bucket。
