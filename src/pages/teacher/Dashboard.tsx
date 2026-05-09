@@ -215,29 +215,6 @@ const TeacherDashboard = () => {
         </div>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">学院学生分布</CardTitle>
-          </CardHeader>
-          <CardContent className="h-[280px]">
-            {deptStats.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-muted-foreground">暂无数据</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={deptStats}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" className="text-xs" />
-                  <YAxis allowDecimals={false} className="text-xs" />
-                  <Tooltip />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                    {deptStats.map((_, i) => <Cell key={i} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
           <CardHeader><CardTitle className="text-base">快捷入口</CardTitle></CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-3">
             <QuickLink to="/reviews" title="待审核" desc="处理待复核与已审申请" />
