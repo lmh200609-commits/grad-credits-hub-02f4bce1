@@ -25,15 +25,20 @@ export const useCollegeTheme = () => {
   const { collegeId } = useAuth();
   const [college, setCollege] = useState<College | null>(null);
 
+  const resetThemeVars = (root: HTMLElement) => {
+    root.style.removeProperty("--primary");
+    root.style.removeProperty("--ring");
+    root.style.removeProperty("--sidebar-primary");
+    root.style.removeProperty("--sidebar-ring");
+    root.style.removeProperty("--accent");
+    root.style.removeProperty("--background");
+    root.style.removeProperty("--radius");
+  };
+
   useEffect(() => {
     if (!collegeId) {
       setCollege(null);
-      // reset CSS overrides
-      const root = document.documentElement;
-      root.style.removeProperty("--primary");
-      root.style.removeProperty("--accent");
-      root.style.removeProperty("--ring");
-      root.style.removeProperty("--radius");
+      resetThemeVars(document.documentElement);
       return;
     }
     let cancelled = false;
@@ -73,6 +78,7 @@ export const useCollegeTheme = () => {
     return () => {
       cancelled = true;
       void supabase.removeChannel(channel);
+      resetThemeVars(document.documentElement);
     };
   }, [collegeId]);
 
