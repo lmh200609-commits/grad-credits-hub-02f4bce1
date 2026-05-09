@@ -558,7 +558,7 @@ const MessageBubble = ({
     return (
       <div className="flex justify-end gap-2">
         <div className="max-w-[80%] rounded-2xl rounded-tr-sm border bg-background px-4 py-2 text-sm">
-          📄 {msg.name} · {msg.rowCount} 行
+          {msg.name} · {msg.rowCount} 行
         </div>
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
           <User className="h-4 w-4" />
@@ -615,7 +615,7 @@ const MessageBubble = ({
                   const errs = rowErrors[i] ?? {};
                   const hasErr = Object.keys(errs).length > 0;
                   const errSummary = Object.entries(errs)
-                    .map(([k, v]) => `${k}: ${v}`)
+                      .map(([k, v]) => `${FIELD_LABEL[k] ?? k}：${v}`)
                     .join("\n");
                   return (
                     <TableRow
@@ -669,7 +669,7 @@ const MessageBubble = ({
               </span>
             )}
             <Button onClick={onConfirm} disabled={loading || badCount > 0} size="sm">
-              ✅ 确认导入 {msg.rows.length - badCount} 个账号
+              确认导入 {msg.rows.length - badCount} 个账号
             </Button>
           </div>
         </div>
