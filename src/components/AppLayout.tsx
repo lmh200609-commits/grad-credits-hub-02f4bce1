@@ -139,7 +139,7 @@ const AppSidebar = () => {
 };
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
-  const { user, roles, signOut, hasRole } = useAuth();
+  const { user, roles, signOut, hasRole, isSuperAdmin } = useAuth();
   const college = useCollegeTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -197,7 +197,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           <main className="flex-1 overflow-auto bg-muted/30 p-3 sm:p-6">{children}</main>
         </div>
         {hasRole("student") && <AiAssistant />}
-        {(hasRole("admin") || hasRole("teacher")) && <StaffAiAssistant />}
+        {(isSuperAdmin || hasRole("admin") || hasRole("teacher")) && <StaffAiAssistant />}
       </div>
     </SidebarProvider>
   );
