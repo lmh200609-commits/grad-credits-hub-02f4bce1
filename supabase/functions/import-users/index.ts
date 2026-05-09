@@ -145,16 +145,21 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: roleRow } = await admin
+    // 一个用户可能同时有 admin + super_admin 两条记录，
+    // 所以用 limit 取多行后自行挑选；优先使用 super_admin。
+    const { data: roleRows } = await admin
       .from("user_roles")
       .select("role, college_id")
       .eq("user_id", callerId)
       .in("role", ["admin", "super_admin"])
-      .maybeSingle();
-    if (!roleRow) return json({ error: "Forbidden: admin role required" }, 403);
-    const callerRole = (roleRow as any).role as string;
-    const callerCollegeId = (roleRow as any).college_id ?? null;
-    const isSuperAdmin = callerRole === "super_admin";
+      .limit(5);
+    if (!Array.isArray(roleRows) || roleRows.length === 0) {
+      return json({ error: "Forbidden: admin role required" }, 403);
+    }
+    const superRow = (roleRows as any[]).find((r) => r.role === "super_admin");
+    const adminRow = (roleRows as any[]).find((r) => r.role === "admin");
+    const isSuperAdmin = !!superRow;
+    const callerCollegeId = (superRow?.college_id ?? adminRow?.college_id) ?? null;
 
     // Build college name -> id lookup once for super_admin imports.
     const collegeByName = new Map<string, string>();

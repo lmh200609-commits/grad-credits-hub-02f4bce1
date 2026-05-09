@@ -40,7 +40,8 @@ const SYSTEM_PROMPT = `你是「学分认证系统」管理员端「批量导入
 - 如果用户问的内容与导入无关，礼貌引导回到导入主题。
 - 不要编造表格内没有的字段。
 - 不输出 Markdown 代码块以外的多余前缀；可使用项目符号。
-- 回答控制在 200 字以内，除非用户明确要求详细。`;
+- 回答控制在 200 字以内，除非用户明确要求详细。
+- 如果用户问题非常模糊（如"什么"、"你好"、"在吗"），先用一句话打招呼，然后列出 3-5 条本页常见提问让用户挑选。`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -63,10 +64,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: roleRow } = await admin
+    // 用户可能同时拥有多条角色记录（admin + super_admin），用 limit(1) 而非
+    // maybeSingle() 以避免 PostgREST 多行错误导致的误 Forbidden。
+    const { data: roleRows } = await admin
       .from("user_roles").select("role")
-      .eq("user_id", callerId).in("role", ["admin", "super_admin"]).maybeSingle();
-    if (!roleRow) return json({ error: "Forbidden" }, 403);
+      .eq("user_id", callerId).in("role", ["admin", "super_admin"]).limit(1);
+    if (!Array.isArray(roleRows) || roleRows.length === 0) {
+      return json({ error: "Forbidden" }, 403);
+    }
 
     const body = await req.json().catch(() => ({}));
     const messages = (body.messages ?? []) as ChatMsg[];
