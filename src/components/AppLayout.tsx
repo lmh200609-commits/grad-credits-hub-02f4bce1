@@ -82,7 +82,7 @@ const extraTitles: { pattern: string; title: string }[] = [
 const AppSidebar = () => {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const { hasRole, isSuperAdmin } = useAuth();
+  const { hasRole, isSuperAdmin, collegeId } = useAuth();
   const location = useLocation();
   const items = isSuperAdmin
     ? superAdminItems
@@ -99,13 +99,15 @@ const AppSidebar = () => {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const saved = Number(sessionStorage.getItem("sidebar-scroll-top") || "0");
-    if (saved > 0) el.scrollTop = saved;
+    // 每个 collegeId 维护独立的滚动位置；切换学院（或登出再登录到不同学院）时不互相串扰
+    const storageKey = `sidebar-scroll-top:${collegeId ?? "_none"}`;
+    const saved = Number(sessionStorage.getItem(storageKey) || "0");
+    el.scrollTop = saved > 0 ? saved : 0;
     let raf = 0;
     const onScroll = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        sessionStorage.setItem("sidebar-scroll-top", String(el.scrollTop));
+        sessionStorage.setItem(storageKey, String(el.scrollTop));
       });
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -113,7 +115,7 @@ const AppSidebar = () => {
       el.removeEventListener("scroll", onScroll);
       cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [collegeId]);
 
   return (
     <Sidebar collapsible="icon">
