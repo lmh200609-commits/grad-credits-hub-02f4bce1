@@ -534,6 +534,91 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     };
   }
 
+  if (name === "account_provenance") {
+    const q = String(args?.query || "").trim();
+    if (!q) return { matches: [], note: "查询关键词为空" };
+
+    // 1) 找到候选 profile（精确学号 / 精确姓名 / 模糊姓名）
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, student_no, department, class_name, major")
+      .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
+      .limit(20);
+    if (!profs || profs.length === 0) {
+      return { matches: [], note: "数据库中没有匹配的账号" };
+    }
+
+    const userIds: string[] = profs.map((p: any) => p.user_id).filter(Boolean);
+    const studentNos: string[] = profs.map((p: any) => p.student_no).filter(Boolean);
+
+    // 2) 在 audit_logs 中按 user_id 或 student_no 查找 import_users 事件
+    const logMap = new Map<string, any>(); // dedupe by audit_log id
+    const collectLogs = async (col: "target_ids" | "target_labels", arr: string[]) => {
+      if (!arr.length) return;
+      const { data } = await supabase
+        .from("audit_logs")
+        .select("id, action, actor_id, actor_email, target_ids, target_labels, metadata, created_at")
+        .eq("action", "import_users")
+        .overlaps(col, arr)
+        .order("created_at", { ascending: true })
+        .limit(100);
+      (data || []).forEach((row: any) => logMap.set(row.id, row));
+    };
+    await collectLogs("target_ids", userIds);
+    await collectLogs("target_labels", studentNos);
+
+    const fmtCn = (iso: string) => {
+      try {
+        return new Date(iso).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+      } catch { return iso; }
+    };
+
+    // 3) 把 audit log 反向映射到具体的 profile
+    const matches: any[] = [];
+    for (const p of profs as any[]) {
+      const hits = Array.from(logMap.values()).filter((log: any) => {
+        const ids: string[] = log.target_ids || [];
+        const labels: string[] = log.target_labels || [];
+        return (p.user_id && ids.includes(p.user_id))
+          || (p.student_no && labels.includes(p.student_no));
+      });
+      if (hits.length === 0) {
+        matches.push({
+          full_name: p.full_name,
+          student_no: p.student_no,
+          department: p.department,
+          class_name: p.class_name,
+          imported: false,
+          note: "audit_logs 中未找到该账号的导入事件",
+        });
+      } else {
+        for (const log of hits) {
+          matches.push({
+            full_name: p.full_name,
+            student_no: p.student_no,
+            department: p.department,
+            class_name: p.class_name,
+            imported: true,
+            imported_at: log.created_at,
+            imported_at_cn: fmtCn(log.created_at),
+            imported_by_email: log.actor_email || null,
+            imported_by_id: log.actor_id || null,
+            file_name: log?.metadata?.file_name ?? null,
+            audit_log_id: log.id,
+          });
+        }
+      }
+    }
+
+    const truncated = matches.length > 20;
+    return {
+      query: q,
+      candidate_count: profs.length,
+      matches: truncated ? matches.slice(0, 20) : matches,
+      truncated,
+    };
+  }
+
   return { error: `unknown tool: ${name}` };
 }
 
