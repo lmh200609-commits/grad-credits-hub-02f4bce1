@@ -131,7 +131,7 @@ const AiModelsPage = () => {
       <div className="mx-auto max-w-6xl space-y-6">
         <PageHeader
           title="AI 模型设置"
-          description="配置系统内部 AI 调用使用的中国厂商模型。每个功能可单独绑定不同提供商。所有 API Key 加密存储，前端不可见。"
+          description="配置系统内部 AI 调用使用的中国厂商模型。每个功能可单独绑定不同提供商。所有 API 密钥 加密存储，前端不可见。"
           actions={
             <Button onClick={() => { setEditing(null); setProviderOpen(true); }}>
               <Plus className="mr-1 h-4 w-4" /> 新增提供商
@@ -159,8 +159,8 @@ const AiModelsPage = () => {
                   <TableRow>
                     <TableHead>名称</TableHead>
                     <TableHead>厂商</TableHead>
-                    <TableHead>Base URL</TableHead>
-                    <TableHead>API Key</TableHead>
+                    <TableHead>接口地址</TableHead>
+                    <TableHead>API 密钥</TableHead>
                     <TableHead>测试</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
@@ -446,8 +446,8 @@ const ProviderDialog = ({
   };
 
   const test = async () => {
-    if (!baseUrl) { toast({ title: "请填写 Base URL", variant: "destructive" }); return; }
-    if (!apiKey && !editing) { toast({ title: "请填写 API Key", variant: "destructive" }); return; }
+    if (!baseUrl) { toast({ title: "请填写接口地址", variant: "destructive" }); return; }
+    if (!apiKey && !editing) { toast({ title: "请填写 API 密钥", variant: "destructive" }); return; }
     setTesting(true); setTestResult(null);
     try {
       const preset = VENDOR_PRESETS.find((p) => p.vendor === vendor);
@@ -465,8 +465,8 @@ const ProviderDialog = ({
 
   const save = async () => {
     if (!name.trim()) { toast({ title: "请填写名称", variant: "destructive" }); return; }
-    if (!baseUrl.trim()) { toast({ title: "请填写 Base URL", variant: "destructive" }); return; }
-    if (!editing && !apiKey.trim()) { toast({ title: "请填写 API Key", variant: "destructive" }); return; }
+    if (!baseUrl.trim()) { toast({ title: "请填写接口地址", variant: "destructive" }); return; }
+    if (!editing && !apiKey.trim()) { toast({ title: "请填写 API 密钥", variant: "destructive" }); return; }
     setSaving(true);
     try {
       await callAdmin("upsert_provider", {
@@ -509,12 +509,12 @@ const ProviderDialog = ({
             </Select>
           </div>
           <div>
-            <Label>Base URL</Label>
+            <Label>接口地址</Label>
             <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="font-mono text-sm" />
             <p className="mt-1 text-xs text-muted-foreground">不要在末尾加 <code>/chat/completions</code>，系统会自动拼接。</p>
           </div>
           <div>
-            <Label>API Key {editing && <span className="ml-2 text-xs text-muted-foreground">已保存（如需更换请输入新 Key 后保存）</span>}</Label>
+            <Label>API 密钥 {editing && <span className="ml-2 text-xs text-muted-foreground">已保存（如需更换请输入新密钥后保存）</span>}</Label>
             <Input
               type="password"
               value={apiKey}
@@ -522,7 +522,7 @@ const ProviderDialog = ({
               placeholder={editing ? `已保存 ••••••••${editing.api_key_last4}` : "sk-..."}
               autoComplete="off"
             />
-            <p className="mt-1 text-xs text-muted-foreground">API Key 加密存储于数据库，仅服务端调用模型时使用，绝不返回前端。</p>
+            <p className="mt-1 text-xs text-muted-foreground">API 密钥加密存储于数据库，仅服务端调用模型时使用，绝不返回前端。</p>
           </div>
           <div>
             <Label>备注（可选）</Label>
