@@ -284,34 +284,58 @@ const WindowReport = () => {
           ])}
         />
 
-        <h2 className="section-h">不合格学生名单 <span className="hint">（按班级 · 含未提交者 · 阈值 {s.pass_threshold} 学分）</span></h2>
-        {s.fail_classes.length === 0 ? (
-          <div className="empty-ok">✓ 当前批次无不合格学生</div>
-        ) : (
-          s.fail_classes.map((e: any) => (
-            <div className="fail-block" key={e.class}>
-              <div className="head">
-                <strong>
-                  {e.class}{" "}
-                  <span style={{ color: "#64748b", fontWeight: 400 }}>（{e.major}）</span>
-                </strong>
-                <span className="stat">
-                  不合格 <b style={{ color: "#ef4444" }}>{e.fails.length}</b> / 班级总数 {e.total ?? (e.submitted + e.not_sub)} 人 · 合格率 {pct(e.pass_c, e.total ?? (e.submitted + e.not_sub))} · 未提交 {e.not_sub} 人
-                </span>
+        <h2 className="section-h">班级合格情况 <span className="hint">（按班级 · 含未提交者 · 阈值 {s.pass_threshold} 学分）</span></h2>
+        {(() => {
+          const failMap = new Map<string, any>(
+            (s.fail_classes ?? []).map((e: any) => [e.class, e]),
+          );
+          const list = (s.class_distribution ?? []).map((c: any) => {
+            const fc = failMap.get(c.name);
+            return {
+              class: c.name,
+              major: c.major,
+              total: c.total,
+              submitted: c.submitted,
+              not_sub: c.not_sub,
+              pass_c: c.pass_c,
+              fail_c: c.fail_c,
+              fails: fc?.fails ?? [],
+            };
+          });
+          if (list.length === 0) {
+            return <div className="empty-ok">✓ 当前批次无班级数据</div>;
+          }
+          return list.map((e: any) => {
+            const allPass = e.fails.length === 0;
+            return (
+              <div className="fail-block" key={e.class} style={allPass ? { borderColor: "#bbf7d0", background: "#f0fdf4" } : undefined}>
+                <div className="head">
+                  <strong style={allPass ? { color: "#15803d" } : undefined}>
+                    {e.class}{" "}
+                    <span style={{ color: "#64748b", fontWeight: 400 }}>（{e.major}）</span>
+                  </strong>
+                  <span className="stat">
+                    不合格 <b style={{ color: allPass ? "#15803d" : "#ef4444" }}>{e.fail_c}</b> / 班级总数 {e.total} 人 · 合格率 {pct(e.pass_c, e.total)} · 未提交 {e.not_sub} 人
+                  </span>
+                </div>
+                {allPass ? (
+                  <div className="empty-ok" style={{ padding: "4px 0" }}>✓ 该班级全部合格</div>
+                ) : (
+                  <RTable
+                    head={["学号", "姓名", "已提交", "通过", "驳回", "待审", "当前学分", `距合格(${s.pass_threshold})`]}
+                    rows={e.fails.map((f: any) => [
+                      f.student_no,
+                      <span key="n">{f.full_name}{f.not_submitted ? <span className="pill warn" style={{ marginLeft: 6 }}>未提交</span> : null}</span>,
+                      f.submitted, f.approved, f.rejected, f.pending,
+                      f.total_credit.toFixed(1),
+                      <b key="g" style={{ color: "#ef4444" }}>{f.gap.toFixed(1)}</b>,
+                    ])}
+                  />
+                )}
               </div>
-              <RTable
-                head={["学号", "姓名", "已提交", "通过", "驳回", "待审", "当前学分", `距合格(${s.pass_threshold})`]}
-                rows={e.fails.map((f: any) => [
-                  f.student_no,
-                  <span key="n">{f.full_name}{f.not_submitted ? <span className="pill warn" style={{ marginLeft: 6 }}>未提交</span> : null}</span>,
-                  f.submitted, f.approved, f.rejected, f.pending,
-                  f.total_credit.toFixed(1),
-                  <b key="g" style={{ color: "#ef4444" }}>{f.gap.toFixed(1)}</b>,
-                ])}
-              />
-            </div>
-          ))
-        )}
+            );
+          });
+        })()}
 
         <h2 className="section-h">未提交学生名单 <span className="hint">（按班级）</span></h2>
         {s.miss_classes.length === 0 ? (
