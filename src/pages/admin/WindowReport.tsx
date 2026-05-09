@@ -98,30 +98,53 @@ const WindowReport = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+
+  const fetchReport = async () => {
+    if (!windowId) return;
+    setLoading(true);
+    const { data: rows, error } = await supabase
+      .from("submission_window_reports")
+      .select("summary, generated_at")
+      .eq("window_id", windowId)
+      .order("generated_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      toast.error(error.message);
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    if (!rows || rows.length === 0) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    setData(rows[0].summary as Summary);
+    setLoading(false);
+    document.title = `批次报告 · ${(rows[0].summary as any)?.window?.name ?? ""}`;
+  };
+
+  const generateNow = async () => {
+    if (!windowId) return;
+    setGenerating(true);
+    try {
+      const { error } = await supabase.functions.invoke("generate-window-report", {
+        body: { window_id: windowId },
+      });
+      if (error) throw error;
+      toast.success("报告已生成");
+      await fetchReport();
+    } catch (e: any) {
+      toast.error(e?.message ?? "生成失败");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      if (!windowId) return;
-      const { data: rows, error } = await supabase
-        .from("submission_window_reports")
-        .select("summary, generated_at")
-        .eq("window_id", windowId)
-        .order("generated_at", { ascending: false })
-        .limit(1);
-      if (error) {
-        toast.error(error.message);
-        setLoading(false);
-        return;
-      }
-      if (!rows || rows.length === 0) {
-        toast.error("尚未生成报告，请先点击「生成报告」");
-        setLoading(false);
-        return;
-      }
-      setData(rows[0].summary as Summary);
-      setLoading(false);
-      document.title = `批次报告 · ${(rows[0].summary as any)?.window?.name ?? ""}`;
-    })();
+    void fetchReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowId]);
 
   if (loading) {
@@ -134,10 +157,17 @@ const WindowReport = () => {
   }
   if (!data) {
     return (
-      <div className="report-root flex flex-col items-center justify-center gap-4" style={{ minHeight: "60vh" }}>
+      <div className="report-root flex flex-col items-center justify-center gap-4 px-6" style={{ minHeight: "60vh" }}>
         <style>{reportStyles}</style>
-        <p className="text-muted-foreground">无报告数据</p>
-        <Button onClick={() => navigate("/admin/submission-windows")}>返回</Button>
+        <p className="text-base font-medium" style={{ color: "#0f172a" }}>该批次尚未生成报告</p>
+        <p className="text-sm" style={{ color: "#64748b" }}>点击下方按钮立即生成详细报告</p>
+        <div className="flex gap-2">
+          <Button onClick={generateNow} disabled={generating}>
+            {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+            {generating ? "生成中…" : "立即生成报告"}
+          </Button>
+          <Button variant="outline" onClick={() => navigate("/admin/submission-windows")}>返回批次列表</Button>
+        </div>
       </div>
     );
   }
@@ -152,13 +182,13 @@ const WindowReport = () => {
     <div className="report-root">
       <style>{reportStyles}</style>
       <div className="toolbar no-print">
-        <Button size="sm" variant="ghost" className="text-white hover:bg-white/10" onClick={() => navigate(-1)}>
+        <Button size="sm" variant="ghost" className="text-white hover:bg-white/10" onClick={() => navigate("/admin/submission-windows")}>
           <ArrowLeft className="h-4 w-4 mr-1" />返回
         </Button>
         <Button size="sm" onClick={() => window.print()} className="bg-blue-500 hover:bg-blue-600 text-white">
           <Printer className="h-4 w-4 mr-1" />打印 / 导出 PDF
         </Button>
-        <span className="meta">提示：在打印对话框中可选「另存为 PDF」</span>
+        <span className="meta">提示：Windows 选「另存为 PDF」；macOS 选左下角「PDF → 存储为 PDF」</span>
       </div>
 
       <div className="report-page">
