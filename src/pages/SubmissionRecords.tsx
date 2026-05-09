@@ -20,6 +20,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
 import { ExternalLink, ChevronUp, ChevronDown, FileDown, ImageIcon } from "lucide-react";
+import { toPlainText } from "@/lib/sanitizeMarkdown";
 
 type Row = {
   id: string;
