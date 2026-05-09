@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
@@ -50,7 +49,6 @@ const statusOf = (w: Window) => {
 
 const SubmissionWindows = () => {
   const { collegeId, isSuperAdmin } = useAuth();
-  const navigate = useNavigate();
   const [colleges, setColleges] = useState<College[]>([]);
   const [activeCollege, setActiveCollege] = useState<string | null>(null);
   const [items, setItems] = useState<Window[]>([]);
