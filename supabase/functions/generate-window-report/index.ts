@@ -70,6 +70,19 @@ Deno.serve(async (req) => {
       .order("submitted_at", { ascending: true });
     const appList = (apps ?? []) as any[];
 
+    // 学分判定口径：基于该学院全部已通过申请（含历史批次），而非仅当前窗口
+    // 这样"距合格"才与学生实际累计学分一致
+    const { data: allApproved } = await admin
+      .from("applications")
+      .select("student_id, status, ai_suggested_credit, final_credit")
+      .eq("college_id", collegeId)
+      .in("status", ["approved", "auto_approved"]);
+    const creditByStu = new Map<string, number>();
+    (allApproved ?? []).forEach((a: any) => {
+      const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
+      creditByStu.set(a.student_id, (creditByStu.get(a.student_id) ?? 0) + c);
+    });
+
     const ruleIds = Array.from(new Set(appList.map((a) => a.ai_matched_rule_id).filter(Boolean)));
     const { data: rules } = await admin.from("rules").select("id, name")
       .in("id", ruleIds.length ? ruleIds : ["00000000-0000-0000-0000-000000000000"]);
@@ -97,10 +110,11 @@ Deno.serve(async (req) => {
       s.submitted += 1;
       if (a.status === "approved" || a.status === "auto_approved") {
         s.approved += 1;
-        s.total_credit += Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
       } else if (a.status === "rejected" || a.status === "rejected_by_ai") s.rejected += 1;
       else s.pending += 1;
     });
+    // 用全学院累计学分覆盖每个学生的 total_credit（口径统一）
+    byStu.forEach((s, sid) => { s.total_credit = creditByStu.get(sid) ?? 0; });
     const stuList = Array.from(byStu.values());
 
     const totalStudents = stuList.length;
