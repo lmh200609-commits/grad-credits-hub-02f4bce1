@@ -17,8 +17,9 @@ import {
 } from "@/hooks/useStaffAssistantStore";
 
 const StaffAiAssistant = () => {
-  const { hasRole } = useAuth();
-  const role = hasRole("admin") ? "admin" : "teacher";
+  const { hasRole, isSuperAdmin } = useAuth();
+  const role = isSuperAdmin ? "super_admin" : hasRole("admin") ? "admin" : "teacher";
+  const roleLabel = role === "super_admin" ? "超级管理员" : role === "admin" ? "管理员" : "教师";
   const navigate = useNavigate();
   const { open, messages, input } = useStaffAssistantStore();
   const { setOpen, setMessages, setInput, clearMessages } = staffAssistantActions;
