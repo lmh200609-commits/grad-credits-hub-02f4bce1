@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useRef } from "react";
 import { NavLink, useNavigate, useLocation, matchPath } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useCollegeTheme } from "@/hooks/useCollegeTheme";
