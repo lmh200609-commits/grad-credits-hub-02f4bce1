@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, MinusCircle, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toPlainText } from "@/lib/sanitizeMarkdown";
 
 export type AiVerdict = {
   status: string;
@@ -204,7 +205,7 @@ export function AiVerdictCard({ app }: { app: AiVerdict }) {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div>
               <div className="font-medium text-warning">系统强制改判</div>
-              <div className="mt-1 text-foreground">{app.ai_override_note}</div>
+              <div className="mt-1 text-foreground">{toPlainText(app.ai_override_note)}</div>
             </div>
           </div>
         )}
@@ -212,7 +213,7 @@ export function AiVerdictCard({ app }: { app: AiVerdict }) {
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
           <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm leading-relaxed">
-            {app.ai_reasoning || "系统未给出详细理由。"}
+            {app.ai_reasoning ? toPlainText(app.ai_reasoning) : "系统未给出详细理由。"}
           </p>
         </div>
       </CardContent>

@@ -20,6 +20,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
 import { ExternalLink, ChevronUp, ChevronDown, FileDown, ImageIcon } from "lucide-react";
+import { toPlainText } from "@/lib/sanitizeMarkdown";
 
 type Row = {
   id: string;
@@ -363,7 +364,7 @@ const SubmissionRecords = () => {
                       <CardContent>
                         <div className="mb-1 text-xs font-medium text-muted-foreground">详细理由</div>
                         <p className="whitespace-pre-wrap rounded bg-muted/50 p-3 text-xs leading-relaxed">
-                          {current.ai_reasoning || "系统未给出详细理由。"}
+                          {current.ai_reasoning ? toPlainText(current.ai_reasoning) : "系统未给出详细理由。"}
                         </p>
                       </CardContent>
                     </Card>

@@ -17,6 +17,7 @@ import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
 import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle, Award } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
+import { toPlainText } from "@/lib/sanitizeMarkdown";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
 import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
@@ -713,7 +714,7 @@ const ApplicationDetail = () => {
                 <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">
                   <div className="font-medium text-destructive">AI 审核未完成</div>
                   <div className="mt-1 whitespace-pre-wrap text-foreground">
-                    {(app as any).ai_last_error}
+                    {toPlainText(String((app as any).ai_last_error ?? ""))}
                   </div>
                 </div>
               )}
