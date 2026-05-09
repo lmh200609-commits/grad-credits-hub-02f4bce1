@@ -339,7 +339,6 @@ const BindingRow = ({
       <TableCell className="align-top">
         <div className="font-medium">{meta.label}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">{meta.desc}</div>
-        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{binding.function_key}</div>
       </TableCell>
       <TableCell className="max-w-[260px] align-top">
         <div className="flex flex-wrap items-center gap-1.5">
