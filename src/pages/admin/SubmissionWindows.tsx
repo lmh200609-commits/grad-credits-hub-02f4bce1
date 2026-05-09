@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, FileSpreadsheet, RefreshCw, Trash2, Download, Pencil } from "lucide-react";
+import { Plus, FileSpreadsheet, RefreshCw, Trash2, FileText, Pencil } from "lucide-react";
 
 type Window = {
   id: string;
@@ -49,6 +50,7 @@ const statusOf = (w: Window) => {
 
 const SubmissionWindows = () => {
   const { collegeId, isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   const [colleges, setColleges] = useState<College[]>([]);
   const [activeCollege, setActiveCollege] = useState<string | null>(null);
   const [items, setItems] = useState<Window[]>([]);
@@ -154,9 +156,8 @@ const SubmissionWindows = () => {
       });
       if (error) throw error;
       toast.success("报告已生成");
-      if ((data as any)?.download_url) {
-        window.open((data as any).download_url, "_blank");
-      }
+      const route = (data as any)?.report_route ?? `/admin/window-report/${w.id}`;
+      window.open(route, "_blank");
       void load();
     } catch (e: any) {
       toast.error(e.message ?? "生成失败");
@@ -165,13 +166,8 @@ const SubmissionWindows = () => {
     }
   };
 
-  const downloadReport = async (w: Window) => {
-    if (!w.report_path) return;
-    const { data, error } = await supabase.storage
-      .from("application-files")
-      .createSignedUrl(w.report_path, 60);
-    if (error || !data) return toast.error(error?.message ?? "无法生成下载链接");
-    window.open(data.signedUrl, "_blank");
+  const viewReport = (w: Window) => {
+    window.open(`/admin/window-report/${w.id}`, "_blank");
   };
 
   return (
@@ -263,14 +259,14 @@ const SubmissionWindows = () => {
                             </TooltipTrigger>
                             <TooltipContent>{busyId === w.id ? "生成中…" : "生成报告"}</TooltipContent>
                           </Tooltip>
-                          {w.report_path && (
+                          {w.report_generated_at && (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button size="sm" variant="ghost" onClick={() => downloadReport(w)} aria-label="下载报告">
-                                  <Download className="h-4 w-4" />
+                                <Button size="sm" variant="ghost" onClick={() => viewReport(w)} aria-label="查看报告">
+                                  <FileText className="h-4 w-4" />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>下载报告</TooltipContent>
+                              <TooltipContent>查看报告 / 导出 PDF</TooltipContent>
                             </Tooltip>
                           )}
                           <Tooltip>
