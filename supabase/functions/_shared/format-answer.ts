@@ -12,6 +12,34 @@ const FILLERS = [
   /^以下是[^\n：:]*[：:]\s*/,
 ];
 
+const FIELD_MAP: Array<[RegExp, string]> = [
+  [/\bstudent_no\b/g, "学号/工号"],
+  [/\bfull_name\b/g, "姓名"],
+  [/\bcollege_name\b/g, "学院"],
+  [/\bcollege_id\b/g, "学院"],
+  [/\bclass_name\b/g, "班级"],
+  [/\benrollment_year\b/g, "年级"],
+  [/\bbirth_date\b/g, "出生日期"],
+  [/\bpolitical_status\b/g, "政治面貌"],
+  [/\bapartment_no\b/g, "公寓号"],
+  [/\bdorm_room\b/g, "宿舍号"],
+  [/\bbed_no\b/g, "床号"],
+  [/\bdepartment\b/g, "院系"],
+  [/\bmajor\b/g, "专业"],
+  [/\bphone\b/g, "手机号"],
+  [/\bcolleges\b/g, "学院名单"],
+  [/\buser_roles\b/g, "角色记录"],
+  [/\bprofiles\b/g, "用户档案"],
+  [/\bapplications\b/g, "申请记录"],
+];
+
+export function translateFieldNames(input: string): string {
+  if (!input) return "";
+  let s = String(input);
+  for (const [re, zh] of FIELD_MAP) s = s.replace(re, zh);
+  return s;
+}
+
 export function normalizeMarkdown(input: string): string {
   if (!input) return "";
   let s = String(input).trim();
@@ -25,6 +53,7 @@ export function normalizeMarkdown(input: string): string {
   // 剥离装饰性带圈数字（1️⃣ 2️⃣ ...）和提示性 emoji，避免「AI 感」过重。
   s = s.replace(/[\u0030-\u0039]\uFE0F?\u20E3/g, "");
   s = s.replace(/[⚠️📎👇✅❌🎉🤖💡⭐️✨📝📌🔔ℹ️👉👆👀]/g, "");
+  s = translateFieldNames(s);
   return s.trim();
 }
 
@@ -37,6 +66,7 @@ export function stripDecorations(input: string): string {
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2");
   s = s.replace(/[\u0030-\u0039]\uFE0F?\u20E3/g, "");
   s = s.replace(/[⚠️📎👇✅❌🎉🤖💡⭐️✨📝📌🔔ℹ️👉👆👀]/g, "");
+  s = translateFieldNames(s);
   return s.trim();
 }
 

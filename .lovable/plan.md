@@ -1,51 +1,32 @@
-## 问题
-截图中聊天气泡里出现了原样的 `**`、`1️⃣`、`📎` 等"AI 感"符号。原因有两处：
+## 修复目标
 
-1. **管理员导入页的 AI 气泡用纯文本渲染**（`whitespace-pre-wrap`，没经过 Markdown），所以 `**不会**` 这种 markdown 加粗符号被原样显示。
-2. **硬编码问候语 + 后端系统提示词** 大量使用 `**加粗**`、`①②③`、`1️⃣`、`⚠️`、`📎`、`👇` 等装饰，AI 也学着这样输出。
+让导入助手能针对用户问题正常回答，不再反复输出同一段导入流程；所有面向用户的 AI 回复、错误提示、预览错误都显示为干净的简体中文纯文本，避免出现 `**`、带圈数字、装饰 emoji，以及 `colleges`、`full_name`、`student_no` 等数据库字段名。
 
-## 改动范围
+## 计划
 
-### 1. 新增「纯文本净化」工具
-- 在 `src/lib/sanitizeMarkdown.ts` 新增导出 `toPlainText(input)`：去掉 `**x**` / `__x__` / `*x*` / `_x_` / 行首 `#`、`>`、表情数字 `1️⃣–9️⃣`、装饰性 emoji（⚠️ 📎 👇 ✅ ❌ 🎉 🤖 …仅在前端展示前剥离，不影响业务文本）保留正文内容。
-- 同时在原有 `sanitizeMarkdown` 内剥离 `1️⃣–9️⃣`、行首装饰 emoji，让 Markdown 渲染也更干净。
+1. 统一字段名翻译
+   - 在前端新增一套字段显示名映射，把 `student_no`、`full_name`、`college_name`、`colleges`、`user_roles`、`profiles` 等统一翻译成「学号/工号」「姓名」「学院」「学院名单」「角色记录」「用户档案」。
+   - 在后端共享格式化工具中加入同样的翻译规则，确保 Edge Function 返回前也会清洗。
 
-### 2. 前端：所有「纯文本 AI 气泡」走净化
-- `src/pages/admin/ImportUsers.tsx` `MessageBubble` 中 `kind === "ai"` 分支改为 `{toPlainText(msg.text)}`。
-- 检查 `AiVerdictCard.tsx`、`SubmissionRecords.tsx`、`ApplicationDetail.tsx` 三处 `whitespace-pre-wrap`，如果展示的是 AI/系统生成文本，也套 `toPlainText`。
+2. 修复导入助手重复回答
+   - 调整 `import-assistant-chat` 的系统提示词，不再把「怎么导入」流程作为默认万能回答。
+   - 增加常见问题的确定性回答逻辑，例如「密码规则」「学院列」「导入教师」「失败排查」，先用规则直接回答，避免模型反复套用同一段话。
+   - 历史消息发送前清洗掉旧的带格式回答，减少模型被旧内容带偏。
 
-### 3. 前端：硬编码问候语去掉「AI 感」
-- `ImportUsers.tsx` 第 182 行的导入引导语重写为干净中文：去掉 `**`、`1️⃣`、`⚠️`、`📎`、`👇`，保持步骤清晰但语气自然。例如：
+3. 清洗导入页所有展示文本
+   - `ImportUsers.tsx` 中所有 AI 气泡、导入结果、错误详情、AI 诊断建议都通过纯文本清洗和字段翻译后再展示。
+   - 预览表中悬浮错误摘要从 `student_no: 学号不能为空` 改为「学号/工号：学号不能为空」。
+   - 去掉导入成功、失败、确认按钮、文件气泡中的装饰 emoji，改成图标或纯文字。
 
-  ```text
-  这里只能识别和预览数据，账号需要按下面三步手工创建：
-  1. 点击输入框左侧的「上传文件」按钮，选择 Excel 或 CSV
-  2. 在弹出的预览表中核对数据（异常行会标红）
-  3. 点击预览下方的「确认导入」按钮才会真正写入
-  完成后会出现绿色的成功卡片。
-  ```
+4. 修正模板与提示中的原始表名
+   - 把「按 colleges 表名称匹配」等用户可见文案改为「按系统中的学院名称匹配」。
+   - 教师模板、学生模板、页面提示、AI 提示词都使用自然中文，不暴露数据库表名。
 
-### 4. 后端：所有 AI 提示词禁用 markdown 装饰
-对以下 edge functions 的 SYSTEM_PROMPT 增加一条强制约束 ——
-**「禁止使用 `**` `__` `*` `_` `#` 等 markdown 强调符号；禁止使用 ⚠️📎👇✅❌🎉🤖 等装饰性 emoji 和 1️⃣2️⃣3️⃣ 等带圈数字。需要强调时直接用「」书名号或换行。」**
-并把现有提示词内已有的 `**` 全部去掉：
+5. 扩展全系统清洗范围
+   - 检查并修复其他用户可见位置中的原始字段名或英文内部错误提示，重点包括：创建学院管理员、重置密码、批量重置密码、员工助手输出、导入失败解释。
+   - 只改用户可见文案和输出清洗，不改数据库结构和业务逻辑。
 
-- `supabase/functions/import-assistant-chat/index.ts`
-- `supabase/functions/staff-ai-assistant/index.ts`
-- `supabase/functions/ask-credit-assistant/index.ts`
-- `supabase/functions/ai-explain-import/index.ts`
-- `supabase/functions/polish-answer/index.ts`
-
-### 5. 后端：返回前再清洗一次（防御性）
-在上述每个聊天类 edge function 返回 `answer` 之前，调用一个共享的 `stripDecorations(text)` 工具（放到 `supabase/functions/_shared/format-answer.ts`），剥离 `**` `__` `*` `_` 强调符与装饰 emoji。这样即使模型偶尔违规，用户也看不到。
-
-`evaluate-application` / `ai-parse-roster` 是结构化 JSON 输出，不影响展示，不修改。
-
-## 不改动
-- `AssistantMessage.tsx` 的 ReactMarkdown 渲染保留（其他页面的 AI 助手仍走 markdown，`**` 在那里能正确渲染为粗体；本次只解决「纯文本气泡」与「过度装饰」两个真问题）。
-- 业务表格、审核数据、导入数据本身不做字符过滤。
-
-## 验收
-- 重新打开管理员「批量导入账号」页，发送任意一句话或点击快速提问，气泡里不再出现 `**`、`1️⃣`、`📎` 等字符。
-- 老师端 / 学生端 AI 助手回答里不再出现 `**xxx**` 这种符号。
-- 导入流程功能不变，只是文案更克制自然。
+6. 部署和验证
+   - 部署涉及的 Edge Functions。
+   - 对导入助手函数进行几个典型问题测试：怎么导入教师账号、密码规则是什么、学院列必须填什么、导入失败怎么排查。
+   - 确认返回内容不包含 markdown 强调符、装饰 emoji、带圈数字、原始字段名或表名。

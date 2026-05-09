@@ -16,7 +16,23 @@ import {
   TEMPLATE_COLUMNS,
   type ParsedRow,
 } from "@/lib/parseRoster";
-import { toPlainText } from "@/lib/sanitizeMarkdown";
+import { toPlainText, translateFieldNames } from "@/lib/sanitizeMarkdown";
+
+// 字段英文名 -> 中文显示名（用于预览表的错误悬浮提示）。
+const FIELD_LABEL: Record<string, string> = {
+  student_no: "学号/工号",
+  full_name: "姓名",
+  gender: "性别",
+  birth_date: "出生日期",
+  enrollment_year: "年级",
+  phone: "手机号",
+  bed_no: "床号",
+  apartment_no: "公寓号",
+  dorm_room: "宿舍号",
+  password: "密码",
+  college_name: "学院",
+  role: "角色",
+};
 
 type ChatMsg =
   | { kind: "ai"; text: string }
@@ -213,7 +229,7 @@ const ImportUsers = () => {
       }
       push({ kind: "ai", text: data?.answer ?? "（无回答）" });
     } catch (e) {
-      push({ kind: "ai", text: `❌ 助手出错：${(e as Error).message}` });
+      push({ kind: "ai", text: `助手出错：${(e as Error).message}` });
     } finally {
       setLoading(false);
     }
@@ -250,16 +266,16 @@ const ImportUsers = () => {
         push({
           kind: "ai",
           text:
-            `解析完成 ⚠️ 共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传。\n\n示例：\n${samples}`,
+            `解析完成。共 ${rows.length} 行，其中 ${badCount} 行存在格式问题（已在预览表中标红）。\n请修正源表后重新上传。\n\n示例：\n${samples}`,
         });
       } else {
         push({
           kind: "ai",
-          text: `解析完成 ✅ 共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方 "确认导入"。`,
+          text: `解析完成。共 ${rows.length} 个账号待创建，所有字段格式校验通过。请核对预览后点击下方「确认导入」。`,
         });
       }
     } catch (e) {
-      push({ kind: "ai", text: `❌ 读取文件失败：${(e as Error).message}` });
+      push({ kind: "ai", text: `读取文件失败：${(e as Error).message}` });
     } finally {
       setLoading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -281,7 +297,7 @@ const ImportUsers = () => {
       });
       push({
         kind: "ai",
-        text: `❌ 已阻止导入：仍有 ${badCount} 行字段格式异常（红色标注）。请修正源表后重新上传。`,
+        text: `已阻止导入：仍有 ${badCount} 行字段格式异常（红色标注）。请修正源表后重新上传。`,
       });
       return;
     }
@@ -342,7 +358,7 @@ const ImportUsers = () => {
               },
             });
             if (ex?.summary) {
-              aiHint = `\n\n💡 AI 诊断：${ex.summary}` +
+              aiHint = `\n\nAI 诊断：${ex.summary}` +
                 (ex.suggestions?.length ? `\n建议：\n• ${ex.suggestions.join("\n• ")}` : "");
             }
           } catch { /* ignore */ }
@@ -351,7 +367,7 @@ const ImportUsers = () => {
         push({
           kind: "result",
           ok: false,
-          text: `第 ${ci + 1} 批失败：${[detail, ...extras].join("\n")}\n已成功导入前 ${totalCreated} 个账号。${aiHint}`,
+          text: translateFieldNames(`第 ${ci + 1} 批失败：${[detail, ...extras].join("\n")}\n已成功导入前 ${totalCreated} 个账号。${aiHint}`),
         });
         toast({ title: "导入部分失败", description: detail, variant: "destructive" });
         failed = true;
@@ -370,7 +386,7 @@ const ImportUsers = () => {
       push({
         kind: "result",
         ok: true,
-        text: `全部完成 🎉 成功创建 ${totalCreated} 个账号${skipNote}，已写入数据库（姓名 / 学号 / 专业 / 班级 / 院系 / 手机号 / 宿舍等字段均已绑定）。`,
+        text: `全部完成。成功创建 ${totalCreated} 个账号${skipNote}，已写入数据库（姓名 / 学号 / 专业 / 班级 / 院系 / 手机号 / 宿舍等字段均已绑定）。`,
         created: totalCreated,
         sampleNos,
       });
@@ -542,7 +558,7 @@ const MessageBubble = ({
     return (
       <div className="flex justify-end gap-2">
         <div className="max-w-[80%] rounded-2xl rounded-tr-sm border bg-background px-4 py-2 text-sm">
-          📄 {msg.name} · {msg.rowCount} 行
+          {msg.name} · {msg.rowCount} 行
         </div>
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
           <User className="h-4 w-4" />
@@ -599,7 +615,7 @@ const MessageBubble = ({
                   const errs = rowErrors[i] ?? {};
                   const hasErr = Object.keys(errs).length > 0;
                   const errSummary = Object.entries(errs)
-                    .map(([k, v]) => `${k}: ${v}`)
+                      .map(([k, v]) => `${FIELD_LABEL[k] ?? k}：${v}`)
                     .join("\n");
                   return (
                     <TableRow
@@ -653,7 +669,7 @@ const MessageBubble = ({
               </span>
             )}
             <Button onClick={onConfirm} disabled={loading || badCount > 0} size="sm">
-              ✅ 确认导入 {msg.rows.length - badCount} 个账号
+              确认导入 {msg.rows.length - badCount} 个账号
             </Button>
           </div>
         </div>

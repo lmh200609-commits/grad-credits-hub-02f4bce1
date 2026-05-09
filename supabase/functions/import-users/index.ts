@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
         } else {
           const cid = collegeByName.get(cname);
           if (!cid) {
-            errors.push({ line, message: `学院「${cname}」未在系统中找到，请核对 colleges 表名称` });
+            errors.push({ line, message: `学院「${cname}」未在系统中找到，请核对学院名称是否与系统一致` });
           } else {
             collegeIdByRow[i] = cid;
           }

@@ -30,7 +30,7 @@ export const TEMPLATE_COLUMNS: { header: string; field: string; required?: boole
   { header: "政治面貌", field: "political_status", note: "例：群众 / 共青团员 / 中共党员" },
   { header: "出生日期", field: "birth_date", note: "YYYY-MM-DD（Excel 日期格式自动转换）" },
   { header: "手机号", field: "phone", note: "7-15 位数字（用于生成默认密码）" },
-  { header: "学院", field: "college_name", note: "按 colleges 表名称匹配；超级管理员导入教师/管理员时必填" },
+  { header: "学院", field: "college_name", note: "须与系统中的学院名称完全一致；超级管理员导入教师/管理员时必填" },
   { header: "院系", field: "department", note: "文本" },
   { header: "专业", field: "major", note: "文本（学生用）" },
   { header: "班级", field: "class_name", note: "文本（学生用）" },
@@ -184,7 +184,7 @@ export const downloadRosterTemplate = () => {
     [],
     ["密码规则", "", "系统自动生成 = 学号 + 手机号后 6 位（不足左补 0；无手机号则补 6 个 0）。无需在表中填写。"],
     ["角色列", "", "可填「学生 / 教师 / 管理员」；为空则使用界面所选默认角色。"],
-    ["学院列", "", "超级管理员导入教师/管理员账号必填，须与 colleges 表中的学院名称完全一致；普通学院管理员可不填，自动归属本学院。"],
+    ["学院列", "", "超级管理员导入教师/管理员账号必填，须与系统中的学院名称完全一致；普通学院管理员可不填，自动归属本学院。"],
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(noteRows);
   ws2["!cols"] = [{ wch: 14 }, { wch: 10 }, { wch: 60 }];
@@ -199,7 +199,7 @@ export const TEACHER_TEMPLATE_COLUMNS: { header: string; required?: boolean; not
   { header: "工号", required: true, note: "唯一，仅字母/数字/._-" },
   { header: "姓名", required: true, note: "1-30 字符" },
   { header: "角色", required: true, note: "固定填「教师」（或「管理员」）" },
-  { header: "学院", required: true, note: "必须与 colleges 表中学院名称完全一致" },
+  { header: "学院", required: true, note: "必须与系统中的学院名称完全一致" },
   { header: "性别", note: "男 / 女" },
   { header: "民族", note: "例：汉族" },
   { header: "政治面貌", note: "例：群众 / 共青团员 / 中共党员" },
