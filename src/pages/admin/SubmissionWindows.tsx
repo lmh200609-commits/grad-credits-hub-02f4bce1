@@ -201,7 +201,10 @@ const SubmissionWindows = () => {
         )}
 
         <Card>
-          <CardHeader><CardTitle>批次列表</CardTitle></CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>批次列表</CardTitle>
+            <Button size="sm" onClick={openCreate}><Plus className="mr-1 h-4 w-4" />新建批次</Button>
+          </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
@@ -219,7 +222,14 @@ const SubmissionWindows = () => {
                 {loading ? (
                   <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">加载中…</TableCell></TableRow>
                 ) : items.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">暂无批次</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-10 text-center">
+                      <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                        <span>暂无批次</span>
+                        <Button onClick={openCreate}><Plus className="mr-1 h-4 w-4" />新建第一个批次</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ) : items.map((w) => {
                   const st = statusOf(w);
                   return (

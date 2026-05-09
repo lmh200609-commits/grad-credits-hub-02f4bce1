@@ -11,10 +11,57 @@ import { extractPaletteFromImage } from "@/lib/extractPalette";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { hexToHslTokens, hslTokensToHex } from "@/lib/colorConvert";
 
 type Theme = {
   primary?: string; accent?: string; background?: string;
   radius?: string; layout?: "sidebar" | "top-nav" | "compact";
+};
+
+const PRESETS = [
+  "#1d4ed8", "#0ea5e9", "#0891b2", "#059669",
+  "#65a30d", "#ca8a04", "#ea580c", "#dc2626",
+  "#db2777", "#9333ea", "#475569", "#0f172a",
+];
+
+const ColorField = ({
+  label, value, onChange,
+}: { label: string; value?: string; onChange: (tokens: string) => void }) => {
+  const hex = hslTokensToHex(value);
+  const setHex = (h: string) => {
+    const tokens = hexToHslTokens(h);
+    if (tokens) onChange(tokens);
+  };
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={hex}
+          onChange={(e) => setHex(e.target.value)}
+          className="h-10 w-14 cursor-pointer rounded border bg-background p-1"
+          aria-label={`${label} 拾色器`}
+        />
+        <Input value={hex} onChange={(e) => setHex(e.target.value)} className="font-mono" />
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {PRESETS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setHex(p)}
+            title={p}
+            aria-label={`选择 ${p}`}
+            className={`h-6 w-6 rounded border transition hover:scale-110 ${
+              hex.toLowerCase() === p.toLowerCase() ? "ring-2 ring-ring ring-offset-1" : ""
+            }`}
+            style={{ backgroundColor: p }}
+          />
+        ))}
+      </div>
+    </div>
+  );
 };
 
 const Branding = () => {
@@ -111,15 +158,9 @@ const Branding = () => {
         <Card>
           <CardHeader><CardTitle className="text-base">配色与样式</CardTitle></CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
-            <div><Label>主色</Label>
-              <Input value={theme.primary ?? ""} onChange={(e) => setTheme({ ...theme, primary: e.target.value })} placeholder="222 76% 38%" />
-            </div>
-            <div><Label>辅色</Label>
-              <Input value={theme.accent ?? ""} onChange={(e) => setTheme({ ...theme, accent: e.target.value })} placeholder="210 40% 96%" />
-            </div>
-            <div><Label>背景色</Label>
-              <Input value={theme.background ?? ""} onChange={(e) => setTheme({ ...theme, background: e.target.value })} placeholder="220 20% 98%" />
-            </div>
+            <ColorField label="主色" value={theme.primary} onChange={(v) => setTheme({ ...theme, primary: v })} />
+            <ColorField label="辅色" value={theme.accent} onChange={(v) => setTheme({ ...theme, accent: v })} />
+            <ColorField label="背景色" value={theme.background} onChange={(v) => setTheme({ ...theme, background: v })} />
             <div><Label>圆角大小</Label>
               <Input value={theme.radius ?? ""} onChange={(e) => setTheme({ ...theme, radius: e.target.value })} placeholder="0.5rem" />
             </div>

@@ -1076,6 +1076,7 @@ export type Database = {
         Args: { _error: string; _id: string }
         Returns: undefined
       }
+      normalize_college_name: { Args: { s: string }; Returns: string }
       normalize_keyword: { Args: { s: string }; Returns: string }
       refresh_certificate_types: { Args: never; Returns: number }
       show_limit: { Args: never; Returns: number }
