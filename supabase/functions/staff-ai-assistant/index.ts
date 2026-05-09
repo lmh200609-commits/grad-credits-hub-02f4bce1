@@ -20,6 +20,7 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 - student_submission_history(student_no_or_name, limit?)：查询某学生历次提交的申请清单（含 AI 初审与教师复核结论），以学号/姓名为锚
 - submission_timeline(application_id)：查询单份申请的完整事件时间线（提交→AI审→教师审→...）
 - certificate_type_lookup(keyword)：在「证书类型字典」中检索证书/成果类型，返回典型学分、关联规则数、关联案例数
+- account_provenance(query)：根据姓名/学号查询某账号的导入来源（谁、什么时候、用什么文件导入），数据来自 audit_logs
 - query_stats(metric)：查询统计数据。可用 metric：
     · pending_review        — 待人工复核的申请数
     · pending_ai            — 系统核验中的申请数
@@ -67,6 +68,8 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 7. 如果用户问的统计指标不在上面 metric 列表中，回复"暂不支持该统计"，不要编造。
 8. 【数据来源严格基于数据库】凡涉及具体学生、申请、证书类型、AI/教师审核内容，必须先调用对应工具读取数据库。工具返回为空时必须明确回复"数据库中暂无相关记录"，绝不编造姓名、学号、学分、审核意见、证书类型、典型学分等任何细节。
 9. 询问"某学生的资料/记录/申请/AI审/教师审"时，优先用 student_full_profile + student_submission_history；询问"某次申请怎么走的"用 submission_timeline；询问"某证书几学分/属于哪类"用 certificate_type_lookup。`;
+
+const PROVENANCE_RULE = `\n11. 询问"某账号是谁导入的/什么时候创建的/什么时候导入的/导入来源/由谁创建"等问题，必须先调用 account_provenance；返回为空时如实回答"审计日志中没有该账号的导入记录"，绝不猜测。同名多人时把所有候选连同学号、院系、导入时间、导入人一并列出，提示用学号区分。`;
 
 const IDENTITY_RULE = `\n10. 当用户问"我是谁/我叫什么/我什么角色/我哪个学院/我哪个部门/我邮箱"等关于自身身份的问题时，必须严格基于下方系统消息中"当前登录用户"段落如实回答（姓名、角色、所属学院等），绝不允许说不知道或编造。`;
 
