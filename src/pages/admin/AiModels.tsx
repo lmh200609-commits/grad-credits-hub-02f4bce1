@@ -159,8 +159,8 @@ const AiModelsPage = () => {
                   <TableRow>
                     <TableHead>名称</TableHead>
                     <TableHead>厂商</TableHead>
-                    <TableHead>Base URL</TableHead>
-                    <TableHead>API Key</TableHead>
+                    <TableHead>接口地址</TableHead>
+                    <TableHead>API 密钥</TableHead>
                     <TableHead>测试</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
@@ -509,12 +509,12 @@ const ProviderDialog = ({
             </Select>
           </div>
           <div>
-            <Label>Base URL</Label>
+            <Label>接口地址</Label>
             <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="font-mono text-sm" />
             <p className="mt-1 text-xs text-muted-foreground">不要在末尾加 <code>/chat/completions</code>，系统会自动拼接。</p>
           </div>
           <div>
-            <Label>API Key {editing && <span className="ml-2 text-xs text-muted-foreground">已保存（如需更换请输入新 Key 后保存）</span>}</Label>
+            <Label>API 密钥 {editing && <span className="ml-2 text-xs text-muted-foreground">已保存（如需更换请输入新密钥后保存）</span>}</Label>
             <Input
               type="password"
               value={apiKey}
