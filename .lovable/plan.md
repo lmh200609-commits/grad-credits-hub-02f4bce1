@@ -1,44 +1,93 @@
-## 问题
+## 一、当前权限识别情况（已审计）
 
-工作助手目前没有"账号导入溯源"工具，因此无法回答「某账号是谁导入的、什么时候导入的」。所有导入事件实际上都已写入 `public.audit_logs`（action = `import_users`，actor_email、target_ids、target_labels、created_at、metadata 都齐全），只是 AI 拿不到。
+### ✅ 已正确实现
+- 路由层 `RoleRoute`：`super_admin` 自动绕过所有角色检查，可访问 admin / teacher 路由。
+- 学院数据隔离 RLS（`profiles`、`applications`、`user_roles` 等）：基于 `current_user_college_id()` 严格按学院隔离，跨学院读写已阻断。
+- `user_roles` RLS：学院管理员只能 INSERT/UPDATE/DELETE `teacher`、`student` 角色，并且不能修改自己 → **学院管理员无法直接通过表 API 添加学院管理员**。
+- `create-college-admin`、`reset-admin-password`、`/super/colleges`、`/super/admins`：仅 super_admin。
+- `delete-user`：admin + super_admin（已在前一步修复）。
+- `generate-window-report`、`import-users`、`ai-provider-admin`（鉴权层）：均接受 admin + super_admin。
 
-## 关于「信息工程学院 · 张三」的答案（直接查库已得到）
+### ⚠️ 发现的问题（需要修复）
 
-该院有两个张三，导入信息分别为：
+**[P0-1] 学院管理员可通过"批量导入"绕过边界，给本学院添加新的学院管理员**
+- `supabase/functions/import-users/index.ts` 第 197 行的角色校验允许 `["admin","teacher","student"]`。
+- 学院管理员上传一份 `role=admin` 的 Excel，后端会把 `collegeIdForRow` 强制设为该管理员自己的 `college_id` 然后写入 `user_roles`（service_role 绕过 RLS），导致越权创建同学院管理员。
+- 设计原则应是：**只有 super_admin 才能创建 admin 角色**，学院管理员只能导入 teacher / student。
 
-- 张三 / 学号 20240001：2026-05-09 07:10:03（北京时间 15:10:03），由 `13647488835@admin.local` 通过批量导入（文件 `账号导入模板.xlsx`）创建。
-- 张三 / 学号 20240002：2026-05-09 07:18:18（北京时间 15:18:18），同一管理员 `13647488835@admin.local`，同一模板文件再次导入。
+**[P0-2] super_admin 调用以下 edge function 会被 403 拒绝**（仅检查了 `admin` 角色，未识别 `super_admin`）：
+- `bulk-delete-users/index.ts`（第 28-29 行）
+- `bulk-reset-password/index.ts`（第 37-39 行）
+- `reset-password/index.ts`（第 31-39 行）
+- `admin-purge-and-bootstrap/index.ts`（第 69-70 行）
+- 同时 `bulk-reset-password` 第 47 行的 `教师仅可重置学生密码` 检查依赖 `has_role`，super_admin 走该分支会异常。
 
-回答完整问题时建议要求用户提供学号区分。
+**[P0-3] `ai-provider-admin` 鉴权层放行 admin，但底层 RLS 仅 super_admin**
+- 第 48-49 行允许 admin 调用 → 后续 DB 写入（`ai_providers`、`ai_function_bindings`）会被 RLS 拒绝，体验为"看似允许实则失败"。
+- 应统一收紧为 super_admin only，与表 RLS、菜单（`/admin/ai-models` 已是 super_admin）保持一致。
 
-## 修复方案
+**[P0-4] `admin-purge-and-bootstrap`（高危一键重建）目前接受任何 admin**
+- 该操作会删除所有非管理员账号，学院管理员触发将影响其他学院。建议改为 super_admin only。
 
-只改一份 edge function：`supabase/functions/staff-ai-assistant/index.ts`。
+### ℹ️ 设计性确认（非 Bug，仅说明）
+- 教师端：`reset-password` 教师只能重置学生 ✓；其他写操作均通过 RLS 限制在本学院学生。
+- 学院管理员：可管理本学院的 teacher、student 与本学院数据；**不能**管理学院（colleges 表 super_admin only）、不能创建/删除其他 admin、不能改 AI 模型配置（应有的边界 ✓，但需要修复上述漏洞才能真正生效）。
 
-1. 新增工具 `account_provenance(query)`：
-   - 入参：学号或姓名（可加院系修饰，函数内部只取关键词）。
-   - 实现步骤：
-     a. 在 `profiles` 中按 `student_no = query` 精确匹配；若无，再按 `full_name ilike %query%` 匹配，必要时按 `department` 进一步过滤。
-     b. 收集匹配到的 `user_id` 与 `student_no` 列表。
-     c. 查询 `audit_logs`：`action = 'import_users'` 且 (`target_ids && {user_ids}` 或 `target_labels && {student_nos}`)，按 `created_at` 升序。
-     d. 返回结构：`{ matches: [{ user_id, full_name, student_no, department, class_name, imported_at, imported_by_email, file_name, audit_log_id }], note }`。命中 0 条时返回 `{ matches: [], note: "audit_logs 中无导入记录" }`，禁止 AI 编造。
-   - 同名多人时返回多条，让 AI 在回复中列出并提示用学号区分。
+---
 
-2. 在 `TOOLS` 数组里追加该工具的 OpenAI function schema。
+## 二、修复方案
 
-3. 更新 `SYSTEM_PROMPT`：
-   - 在能力清单里加 `account_provenance(query)：查询某账号是谁、什么时候、用什么文件导入的（来源 audit_logs）`。
-   - 在行为约束里追加：「询问"账号是谁导入的/什么时候创建的/导入来源"必须先调用 account_provenance；返回为空时如实回答"审计日志中没有该账号的导入记录"，不得猜测。」
+### 修复 1：`import-users` 强制 admin 角色边界
+- 在循环校验中，如果 `!isSuperAdmin && r.role === "admin"` → 直接报错"仅超级管理员可导入管理员账号"。
+- 前端 `ImportUsers.tsx`：当 `!isSuperAdmin` 时，把"默认角色"下拉里的"管理员"项隐藏，并对解析出的 `admin` 行高亮校验失败提示。
 
-4. 不改前端、不改数据库、不改其它 edge functions。`audit_logs` 已有 RLS，且本函数走 service-role client，可直接读。
+### 修复 2：统一 super_admin 鉴权识别
+对以下 4 个 edge function 增加 super_admin 识别（与 `delete-user` 已采用的同一模式：直接查 `user_roles` 取 `["admin","super_admin"]`）：
+- `bulk-delete-users/index.ts`
+- `bulk-reset-password/index.ts`（同时为 super_admin 分支放行所有目标用户类型）
+- `reset-password/index.ts`
+- `admin-purge-and-bootstrap/index.ts` → 收紧为 super_admin only（高危）
 
-## 技术细节
+### 修复 3：`ai-provider-admin` 收紧为 super_admin only
+- 鉴权改为只接受 `super_admin`，与 `/admin/ai-models` 路由及表 RLS 一致，消除 admin 的"幻觉权限"。
 
-- 数组重叠查询用 supabase-js 的 `.overlaps('target_ids', userIds)` / `.overlaps('target_labels', studentNos)`，分两次查再在 JS 里按 `id` 去重合并，避免 `or` 子句中数组操作符的转义麻烦。
-- 时间戳返回 ISO，外加一个 `imported_at_cn`（`Asia/Shanghai`，`zh-CN` 本地化字符串）方便模型直接朗读。
-- `imported_by_email` 来自 `actor_email`；如为 null 则 fallback 到 `actor_id`。
-- 工具结果保持 ≤ 20 条，超过截断并附 `truncated: true`。
+### 修复 4（可选小优化）：`has_role` 调用模式
+- 受 `has_role` 函数自身的安全限制（非 admin 调用者只能查自己），edge function 中查询其他用户角色应统一改为 service-role 直查 `user_roles`，避免静默返回 false。会一并在上述函数中替换。
 
-## 验证
+---
 
-修复后在工作助手里再问「信息工程学院的张三这个账号是什么时候导入的，由谁导入的」，期望模型先调用 `account_provenance("张三")`，返回上面两条记录，然后用表格列出 学号 / 导入时间 / 导入人 / 导入文件，并提示按学号区分两个同名学生。
+## 三、技术细节（参考实现片段）
+
+```ts
+// 通用：edge function 鉴权片段
+const { data: roleRows } = await admin
+  .from("user_roles").select("role")
+  .eq("user_id", callerId)
+  .in("role", ["admin", "super_admin"]);
+const isSuper = roleRows?.some(r => r.role === "super_admin");
+const isAdmin = roleRows?.some(r => r.role === "admin");
+if (!isSuper && !isAdmin) return json({ error: "Forbidden" }, 403);
+```
+
+```ts
+// import-users 内 per-row 校验补丁
+if (!isSuperAdmin && r.role === "admin") {
+  errors.push({ line, message: "仅超级管理员可导入管理员账号" });
+}
+```
+
+```ts
+// ai-provider-admin 鉴权改为 super_admin only
+if (!(roles ?? []).some(r => r.role === "super_admin")) {
+  return { ok: false, resp: json({ error: "Forbidden: super_admin only" }, 403) };
+}
+```
+
+---
+
+## 四、验收标准
+1. 学院管理员上传含 `role=管理员` 的 Excel → 校验阶段被拒，无任何账号写入。
+2. super_admin 在用户管理页可以批量删除、批量改密、单个改密，不再 403。
+3. super_admin 可访问"系统重置"页并执行（学院管理员被前端继续放行但后端会 403，下一步可一并隐藏菜单——本计划暂不改菜单）。
+4. 普通学院管理员访问 AI 模型设置接口直接 403（菜单本就不显示，仅作纵深防御）。
+5. 教师端只能重置/查看本学院学生（既有 RLS 已保证，无需改动）。

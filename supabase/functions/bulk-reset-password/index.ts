@@ -34,17 +34,24 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: isAdmin } = await admin.rpc("has_role", { _user_id: callerId, _role: "admin" });
-    const { data: isTeacher } = await admin.rpc("has_role", { _user_id: callerId, _role: "teacher" });
-    if (!isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
+    const { data: callerRoles, error: roleErr } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", callerId)
+      .in("role", ["admin", "super_admin", "teacher"]);
+    if (roleErr) return json({ error: roleErr.message }, 500);
+    const isSuper = (callerRoles ?? []).some((r) => r.role === "super_admin");
+    const isAdmin = (callerRoles ?? []).some((r) => r.role === "admin");
+    const isTeacher = (callerRoles ?? []).some((r) => r.role === "teacher");
+    if (!isSuper && !isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
 
     const body = await req.json();
     const ids: string[] = Array.isArray(body?.user_ids) ? body.user_ids.filter((x: unknown) => typeof x === "string") : [];
     if (ids.length === 0) return json({ error: "user_ids 必填" }, 400);
     if (ids.length > 200) return json({ error: "单次最多 200 条" }, 400);
 
-    // Teacher 仅可重置 student
-    if (!isAdmin) {
+    // Teacher 仅可重置 student（super_admin / admin 不受限）
+    if (!isSuper && !isAdmin) {
       const { data: studentRoles } = await admin
         .from("user_roles").select("user_id").eq("role", "student").in("user_id", ids);
       const allowed = new Set((studentRoles ?? []).map((r) => r.user_id));

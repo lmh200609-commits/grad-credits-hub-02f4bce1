@@ -45,8 +45,8 @@ async function ensureAdmin(req: Request): Promise<{ ok: true; uid: string } | { 
     .from("user_roles")
     .select("role")
     .eq("user_id", uid);
-  if (!(roles ?? []).some((r) => r.role === "admin" || r.role === "super_admin")) {
-    return { ok: false, resp: json({ error: "Forbidden: admin only" }, 403) };
+  if (!(roles ?? []).some((r) => r.role === "super_admin")) {
+    return { ok: false, resp: json({ error: "Forbidden: super_admin only" }, 403) };
   }
   return { ok: true, uid };
 }
