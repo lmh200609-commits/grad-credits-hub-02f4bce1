@@ -64,12 +64,18 @@ export function sanitizeMarkdown(input: string): string {
   for (const re of FILLERS) s = s.replace(re, "");
   s = s.replace(/^[ \t]*[•·]\s+/gm, "- ");
   s = s.replace(KEYCAP_DIGITS, "").replace(DECOR_EMOJI, "");
+  // 去掉 markdown 强调符号，避免渲染成「AI 感」加粗/斜体
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "$1");
+  s = s.replace(/__([^_\n]+)__/g, "$1");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2");
+  s = s.replace(/(^|[^_\w])_([^_\n]+)_/g, "$1$2");
   // 移除括号中包含的英文路径/URL，例如：规则库（/admin/rules）或 (https://...)
   s = s.replace(/[（(]\s*(?:https?:\/\/)?\/[A-Za-z0-9\-_\/?=&%.]+\s*[)）]/g, "");
   // 移除 markdown 链接中的英文路径目标，仅保留链接文本：[规则库](/admin/rules) -> 规则库
   s = s.replace(/\[([^\]]+)\]\((?:https?:\/\/)?\/[A-Za-z0-9\-_\/?=&%.]+\)/g, "$1");
   // 清理因移除导致的多余空格
   s = s.replace(/[ \t]{2,}/g, " ").replace(/\s+([，。、；：!?])/g, "$1");
+  s = translateFieldNames(s);
   return s.trim();
 }
 
