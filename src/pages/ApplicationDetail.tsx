@@ -17,6 +17,7 @@ import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
 import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle, Award } from "lucide-react";
 import { normalizeKeyword } from "@/lib/keywords";
+import { toPlainText } from "@/lib/sanitizeMarkdown";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
 import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
