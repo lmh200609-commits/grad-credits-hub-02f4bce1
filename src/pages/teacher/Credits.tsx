@@ -107,6 +107,22 @@ const Credits = () => {
   useEffect(() => { setPage(0); }, [search, dept, passFilter]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
+  // Standard "1224" ranking: same credits => same rank; next distinct credit
+  // skips the tied count. Computed over the filtered list so rank reflects the
+  // currently visible cohort.
+  const rankByUser = useMemo(() => {
+    const m = new Map<string, number>();
+    let lastCredit: number | null = null;
+    let lastRank = 0;
+    filtered.forEach((r, i) => {
+      const rank = lastCredit !== null && r.total_credit === lastCredit ? lastRank : i + 1;
+      m.set(r.user_id, rank);
+      lastCredit = r.total_credit;
+      lastRank = rank;
+    });
+    return m;
+  }, [filtered]);
+
   const passStats = useMemo(() => ({
     pass: rows.filter((r) => r.total_credit >= PASS_THRESHOLD).length,
     fail: rows.filter((r) => r.total_credit < PASS_THRESHOLD).length,
@@ -120,8 +136,8 @@ const Credits = () => {
 
   const exportXlsx = () => {
     const header = ["排名", "姓名", "学号", "院系", "专业", "班级", "通过申请数", "累计学分", "是否合格"];
-    const data = filtered.map((r, i) => [
-      i + 1, r.full_name ?? "", r.student_no ?? "", r.department ?? "",
+    const data = filtered.map((r) => [
+      rankByUser.get(r.user_id) ?? 0, r.full_name ?? "", r.student_no ?? "", r.department ?? "",
       r.major ?? "", r.class_name ?? "", r.approved_count, Number(r.total_credit.toFixed(1)),
       r.total_credit >= PASS_THRESHOLD ? "合格" : "不合格",
     ]);
@@ -198,8 +214,8 @@ const Credits = () => {
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
-                ) : paged.map((r, i) => {
-                  const rank = page * PAGE_SIZE + i + 1;
+                ) : paged.map((r) => {
+                  const rank = rankByUser.get(r.user_id) ?? 0;
                   const passed = r.total_credit >= PASS_THRESHOLD;
                   return (
                   <TableRow key={r.user_id} className={!passed ? "bg-danger/5 hover:bg-danger/10" : "hover:bg-muted/40"}>
