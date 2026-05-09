@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, FileSpreadsheet, RefreshCw, Trash2, Download, Pencil } from "lucide-react";
@@ -245,19 +246,43 @@ const SubmissionWindows = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(w)}><Pencil className="h-4 w-4" /></Button>
-                          <Button size="sm" variant="ghost" disabled={busyId === w.id}
-                            onClick={() => generateReport(w)}>
-                            {busyId === w.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" variant="ghost" onClick={() => openEdit(w)} aria-label="编辑批次">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>编辑批次</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" variant="ghost" disabled={busyId === w.id}
+                                onClick={() => generateReport(w)} aria-label="生成报告">
+                                {busyId === w.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{busyId === w.id ? "生成中…" : "生成报告"}</TooltipContent>
+                          </Tooltip>
                           {w.report_path && (
-                            <Button size="sm" variant="ghost" onClick={() => downloadReport(w)}>
-                              <Download className="h-4 w-4" />
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button size="sm" variant="ghost" onClick={() => downloadReport(w)} aria-label="下载报告">
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>下载报告</TooltipContent>
+                            </Tooltip>
                           )}
-                          <Button size="sm" variant="ghost" onClick={() => remove(w)} disabled={!!w.report_generated_at}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span tabIndex={0}>
+                                <Button size="sm" variant="ghost" onClick={() => remove(w)} disabled={!!w.report_generated_at} aria-label="删除批次">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{w.report_generated_at ? "已生成报告，无法删除" : "删除批次"}</TooltipContent>
+                          </Tooltip>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -270,8 +295,11 @@ const SubmissionWindows = () => {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{editing ? "编辑批次" : "新建批次"}</DialogTitle></DialogHeader>
+        <DialogContent className="bg-card text-card-foreground border shadow-2xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? "编辑批次" : "新建批次"}</DialogTitle>
+            <DialogDescription>设置该批次的开放时间和启用状态。</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>批次名称</Label>
