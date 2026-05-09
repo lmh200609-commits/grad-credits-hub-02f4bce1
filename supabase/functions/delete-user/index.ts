@@ -28,14 +28,17 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: isAdmin } = await admin.rpc("has_role", {
-      _user_id: callerId,
-      _role: "admin",
-    });
-    const { data: isSuper } = await admin.rpc("is_super_admin", {
-      _user_id: callerId,
-    });
-    if (!isAdmin && !isSuper) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
+    const { data: callerRoles, error: roleError } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", callerId)
+      .in("role", ["admin", "super_admin"]);
+    if (roleError) {
+      console.error("delete-user role check error:", roleError);
+      return json({ error: "权限校验失败" }, 500);
+    }
+    const canDeleteUser = (callerRoles ?? []).some((row) => row.role === "admin" || row.role === "super_admin");
+    if (!canDeleteUser) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
 
     const { user_id } = await req.json();
     if (!user_id || typeof user_id !== "string") {
