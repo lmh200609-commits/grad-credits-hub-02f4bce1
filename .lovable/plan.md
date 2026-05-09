@@ -1,68 +1,49 @@
-# 批量导入教师账号 — 修复与功能完善
+# 修复"Forbidden"误判 + 增加提问模板
 
-针对超级管理员"批量导入账号"页两个问题：聊天助手返回 Forbidden、教师导入流程不通畅。
+## 真正的 Bug
 
-## 问题分析
+某些用户（如同时拥有 `admin` 和 `super_admin` 两条角色记录的账号）调用 `import-assistant-chat` 时仍报 Forbidden。
 
-1. **AI 助手 "Forbidden"**：`import-assistant-chat` 边缘函数只允许 `role = 'admin'`，未放行 `super_admin`，因此超级管理员发任何消息都会 403。
-2. **教师导入失败的根因**：
-   - `import-users` 函数把"调用者所属学院 (callerCollegeId)"写入新账号的 `college_id`。超级管理员没有学院，导致教师被创建为 `college_id = NULL`，后续按学院过滤的查询完全看不到这些教师。
-   - 当前模板没有"学院"列，超级管理员无法在表中按行指定学院归属。
-3. **教师模板缺失**：现有统一模板含大量学生字段（专业、班级、宿舍、床号等），让教师导入显得混乱。
+DB 查询确认：
+- 当前 `super_admin` 账号中，有一个 `user_id = 9b1f36f2-…` 同时存在两条 `user_roles`：`['admin','super_admin']`。
+- 上一版修复用 `.in('role', ['admin','super_admin']).maybeSingle()` —— `maybeSingle()` 在结果 > 1 行时直接返回错误且 `data = null`，于是 `!roleRow` 判定为 Forbidden。
 
----
+`import-users` 第 147–153 行同样写法，同样会对该账号失败；`ai-provider-admin` 也是同模式，但用的是 `eq('role','super_admin')`，不一定中招，但应统一加固。
 
 ## 修改清单
 
-### 1. 修复 AI 助手 403
-**`supabase/functions/import-assistant-chat/index.ts`**
-- 把权限校验从 `eq('role','admin')` 改为 `in('role', ['admin','super_admin'])`，与 `import-users` 保持一致。
+### 1. 用 limit(1) 替代 maybeSingle，彻底兼容多角色账号
+**`supabase/functions/import-assistant-chat/index.ts` (line 66-69)**
+- 改为：`.select('role').eq('user_id', callerId).in('role', ['admin','super_admin']).limit(1)`。
+- 判定 `Array.isArray(data) && data.length > 0` 才放行。
 
-### 2. 新增独立"教师导入模板"按钮
-**`src/lib/parseRoster.ts`**
-- 新增 `downloadTeacherTemplate()`，仅含教师相关列：`工号、姓名、性别、民族、政治面貌、出生日期、手机号、学院、角色`。
-- 表头说明里强调："学院"列必填（超级管理员场景），按列名匹配 `colleges.name`。
-- 角色列示例值固定为"教师"。
+**`supabase/functions/import-users/index.ts` (line 147-154)**
+- 同样改写：用 `.limit(1)`，再单独算 `callerCollegeId`（取该行的 `college_id`）。
+- 保持后续 `isSuperAdmin` 判定逻辑不变（按取到的 role 字段判断）。
 
+### 2. UI 增加"完整提问模板"快捷按钮
 **`src/pages/admin/ImportUsers.tsx`**
-- 在现有「下载导入模板」旁加一个「下载教师模板」按钮。
-- 顶部说明区追加一段教师专用提示，告知超级管理员必须在表里填"学院"列。
+在聊天输入框上方加入一行 chip 形式的"快速提问"按钮（点击即填入输入框并发送）。预设 6 条覆盖管理员最常问的问题：
+- "默认角色=教师"
+- "默认角色=学生"
+- "怎么导入教师账号？"
+- "学院列必须填什么？"
+- "密码规则是什么？"
+- "导入失败怎么排查？"
 
-### 3. 解析阶段识别"学院"列并解析为 college_id
-**`src/lib/parseRoster.ts`**
-- 解析时读取「学院 / 学院名称 / college」列，作为字符串 `college_name` 放进 `ParsedRow`。
-- 不在前端做学院 → ID 映射，交给后端，避免重复维护。
+模板入口仅在 `pendingRows == null` 且消息数较少时显示，避免占用聊天空间；点击不直接发请求，而是先把文本写入输入框（用户可改）。
 
-**`src/pages/admin/ImportUsers.tsx`**
-- 在 `validateRow`：当当前用户是超级管理员、且某行 role=teacher/admin 时，要求 `college_name` 非空。
-- 通过 `useEffect` 一次性查询当前用户的角色（`super_admin?`）来驱动校验开关。
+### 3. 系统提示词补一条"提示用户可点模板"
+**`supabase/functions/import-assistant-chat/index.ts` SYSTEM_PROMPT**
+- 在结尾加一句："如果用户问题模糊，先列出 3-5 个常见提问让他选择。"
 
-### 4. 后端按行接受 college_name
-**`supabase/functions/import-users/index.ts`**
-- `Row` 类型增加 `college_name?: string`。
-- 入口处加载 `colleges` 表（id+name）建立查找表。
-- 对每一行：
-  - 若调用者是 `super_admin`：使用该行 `college_name` 解析出的 `college_id`；找不到则该批整体失败并返回该行错误（与现有错误风格一致）。
-  - 若调用者是普通 `admin`：忽略行内 `college_name`，沿用 `callerCollegeId`。
-- `createOneUser` 把决定后的 `college_id` 同时写入 `profiles.college_id` 和 `user_roles.college_id`（替换原先固定使用 `callerCollegeId` 的两处）。
+## 不改动
 
-### 5. AI 助手 system prompt 同步
-**`supabase/functions/import-assistant-chat/index.ts`**
-- 在导入规则中追加一条："超级管理员导入教师 / 管理员时，每行必须填写「学院」列；普通学院管理员导入时学院由当前账号自动归属，无需填写。"
-- 默认角色支持"教师"已经在正则里 (`管理员|教师|老师|学生`)，无需修改。
+- RLS、表结构、模板下载、教师导入逻辑均不动。
+- `ai-provider-admin` 暂不改——其 `maybeSingle` 调用都是按业务唯一键查询，不涉及多角色。
 
----
+## 验证
 
-## 不改动的内容
-
-- 不改 RLS 策略、不改 `colleges` / `profiles` / `user_roles` 表结构。
-- 不动学生导入既有流程；学生默认仍走"调用者学院"。
-- 不动密码生成规则（学号 + 手机后 6 位）。
-
-## 验证步骤
-
-1. 以超级管理员身份在导入页发任意文字 → 应正常回复，不再 Forbidden。
-2. 发送"默认角色=教师" → 顶部 Badge 切换为"默认角色：教师"。
-3. 点击"下载教师模板"，模板仅含教师字段且含"学院"列。
-4. 填两条教师（学院列分别填两个真实学院名）→ 上传 → 预览无红色 → 确认导入 → 学生管理 / 教师列表里能在对应学院下看到这两位教师。
-5. 故意把"学院"留空一行 → 预览阶段该行标红，确认按钮被阻止。
+1. 用 `9b1f36f2-…` 这个同时拥有两个角色的超级管理员登录，发送任何文字 → 应正常回复，不再 Forbidden。
+2. 用纯 super_admin / 纯 admin 账号登录，行为不变。
+3. 聊天框上方出现 6 个"快速提问"按钮，点击后填入输入框，可直接发送或修改后发送。
