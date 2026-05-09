@@ -216,9 +216,9 @@ Deno.serve(async (req) => {
       const deepseek = !!Deno.env.get("DEEPSEEK_API_KEY");
       let fallback: { vendor: string; baseUrl: string; providerName: string; defaultModel: string; envKey: string } | null = null;
       if (dashscope) {
-        fallback = { vendor: "qwen", baseUrl: VENDOR_FALLBACK_URL.qwen, providerName: "通义千问 (env fallback)", defaultModel: "qwen-plus", envKey: "DASHSCOPE_API_KEY" };
+        fallback = { vendor: "qwen", baseUrl: VENDOR_FALLBACK_URL.qwen, providerName: "通义千问 （环境变量）", defaultModel: "qwen-plus", envKey: "DASHSCOPE_API_KEY" };
       } else if (deepseek) {
-        fallback = { vendor: "deepseek", baseUrl: VENDOR_FALLBACK_URL.deepseek, providerName: "DeepSeek (env fallback)", defaultModel: "deepseek-chat", envKey: "DEEPSEEK_API_KEY" };
+        fallback = { vendor: "deepseek", baseUrl: VENDOR_FALLBACK_URL.deepseek, providerName: "DeepSeek （环境变量）", defaultModel: "deepseek-chat", envKey: "DEEPSEEK_API_KEY" };
       }
 
       // Make sure every known function appears, even when no DB row exists yet.

@@ -89,7 +89,7 @@ export async function getAiConfig(functionKey: string): Promise<AiConfig> {
       // otherwise the request would 404 on DashScope.
       model: isQwenModel(bindingModel) ? bindingModel! : "qwen-plus",
       vendor: "qwen",
-      providerName: "通义千问 (env fallback)",
+      providerName: "通义千问 （环境变量）",
     };
   }
   if (deepseek) {
@@ -98,7 +98,7 @@ export async function getAiConfig(functionKey: string): Promise<AiConfig> {
       apiKey: deepseek,
       model: isDeepseekModel(bindingModel) ? bindingModel! : "deepseek-chat",
       vendor: "deepseek",
-      providerName: "DeepSeek (env fallback)",
+      providerName: "DeepSeek （环境变量）",
     };
   }
   throw new Error(`AI 模型未配置：请到管理员端"AI 模型设置"为功能 ${functionKey} 绑定提供商`);
