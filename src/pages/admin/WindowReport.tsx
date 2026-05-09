@@ -212,7 +212,7 @@ const WindowReport = () => {
           <KPI l="累计通过学分" v={Number(k.total_credit).toFixed(1)} />
           <KPI l={`合格人数 (≥${s.pass_threshold})`} v={k.pass} tone="ok" />
           <KPI l="不合格人数" v={k.fail} tone={k.fail > 0 ? "bad" : undefined} />
-          <KPI l="合格率" v={pct(k.pass, k.submitted_students)} />
+          <KPI l="合格率" v={pct(k.pass, k.total_students)} />
         </div>
 
         <h2 className="section-h">申请状态分布</h2>
@@ -236,12 +236,12 @@ const WindowReport = () => {
           </div>
         )}
 
-        <h2 className="section-h">学分合格情况 <span className="hint">（按已提交学生）</span></h2>
+        <h2 className="section-h">学分合格情况 <span className="hint">（全体学生 · 含未提交者）</span></h2>
         <RTable
           head={["合格阈值", "合格人数", "不合格人数", "合格率"]}
           rows={s.pass_tiers.map((t: any) => [
             t.th === s.pass_threshold ? `≥ ${t.th} 学分（主）` : `≥ ${t.th} 学分`,
-            t.pass, t.fail, pct(t.pass, k.submitted_students),
+            t.pass, t.fail, pct(t.pass, k.total_students),
           ])}
         />
 
@@ -261,7 +261,7 @@ const WindowReport = () => {
           head={["院系", "学生", "已提交", "提交率", "合格", "不合格", "合格率", "累计学分"]}
           rows={s.dept_distribution.map((e: any) => [
             e.name, e.total, e.submitted, pct(e.submitted, e.total),
-            e.pass_c, e.fail_c, passPill(e.pass_c, e.submitted), e.credit.toFixed(1),
+            e.pass_c, e.fail_c, passPill(e.pass_c, e.total), e.credit.toFixed(1),
           ])}
         />
 
@@ -270,7 +270,7 @@ const WindowReport = () => {
           head={["专业", "学生", "已提交", "提交率", "合格", "不合格", "合格率", "累计学分", "人均"]}
           rows={s.major_distribution.map((e: any) => [
             e.name, e.total, e.submitted, pct(e.submitted, e.total),
-            e.pass_c, e.fail_c, passPill(e.pass_c, e.submitted), e.credit.toFixed(1), e.avg.toFixed(2),
+            e.pass_c, e.fail_c, passPill(e.pass_c, e.total), e.credit.toFixed(1), e.avg.toFixed(2),
           ])}
         />
 
@@ -280,11 +280,11 @@ const WindowReport = () => {
           rows={s.class_distribution.map((e: any) => [
             e.name, e.major, e.total, e.submitted, e.not_sub, pct(e.submitted, e.total),
             e.approved, e.rejected, e.pending, e.credit.toFixed(1), e.avg.toFixed(2),
-            e.pass_c, e.fail_c, passPill(e.pass_c, e.submitted),
+            e.pass_c, e.fail_c, passPill(e.pass_c, e.total),
           ])}
         />
 
-        <h2 className="section-h">不合格学生名单 <span className="hint">（按班级，重点跟进 · 阈值 {s.pass_threshold} 学分）</span></h2>
+        <h2 className="section-h">不合格学生名单 <span className="hint">（按班级 · 含未提交者 · 阈值 {s.pass_threshold} 学分）</span></h2>
         {s.fail_classes.length === 0 ? (
           <div className="empty-ok">✓ 当前批次无不合格学生</div>
         ) : (
@@ -296,13 +296,15 @@ const WindowReport = () => {
                   <span style={{ color: "#64748b", fontWeight: 400 }}>（{e.major}）</span>
                 </strong>
                 <span className="stat">
-                  不合格 <b style={{ color: "#ef4444" }}>{e.fails.length}</b> / 已提交 {e.submitted} 人 · 合格率 {pct(e.pass_c, e.submitted)} · 未提交 {e.not_sub} 人
+                  不合格 <b style={{ color: "#ef4444" }}>{e.fails.length}</b> / 班级总数 {e.total ?? (e.submitted + e.not_sub)} 人 · 合格率 {pct(e.pass_c, e.total ?? (e.submitted + e.not_sub))} · 未提交 {e.not_sub} 人
                 </span>
               </div>
               <RTable
                 head={["学号", "姓名", "已提交", "通过", "驳回", "待审", "当前学分", `距合格(${s.pass_threshold})`]}
                 rows={e.fails.map((f: any) => [
-                  f.student_no, f.full_name, f.submitted, f.approved, f.rejected, f.pending,
+                  f.student_no,
+                  <span key="n">{f.full_name}{f.not_submitted ? <span className="pill warn" style={{ marginLeft: 6 }}>未提交</span> : null}</span>,
+                  f.submitted, f.approved, f.rejected, f.pending,
                   f.total_credit.toFixed(1),
                   <b key="g" style={{ color: "#ef4444" }}>{f.gap.toFixed(1)}</b>,
                 ])}
