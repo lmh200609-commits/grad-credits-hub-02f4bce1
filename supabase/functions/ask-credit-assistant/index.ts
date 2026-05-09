@@ -42,6 +42,12 @@ function isPersonalQuery(q: string): boolean {
   return personal.some((k) => s.includes(k));
 }
 
+// 识别"我是谁/我叫什么/我学号/我哪个学院/我哪个班"等身份类问题
+function isIdentityQuery(q: string): boolean {
+  const s = (q || "");
+  return /我是谁|我叫(什么|啥)|我的?名字|我学号|我的?学号|我哪个?学院|我哪个?系|我哪个?班|我什么专业|我的?专业|我是哪/.test(s);
+}
+
 // 识别"统计/盘点/总览"类问题：用户问规则/案例/佐证的数量、种类、有哪些类别等
 function isStatsQuery(q: string): boolean {
   const s = (q || "").toLowerCase();
@@ -266,6 +272,15 @@ Deno.serve(async (req) => {
       .map((x) => x.c);
 
     if (scored.length === 0 && scoredCases.length === 0 && !mySummary) {
+      // 身份类问题：基于 identityBlock 直接回答，不再返回"未找到规则"
+      if (identityBlock && isIdentityQuery(query)) {
+        const p: any = myProfile || {};
+        const ans = normalizeMarkdown(`## 结论\n您是 ${p.full_name ?? "-"}（学号 ${p.student_no ?? "-"}）。\n\n## 依据\n- 姓名：${p.full_name ?? "-"}\n- 学号：${p.student_no ?? "-"}\n- 班级：${p.class_name ?? "-"}\n- 专业：${p.major ?? "-"}\n- 部门：${p.department ?? "-"}\n\n## 补充\n如需查询您的申请记录或累计学分，请输入"我的申请"或"我的学分"。`);
+        return new Response(JSON.stringify({
+          answer: ans, sections: toSections(ans), meta: { polished: false },
+          matched_rules: [], matched_cases_count: 0,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       const ans = normalizeMarkdown("## 结论\n未找到相关认定规则或案例，无法回答。\n\n## 依据\n知识库与案例库中暂无与您问题匹配的内容。\n\n## 补充\n请补充关键信息后再试：\n- 成果/证书全称\n- 级别（校级/省级/国家级/国际级）\n- 获奖等级\n- 您的参与角色（第一作者/团队成员等）");
       return new Response(JSON.stringify({
         answer: ans, sections: toSections(ans), meta: { polished: false },
