@@ -522,7 +522,7 @@ const ProviderDialog = ({
               placeholder={editing ? `已保存 ••••••••${editing.api_key_last4}` : "sk-..."}
               autoComplete="off"
             />
-            <p className="mt-1 text-xs text-muted-foreground">API Key 加密存储于数据库，仅服务端调用模型时使用，绝不返回前端。</p>
+            <p className="mt-1 text-xs text-muted-foreground">API 密钥加密存储于数据库，仅服务端调用模型时使用，绝不返回前端。</p>
           </div>
           <div>
             <Label>备注（可选）</Label>
