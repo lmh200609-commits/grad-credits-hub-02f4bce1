@@ -119,7 +119,7 @@ const StaffAiAssistant = () => {
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4" />
           <span className="text-sm font-semibold">工作助手</span>
-          <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{role === "admin" ? "管理员" : "教师"}</span>
+          <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{roleLabel}</span>
         </div>
         <div className="flex items-center gap-1">
           <Button
