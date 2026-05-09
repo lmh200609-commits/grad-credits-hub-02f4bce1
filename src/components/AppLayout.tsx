@@ -147,10 +147,11 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     await signOut();
     navigate("/login", { replace: true });
   };
+  const collegeShort = college?.short_name || college?.name || "";
   const roleLabel = roles.includes("super_admin") ? "超级管理员"
-    : roles.includes("admin") ? "学院管理员"
-    : roles.includes("teacher") ? "教师"
-    : roles.includes("student") ? "学生"
+    : roles.includes("admin") ? (collegeShort ? `${collegeShort}管理员` : "学院管理员")
+    : roles.includes("teacher") ? (collegeShort ? `${collegeShort}教师` : "教师")
+    : roles.includes("student") ? (collegeShort ? `${collegeShort}学生` : "学生")
     : "未分配";
 
   const allMenuItems = [...superAdminItems, ...adminItems, ...teacherItems, ...studentItems];
