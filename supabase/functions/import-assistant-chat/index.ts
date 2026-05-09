@@ -13,13 +13,20 @@ const corsHeaders = {
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 const SYSTEM_PROMPT = `你是「学分认证系统」管理员端「批量导入账号」页面的中文助手。
-请用简洁、友好的中文回答管理员关于批量导入的问题。
+请用简洁、友好的简体中文回答管理员关于批量导入的问题。
 
 【输出风格 — 强制】
-- 禁止使用 **加粗**、__加粗__、*斜体*、_斜体_、# 标题 等任何 markdown 强调符号。
-- 禁止使用 ⚠️ 📎 👇 ✅ ❌ 🎉 🤖 💡 等装饰性 emoji，也禁止 1️⃣ 2️⃣ 3️⃣ 等带圈数字。
-- 需要强调时直接用「」书名号或换行；分步骤用 1) 2) 3) 这种纯数字写法。
-- 语气克制，不要拟人化感叹（"哇""太棒了""帮你搞定"），像同事之间正常说话即可。
+- 只输出纯文本简体中文，禁止任何 markdown 强调符号（** __ * _ # >）。
+- 禁止任何装饰性 emoji（⚠️ 📎 👇 ✅ ❌ 🎉 🤖 💡 等）和带圈数字（1️⃣ 2️⃣ ...）。
+- 禁止出现数据库字段名或表名，例如 student_no、full_name、college_name、colleges、user_roles、profiles、applications；统一翻译成「学号/工号」「姓名」「学院」「学院名单」「角色记录」「用户档案」「申请记录」。
+- 需要强调时直接用「」或换行；分步骤用 1) 2) 3) 这种纯数字写法。
+- 语气克制，像同事之间正常说话即可。
+
+【最重要的规则】
+- 必须针对用户当前这一句的具体问题作答；不要每次都重复完整的导入流程。
+- 只有在用户明确说「怎么导入 / 怎么用 / 我要导入」并且尚未上传文件时，才完整介绍 4 步流程。
+- 其他问题（密码、学院、表头、失败排查等）只回答与该问题相关的内容，2-5 句话即可。
+- 同一段流程介绍不要在对话中重复输出。如果上一条助手回复已经说过流程，本条不要再重复。
 
 【导入规则 — 必须严格遵守并准确告知用户】
 1. 文件格式：仅支持 Excel（.xlsx / .xls）和 CSV。第一行必须是表头，从第二行开始是数据。
@@ -31,7 +38,7 @@ const SYSTEM_PROMPT = `你是「学分认证系统」管理员端「批量导入
 7. 密码规则（系统统一生成，无法自定义默认密码）：每个账号的初始密码 = 学号 + 该账号电话号码后 6 位。如果电话不足 6 位，会在左侧补 0 至 6 位。如表格自带「密码」列且 ≥ 6 位则以该列为准。
 8. 重复处理：学号已存在的账号会让本批整体失败并提示冲突列表，不会覆盖已有账号。
 9. 批量上限：单次最多约 2000 行，超过会自动分批提交（每批 200 行）。
-10. 学院归属：超级管理员导入教师 / 管理员时，每行必须填写「学院」列（按 colleges 表名称匹配）；普通学院管理员导入时，新账号自动归属到该管理员所在学院，无需在表中填写。
+10. 学院归属：超级管理员导入教师 / 管理员时，每行必须填写「学院」列（须与系统中的学院名称完全一致）；普通学院管理员导入时，新账号自动归属到该管理员所在学院，无需在表中填写。
 
 【关键操作流程 — 必须告诉用户】
 本助手不会通过聊天直接创建账号。导入必须按下面步骤手工操作：
@@ -49,6 +56,62 @@ const SYSTEM_PROMPT = `你是「学分认证系统」管理员端「批量导入
 - 不输出 Markdown 代码块以外的多余前缀；可使用项目符号。
 - 回答控制在 200 字以内，除非用户明确要求详细。
 - 如果用户问题非常模糊（如"什么"、"你好"、"在吗"），先用一句话打招呼，然后列出 3-5 条本页常见提问让用户挑选。`;
+
+// 字段/表名 -> 中文，用于在返回给前端前清洗，避免任何残留英文标识。
+const FIELD_MAP: Array<[RegExp, string]> = [
+  [/\bstudent_no\b/g, "学号/工号"],
+  [/\bfull_name\b/g, "姓名"],
+  [/\bcollege_name\b/g, "学院"],
+  [/\bcollege_id\b/g, "学院"],
+  [/\bclass_name\b/g, "班级"],
+  [/\benrollment_year\b/g, "年级"],
+  [/\bbirth_date\b/g, "出生日期"],
+  [/\bpolitical_status\b/g, "政治面貌"],
+  [/\bapartment_no\b/g, "公寓号"],
+  [/\bdorm_room\b/g, "宿舍号"],
+  [/\bbed_no\b/g, "床号"],
+  [/\bdepartment\b/g, "院系"],
+  [/\bmajor\b/g, "专业"],
+  [/\bphone\b/g, "手机号"],
+  [/\bcolleges\b/g, "学院名单"],
+  [/\buser_roles\b/g, "角色记录"],
+  [/\bprofiles\b/g, "用户档案"],
+  [/\bapplications\b/g, "申请记录"],
+];
+function translateFields(s: string): string {
+  let out = s;
+  for (const [re, zh] of FIELD_MAP) out = out.replace(re, zh);
+  return out;
+}
+
+// 常见问题的确定性回答 —— 命中后直接返回，绕过模型，避免反复输出同一段流程。
+const QUICK_ANSWERS: Array<{ test: (q: string) => boolean; answer: string }> = [
+  {
+    test: (q) => /密码.*(规则|怎么|是什么|生成)|默认密码|初始密码/.test(q),
+    answer:
+      "初始密码由系统统一生成，规则是「学号 + 手机号后 6 位」。手机号不足 6 位时左侧补 0；没有手机号则后 6 位全部为 0。如果在表里填写了「密码」列且长度不少于 6 位，则以表里那一列为准。不支持自定义默认密码。",
+  },
+  {
+    test: (q) => /学院.*列|学院.*填|学院.*必填|学院.*怎么/.test(q),
+    answer:
+      "学院列要填写系统里已存在的学院名称，必须完全一致。超级管理员导入教师或管理员账号时，每一行都必须填写学院列；普通学院管理员导入时学院列可以留空，新账号会自动归属到管理员本人所在的学院。",
+  },
+  {
+    test: (q) => /(导入|创建).*(教师|老师|工号)/.test(q),
+    answer:
+      "导入教师账号步骤：1) 在页面顶部点「下载教师模板」；2) 按列填写工号、姓名、学院、手机号等；3) 点输入框左侧的「上传文件」按钮选择填好的 Excel；4) 在弹出的预览表里核对，没问题再点下方的「确认导入」。学院列必须填写系统里已有的学院名称。",
+  },
+  {
+    test: (q) => /(导入失败|失败.*排查|为什么.*失败|报错|出错|没成功|没导入)/.test(q),
+    answer:
+      "导入失败常见原因：1) 学号或工号已经在系统里存在，可勾选「跳过已存在」后重试；2) 必填项（学号、姓名、角色）有空值；3) 出生日期格式不是 YYYY-MM-DD；4) 学院名称与系统里的不一致；5) 单元格里有多余的空格或全角符号。预览表里红色高亮的单元格就是出问题的字段，修正源表后重新上传即可。",
+  },
+  {
+    test: (q) => /(表头|列名|有哪些列|哪些字段|模板.*列)/.test(q),
+    answer:
+      "模板共 17 列，必填的是学号/工号、姓名、角色；其余可选项包括性别、民族、政治面貌、出生日期、手机号、学院、院系、专业、班级、年级、辅导员、公寓号、宿舍号、床号。直接点页面顶部「下载学生模板」或「下载教师模板」获取最新表头。",
+  },
+];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -86,6 +149,13 @@ Deno.serve(async (req) => {
 
     const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content?.trim();
     if (!lastUser) return json({ error: "messages 不能为空" }, 400);
+
+    // 命中常见问题的快速回答，直接返回，避免模型每次重复同一段导入流程。
+    for (const qa of QUICK_ANSWERS) {
+      if (qa.test(lastUser)) {
+        return json({ answer: qa.answer });
+      }
+    }
 
     // Trim history to last 6 messages to keep prompts small.
     const trimmed = messages.slice(-6).map((m) => ({
@@ -138,7 +208,7 @@ Deno.serve(async (req) => {
 
     const data = await aiResp.json();
     const raw = data?.choices?.[0]?.message?.content?.trim() || "（无回答）";
-    const answer = stripDecorations(raw);
+    const answer = translateFields(stripDecorations(raw));
     return json({ answer });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
