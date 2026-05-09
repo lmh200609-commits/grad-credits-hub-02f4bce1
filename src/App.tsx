@@ -60,7 +60,7 @@ const App = () => (
             <Route path="/admin/keywords" element={<RoleRoute role="admin"><Keywords /></RoleRoute>} />
             <Route path="/admin/cases" element={<RoleRoute role="admin"><Cases /></RoleRoute>} />
             <Route path="/admin/audit-logs" element={<RoleRoute role="admin"><AuditLogs /></RoleRoute>} />
-            <Route path="/admin/ai-models" element={<RoleRoute role="admin"><AiModels /></RoleRoute>} />
+            <Route path="/admin/ai-models" element={<RoleRoute role="super_admin"><AiModels /></RoleRoute>} />
             <Route path="/admin/reset" element={<RoleRoute role="admin"><PurgeAndBootstrap /></RoleRoute>} />
             <Route path="/admin/branding" element={<RoleRoute role="admin"><Branding /></RoleRoute>} />
             <Route path="/admin/submission-windows" element={<RoleRoute role={["admin", "super_admin"]}><SubmissionWindows /></RoleRoute>} />
