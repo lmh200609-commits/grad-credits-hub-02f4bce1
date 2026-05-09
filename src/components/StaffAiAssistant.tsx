@@ -97,7 +97,9 @@ const StaffAiAssistant = () => {
   };
 
   const goCandidate = (c: Candidate) => {
-    const path = role === "admin" ? `/admin/users/students?search=${encodeURIComponent(c.student_no || c.full_name || "")}` : `/teacher/students/${c.user_id}`;
+    const path = role === "teacher"
+      ? `/teacher/students/${c.user_id}`
+      : `/admin/users/students?search=${encodeURIComponent(c.student_no || c.full_name || "")}`;
     navigate(path);
   };
 
