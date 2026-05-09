@@ -24,6 +24,7 @@ const SYSTEM_PROMPT = `你是「学分认证系统」管理员端「批量导入
 7. **密码规则（系统统一生成，无法自定义默认密码）**：每个账号的初始密码 = 「学号 + 该账号电话号码后 6 位」。如果电话不足 6 位，会在左侧补 0 至 6 位。如表格自带「密码」列且 ≥ 6 位则以该列为准。
 8. 重复处理：学号已存在的账号会让本批整体失败并提示冲突列表，不会覆盖已有账号。
 9. 批量上限：单次最多约 2000 行，超过会自动分批提交（每批 200 行）。
+10. 学院归属：超级管理员导入教师 / 管理员时，每行必须填写「学院」列（按 colleges 表名称匹配）；普通学院管理员导入时，新账号自动归属到该管理员所在学院，无需在表中填写。
 
 【关键操作流程 — 必须告诉用户】
 本助手 **不会** 通过聊天直接创建账号。导入必须按下面步骤手工操作：
@@ -64,7 +65,7 @@ Deno.serve(async (req) => {
     );
     const { data: roleRow } = await admin
       .from("user_roles").select("role")
-      .eq("user_id", callerId).eq("role", "admin").maybeSingle();
+      .eq("user_id", callerId).in("role", ["admin", "super_admin"]).maybeSingle();
     if (!roleRow) return json({ error: "Forbidden" }, 403);
 
     const body = await req.json().catch(() => ({}));
