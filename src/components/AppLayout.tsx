@@ -69,7 +69,6 @@ const studentItems: Item[] = [
   { title: "申请学分", url: "/apply", icon: Send },
   { title: "我的申请", url: "/my-applications", icon: FileText },
   { title: "我的档案", url: "/profile", icon: IdCard },
-  { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
 ];
 
 // Extra routes (detail pages, shared routes) for header title lookup only

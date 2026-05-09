@@ -1,29 +1,45 @@
-## 问题原因
+# 学生端清理 + 登录按钮修复
 
-`solid` 变体当前用 `bg-foreground text-background`。但 `useCollegeTheme` 会把 `--background` 覆盖成学院主题（自动从院徽提取的）背景色。当该背景色本身偏深时，按钮就变成"深底 + 深字"，看起来一片黑、文字图标全部不可见——这正是截图中"上传院徽 / 确认并提交修改 / 新建批次 / 新建第一个批次"的现象。
+## 1. 学生端删除"实时一致性"入口
 
-## 修复方案（仅前端样式层）
+`src/components/AppLayout.tsx` 中 `studentItems`（第 67-73 行）包含一项：
+```
+{ title: "实时一致性", url: "/diagnostics/realtime", icon: Activity }
+```
+这是面向运维 / 管理员的诊断页，不应暴露给学生。
 
-1. 在 `src/index.css` 的 `:root` 与 `.dark` 中新增**不受学院主题覆盖**的动作色令：
-   - `--action: 222 47% 11%`（接近深蓝黑）
-   - `--action-foreground: 0 0% 100%`（纯白）
-   - `.dark` 下反转：`--action: 0 0% 100%`，`--action-foreground: 222 47% 11%`
-   并在 `tailwind.config.ts` 的 `colors` 中暴露 `action: { DEFAULT, foreground }`。
+**改动**：从 `studentItems` 移除该条目。教师端、学院管理员、超级管理员保留（他们需要排查实时同步问题）。
 
-2. 修改 `src/components/ui/button.tsx` 的 `solid` 变体：
-   - 由 `bg-foreground text-background` 改为 `bg-action text-action-foreground hover:bg-action/90`。
-   - 这样无论学院把 `--background / --foreground` 改成什么颜色，主操作按钮始终保持"深底白字（亮色模式）/ 浅底深字（暗色模式）"的高对比，永远清晰可见。
+## 2. 登录按钮"有时消失"的根因
 
-3. 确认 `useCollegeTheme.ts` **不要**去覆盖 `--action` / `--action-foreground`（保持现状即可，它本来就只覆盖 primary/accent/background/radius）。
+登录页截图显示「登录」按钮变成了纯白色块，文字不可见。原因：
 
-4. 复查并保留：
-   - `src/pages/admin/Branding.tsx`：上传院徽、确认并提交修改、弹窗"确认提交"按钮均用 `variant="solid"`（已是）。弹窗里 `AlertDialogAction` 也改用 `bg-action text-action-foreground hover:bg-action/90`，避免硬编码 `bg-foreground text-background`。
-   - `src/pages/admin/SubmissionWindows.tsx`：页头"新建批次"、空态"新建第一个批次"、保存按钮均用 `variant="solid"`（已是，自动获得新配色）。
+- `src/pages/Login.tsx` 第 82 行的 `<Button>` 使用默认 `variant="default"`，样式是 `bg-primary text-primary-foreground`。
+- `src/hooks/useCollegeTheme.ts` 在用户登录某学院后，会把 `--primary` 写到 `document.documentElement.style` 上（来自学院主题，可能是接近白色的浅色，或来自校徽提取色）。
+- 学生 / 老师**登出**后跳到 `/login`：Login 页面**不渲染** `AppLayout`，因此 `useCollegeTheme` 卸载，但它的清理只在 `collegeId` 变 null 时执行——而登出后整个组件直接卸载，`useEffect` 的 cleanup 只移除 realtime channel，**不会** `removeProperty("--primary")`。残留的浅色 `--primary` 让按钮和背景同色 → "登录"按钮消失。
+- 此外 `--background` 一旦被学院主题覆盖，从未被清除。
 
-5. 系统其他端（超管/教师/学生）已经统一使用 `Button` 的 `solid` 变体或 `default` 变体，本次只改令牌与变体定义，自动同步生效，不动业务逻辑。
+**修复方案（双保险）**：
 
-## 验收点
+A. 在 `useCollegeTheme.ts` 的 `useEffect` cleanup 中，无条件 `removeProperty` 所有它可能写入的变量（`--primary`、`--ring`、`--sidebar-primary`、`--sidebar-ring`、`--accent`、`--background`、`--radius`），这样组件卸载时一定会还原。同时把 `collegeId` 为 null 的分支也加上 `--background`、`--accent` 的清理。
 
-- 任意学院主题（包括极浅或极深背景）下，上传院徽 / 确认并提交修改 / 新建批次 / 新建第一个批次 / 保存 等按钮都能清晰看到文字与图标。
-- 暗色模式下按钮自动反色，依然清晰。
-- 其他下载类、轮廓类按钮样式不变。
+B. 把 `Login.tsx` 中的「登录」按钮改成 `variant="solid"`，使用稳定的 `--action` / `--action-foreground` token（上次已加），即便主题变量异常也始终是深底白字。
+
+两步组合后，登录按钮在任何 session 状态下都保持可见。
+
+## 技术细节
+
+文件改动：
+
+1. `src/components/AppLayout.tsx`
+   - 从 `studentItems` 删除 `实时一致性` 项。
+
+2. `src/hooks/useCollegeTheme.ts`
+   - 抽出 `resetThemeVars(root)`，移除 `--primary`、`--ring`、`--sidebar-primary`、`--sidebar-ring`、`--accent`、`--background`、`--radius`。
+   - `collegeId` 为 null 分支调用 `resetThemeVars`。
+   - useEffect 的 cleanup 中追加 `resetThemeVars(document.documentElement)`，确保切换路由 / 登出时彻底清空。
+
+3. `src/pages/Login.tsx`
+   - `<Button type="submit" variant="solid" className="w-full" ...>`。
+
+不动业务逻辑、RLS、数据表。
