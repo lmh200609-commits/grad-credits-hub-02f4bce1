@@ -3,6 +3,7 @@
 // Output: { summary, suggestions[] } in Chinese.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { getAiConfig } from "../_shared/ai-router.ts";
+import { stripDecorations } from "../_shared/format-answer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             model: aiCfg.model,
             messages: [
-              { role: "system", content: "你是名册导入失败的诊断助手。基于错误聚类，给出中文【原因摘要】（1-2 句）和【修复建议】（3-5 条，可执行）。仅输出 JSON：{\"summary\": string, \"suggestions\": string[]}。" },
+              { role: "system", content: "你是名册导入失败的诊断助手。基于错误聚类，给出中文【原因摘要】（1-2 句）和【修复建议】（3-5 条，可执行）。仅输出 JSON：{\"summary\": string, \"suggestions\": string[]}。文本中严禁使用 **加粗** *斜体* 等 markdown 强调符号，严禁使用 ⚠️📎👇✅❌ 等装饰 emoji 和 1️⃣2️⃣3️⃣ 等带圈数字。" },
               { role: "user", content: userPrompt },
             ],
             response_format: { type: "json_object" },
@@ -106,8 +107,8 @@ Deno.serve(async (req) => {
       parsed = { summary: content.slice(0, 200), suggestions: [] };
     }
     return json({
-      summary: parsed.summary ?? "（无摘要）",
-      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+      summary: stripDecorations(parsed.summary ?? "（无摘要）"),
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map((s) => stripDecorations(String(s))) : [],
     });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);

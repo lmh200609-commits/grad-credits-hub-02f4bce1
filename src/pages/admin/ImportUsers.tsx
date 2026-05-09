@@ -16,6 +16,7 @@ import {
   TEMPLATE_COLUMNS,
   type ParsedRow,
 } from "@/lib/parseRoster";
+import { toPlainText } from "@/lib/sanitizeMarkdown";
 
 type ChatMsg =
   | { kind: "ai"; text: string }
@@ -110,7 +111,7 @@ const ImportUsers = () => {
     {
       kind: "ai",
       text:
-        "你好👋，请使用统一「账号导入模板」批量创建账号。\n\n步骤：\n1) 点击右上角「下载导入模板」获取 .xlsx\n2) 按列填写（必填：学号/工号、姓名、角色）\n3) 点击「上传文件」选择填好的 Excel\n4) 核对预览后点击「确认导入」\n\n模板列（共 16 列，顺序固定）：\n" +
+        "你好，请使用统一「账号导入模板」批量创建账号。\n\n步骤：\n1) 点击右上角「下载导入模板」获取 .xlsx\n2) 按列填写（必填：学号/工号、姓名、角色）\n3) 点击「上传文件」选择填好的 Excel\n4) 核对预览后点击「确认导入」\n\n模板列（共 16 列，顺序固定）：\n" +
         TEMPLATE_COLUMNS.map((c) => `• ${c.header}${c.required ? "（必填）" : ""} — ${c.note}`).join("\n") +
         "\n\n密码规则：自动生成 = 学号 + 手机号后 6 位（不足左补 0；无手机号则补 6 个 0）。无需在表中填写。",
     },
@@ -161,7 +162,7 @@ const ImportUsers = () => {
     if (pwdMatch) {
       push({
         kind: "ai",
-        text: "ℹ️ 已不再支持设置默认密码。系统统一按「学号 + 电话后 6 位」生成密码（电话不足 6 位时左侧补 0）。",
+        text: "已不再支持设置默认密码。系统统一按「学号 + 电话后 6 位」生成密码（电话不足 6 位时左侧补 0）。",
       });
       return;
     }
@@ -169,7 +170,7 @@ const ImportUsers = () => {
       setDefaults(next);
       push({
         kind: "ai",
-        text: `好的，已更新默认角色：${ROLE_LABEL[next.role]}。点击 📎 上传 Excel/CSV 即可开始。`,
+        text: `好的，已更新默认角色：${ROLE_LABEL[next.role]}。请点击下方「上传文件」按钮选择 Excel/CSV 即可开始。`,
       });
       return;
     }
@@ -179,7 +180,7 @@ const ImportUsers = () => {
       push({
         kind: "ai",
         text:
-          "⚠️ 我注意到你想开始导入。\n\n本助手 **不会** 通过聊天直接创建账号，必须按以下步骤操作：\n\n1️⃣ 点击下方输入框 **左侧的「上传文件」按钮（📎）**，选择 Excel/CSV\n2️⃣ 我会自动识别字段、做格式校验，并展示预览表\n3️⃣ 核对预览后，点击预览下方的 **「确认导入」** 按钮\n4️⃣ 完成后会有绿色的成功卡片，并可一键跳转到学生管理查看\n\n👇 现在就点左下角的「上传文件」按钮开始吧。",
+          "这里只能识别和预览数据，账号需要按下面三步手工创建：\n\n1) 点击输入框左侧的「上传文件」按钮，选择 Excel 或 CSV\n2) 在弹出的预览表中核对数据，异常行会标红\n3) 点击预览下方的「确认导入」按钮才会真正写入\n\n完成后会出现绿色的成功卡片，可以一键跳转到学生管理查看。",
       });
       return;
     }
@@ -531,7 +532,7 @@ const MessageBubble = ({
           <Bot className="h-4 w-4" />
         </div>
         <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-4 py-2 text-sm">
-          {msg.text}
+          {toPlainText(msg.text)}
         </div>
       </div>
     );
