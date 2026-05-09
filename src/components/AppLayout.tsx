@@ -1,4 +1,4 @@
-import { ReactNode, useRef } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation, matchPath } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useCollegeTheme } from "@/hooks/useCollegeTheme";
@@ -95,9 +95,29 @@ const AppSidebar = () => {
       ? location.pathname === "/"
       : location.pathname === url || location.pathname.startsWith(url + "/");
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const saved = Number(sessionStorage.getItem("sidebar-scroll-top") || "0");
+    if (saved > 0) el.scrollTop = saved;
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        sessionStorage.setItem("sidebar-scroll-top", String(el.scrollTop));
+      });
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
   return (
     <Sidebar collapsible="icon">
-      <SidebarContent>
+      <SidebarContent ref={scrollRef}>
         <SidebarGroup>
           <SidebarGroupLabel>导航</SidebarGroupLabel>
           <SidebarGroupContent>
