@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
@@ -11,6 +11,7 @@ import { toast } from "@/hooks/use-toast";
 import { Bot, Loader2, Paperclip, Send, Sparkles, User, CheckCircle2, AlertCircle, Upload, ArrowRight, Download } from "lucide-react";
 import {
   downloadRosterTemplate,
+  downloadTeacherTemplate,
   parseRosterWorkbook,
   TEMPLATE_COLUMNS,
   type ParsedRow,
@@ -29,7 +30,7 @@ type RowErrors = Record<string, string>;
 const CURRENT_YEAR = new Date().getFullYear();
 
 /** Validate a single parsed row. Returns an error map (empty if all good). */
-const validateRow = (r: ParsedRow): RowErrors => {
+const validateRow = (r: ParsedRow, requireCollege = false): RowErrors => {
   const e: RowErrors = {};
 
   if (!r.student_no?.trim()) e.student_no = "学号不能为空";
@@ -89,6 +90,14 @@ const validateRow = (r: ParsedRow): RowErrors => {
     e.password = "密码不足 6 位（请补全学号或电话）";
   }
 
+  // Super admin imports must specify each row's college via the 学院 column
+  // (普通学院管理员导入时由后端自动归属，无需在表里填写).
+  if (requireCollege && (r.role === "teacher" || r.role === "admin")) {
+    if (!r.college_name?.trim()) {
+      e.college_name = "超级管理员导入教师/管理员时必须填写「学院」列";
+    }
+  }
+
   return e;
 };
 
@@ -112,6 +121,24 @@ const ImportUsers = () => {
   const [defaults, setDefaults] = useState<{ role: ParsedRow["role"] }>({
     role: "student",
   });
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) return;
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", uid)
+        .eq("role", "super_admin")
+        .maybeSingle();
+      if (active) setIsSuperAdmin(!!data);
+    })();
+    return () => { active = false; };
+  }, []);
 
   const push = (m: ChatMsg) => setMessages((prev) => [...prev, m]);
 
