@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { loginSchema, type LoginInput } from "@/lib/schemas";
+import loginBg from "@/assets/login-bg.jpg";
 
 const accountToEmail = (account: string) => `${account}@admin.local`;
 
@@ -47,8 +48,14 @@ const Login = () => {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 bg-cover bg-center opacity-40 animate-bg-drift"
+        style={{ backgroundImage: `url(${loginBg})`, filter: "blur(2px)" }}
+      />
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-background/40" />
+      <Card className="w-full max-w-md backdrop-blur-md bg-card/85 border-white/40 shadow-xl">
         <CardHeader className="space-y-2 text-center">
           <CardTitle className="text-2xl">学分认证系统</CardTitle>
           <CardDescription>请使用管理员分配的账号登录</CardDescription>
