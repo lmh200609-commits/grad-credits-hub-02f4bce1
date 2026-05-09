@@ -37,13 +37,8 @@ export const useCollegeTheme = () => {
       return;
     }
     let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("colleges")
-        .select("id, code, name, short_name, system_title, badge_url, theme")
-        .eq("id", collegeId)
-        .maybeSingle();
-      if (cancelled || !data) return;
+    const applyTheme = (data: any) => {
+      if (!data) return;
       setCollege(data as College);
       const t = (data.theme ?? {}) as CollegeTheme;
       const root = document.documentElement;
@@ -56,9 +51,28 @@ export const useCollegeTheme = () => {
       if (t.accent) root.style.setProperty("--accent", t.accent);
       if (t.background) root.style.setProperty("--background", t.background);
       if (t.radius) root.style.setProperty("--radius", t.radius);
-    })();
+    };
+    const fetchOnce = async () => {
+      const { data } = await supabase
+        .from("colleges")
+        .select("id, code, name, short_name, system_title, badge_url, theme")
+        .eq("id", collegeId)
+        .maybeSingle();
+      if (cancelled) return;
+      applyTheme(data);
+    };
+    void fetchOnce();
+    const channel = supabase
+      .channel(`college-theme-${collegeId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "colleges", filter: `id=eq.${collegeId}` },
+        () => { void fetchOnce(); },
+      )
+      .subscribe();
     return () => {
       cancelled = true;
+      void supabase.removeChannel(channel);
     };
   }, [collegeId]);
 
