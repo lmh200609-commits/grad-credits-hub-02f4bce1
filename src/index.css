@@ -49,6 +49,9 @@ All colors MUST be HSL.
 
     --radius: 0.5rem;
 
+    --action: 222 47% 11%;
+    --action-foreground: 0 0% 100%;
+
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 222 76% 38%;
