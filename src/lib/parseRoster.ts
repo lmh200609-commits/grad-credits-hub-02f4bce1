@@ -102,9 +102,15 @@ export const parseRosterWorkbook = async (
   if (rows.length === 0) return { ok: false, error: "表格无数据行" };
 
   const presentHeaders = new Set(Object.keys(rows[0]).map((k) => norm(k)));
-  const missing = TEMPLATE_COLUMNS.filter(
-    (c) => c.required && !presentHeaders.has(norm(c.header)),
-  ).map((c) => c.header);
+  // Accept 工号 / 学号 as aliases for the required 学号/工号 column.
+  const hasStudentNo =
+    presentHeaders.has(norm("学号/工号")) ||
+    presentHeaders.has(norm("工号")) ||
+    presentHeaders.has(norm("学号"));
+  const missing: string[] = [];
+  if (!hasStudentNo) missing.push("学号/工号");
+  if (!presentHeaders.has(norm("姓名"))) missing.push("姓名");
+  if (!presentHeaders.has(norm("角色"))) missing.push("角色");
   if (missing.length > 0) {
     return {
       ok: false,
@@ -122,7 +128,9 @@ export const parseRosterWorkbook = async (
   };
 
   const parsed: ParsedRow[] = rows.map((row) => {
-    const studentNo = String(get(row, "学号/工号") ?? "").trim();
+    const studentNo = String(
+      get(row, "学号/工号") ?? get(row, "工号") ?? get(row, "学号") ?? "",
+    ).trim();
     const fullName = String(get(row, "姓名") ?? "").trim();
     const roleRaw = String(get(row, "角色") ?? "").trim();
     const role = ROLE_MAP[roleRaw] ?? defaultRole;
