@@ -1,7 +1,5 @@
 // @ts-nocheck
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { jsPDF } from "npm:jspdf@2.5.2";
-import autoTable from "npm:jspdf-autotable@3.8.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,86 +17,18 @@ const STATUS_LABEL: Record<string, string> = {
   rejected_by_ai: "系统驳回",
   rejected: "人工驳回",
 };
-
 const PASS_THRESHOLD = 4;
-
-// 主题色
-const C = {
-  primary: [31, 78, 121] as [number, number, number],
-  primarySoft: [225, 235, 245] as [number, number, number],
-  ok: [16, 185, 129] as [number, number, number],
-  bad: [239, 68, 68] as [number, number, number],
-  warn: [245, 158, 11] as [number, number, number],
-  text: [30, 41, 59] as [number, number, number],
-  sub: [100, 116, 139] as [number, number, number],
-  zebra: [245, 248, 251] as [number, number, number],
-  border: [203, 213, 225] as [number, number, number],
-  white: [255, 255, 255] as [number, number, number],
-};
-
-// 模块级字体缓存
-let FONT_CACHE: { regular?: string; bold?: string; loaded?: boolean } = {};
-
-const FONT_URLS_REGULAR = [
-  "https://cdn.jsdelivr.net/gh/StellarCN/scp_zh@master/fonts/NotoSansSC-Regular.ttf",
-  "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
-];
-const FONT_URLS_BOLD = [
-  "https://cdn.jsdelivr.net/gh/StellarCN/scp_zh@master/fonts/NotoSansSC-Bold.ttf",
-  "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf",
-];
-
-async function fetchFontBase64(urls: string[]): Promise<string | null> {
-  for (const u of urls) {
-    try {
-      const r = await fetch(u);
-      if (!r.ok) continue;
-      const buf = new Uint8Array(await r.arrayBuffer());
-      // base64 encode
-      let s = "";
-      const CHUNK = 0x8000;
-      for (let i = 0; i < buf.length; i += CHUNK) {
-        s += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK) as any);
-      }
-      return btoa(s);
-    } catch (e) {
-      console.warn("font fetch failed", u, e);
-    }
-  }
-  return null;
-}
-
-async function ensureFonts() {
-  if (FONT_CACHE.loaded) return;
-  const [reg, bold] = await Promise.all([
-    fetchFontBase64(FONT_URLS_REGULAR),
-    fetchFontBase64(FONT_URLS_BOLD),
-  ]);
-  FONT_CACHE = { regular: reg ?? undefined, bold: bold ?? reg ?? undefined, loaded: true };
-  if (!reg) console.warn("[report] CJK font not loaded, Chinese characters may render as boxes");
-}
-
-function registerFonts(doc: any) {
-  if (FONT_CACHE.regular) {
-    doc.addFileToVFS("NotoSC-Regular.ttf", FONT_CACHE.regular);
-    doc.addFont("NotoSC-Regular.ttf", "NotoSC", "normal");
-  }
-  if (FONT_CACHE.bold) {
-    doc.addFileToVFS("NotoSC-Bold.ttf", FONT_CACHE.bold);
-    doc.addFont("NotoSC-Bold.ttf", "NotoSC", "bold");
-  }
-  if (FONT_CACHE.regular) {
-    doc.setFont("NotoSC", "normal");
-  }
-}
 
 const pct = (a: number, b: number) => (b > 0 ? `${((a / b) * 100).toFixed(1)}%` : "—");
 const fmtDT = (s?: string | null) =>
   s ? new Date(s).toLocaleString("zh-CN", { hour12: false }) : "";
+const esc = (s: any) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
   try {
     const { window_id } = await req.json();
     if (!window_id) return json({ error: "window_id required" }, 400);
@@ -114,24 +44,19 @@ Deno.serve(async (req) => {
       });
       const { data: u } = await userClient.auth.getUser();
       if (!u?.user) return json({ error: "unauthorized" }, 401);
-      actorId = u.user.id;
-      actorEmail = u.user.email ?? null;
+      actorId = u.user.id; actorEmail = u.user.email ?? null;
       const { data: roles } = await admin.from("user_roles").select("role").eq("user_id", actorId);
       const ok = (roles ?? []).some((r: any) => r.role === "admin" || r.role === "super_admin");
       if (!ok) return json({ error: "forbidden" }, 403);
     }
 
-    // === 数据采集 ===
     const { data: win, error: winErr } = await admin
       .from("submission_windows").select("*").eq("id", window_id).single();
     if (winErr || !win) return json({ error: "window not found" }, 404);
 
     const collegeId = win.college_id;
-    const startsAt = win.starts_at;
-    const endsAt = win.ends_at;
-
     const { data: collegeRow } = await admin
-      .from("colleges").select("name, short_name, system_title").eq("id", collegeId).maybeSingle();
+      .from("colleges").select("name").eq("id", collegeId).maybeSingle();
     const collegeName = collegeRow?.name ?? "学院";
 
     const { data: studentRoles } = await admin
@@ -146,40 +71,30 @@ Deno.serve(async (req) => {
 
     const { data: apps } = await admin
       .from("applications")
-      .select("id, student_id, status, description, selected_keywords, custom_keywords, ai_suggested_credit, ai_confidence, final_credit, ai_matched_rule_id, submitted_at, reviewed_at")
+      .select("id, student_id, status, description, ai_suggested_credit, final_credit, ai_matched_rule_id, submitted_at")
       .eq("college_id", collegeId)
-      .gte("submitted_at", startsAt)
-      .lte("submitted_at", endsAt)
+      .gte("submitted_at", win.starts_at)
+      .lte("submitted_at", win.ends_at)
       .order("submitted_at", { ascending: true });
     const appList = (apps ?? []) as any[];
 
     const ruleIds = Array.from(new Set(appList.map((a) => a.ai_matched_rule_id).filter(Boolean)));
-    const { data: rules } = await admin.from("rules").select("id, name").in("id", ruleIds.length ? ruleIds : ["00000000-0000-0000-0000-000000000000"]);
+    const { data: rules } = await admin.from("rules").select("id, name")
+      .in("id", ruleIds.length ? ruleIds : ["00000000-0000-0000-0000-000000000000"]);
     const ruleMap = new Map<string, any>((rules ?? []).map((r: any) => [r.id, r]));
 
-    // === 学生级聚合 ===
     type StuAgg = {
-      student_id: string;
-      student_no: string;
-      full_name: string;
-      department: string;
-      class_name: string;
-      major: string;
-      submitted: number;
-      approved: number;
-      rejected: number;
-      pending: number;
-      total_credit: number;
+      student_id: string; student_no: string; full_name: string;
+      department: string; class_name: string; major: string;
+      submitted: number; approved: number; rejected: number; pending: number; total_credit: number;
     };
     const byStu = new Map<string, StuAgg>();
     studentIds.forEach((sid) => {
       const p = profileMap.get(sid) ?? {};
       byStu.set(sid, {
         student_id: sid,
-        student_no: p.student_no ?? "",
-        full_name: p.full_name ?? "",
-        department: p.department ?? "未填写",
-        class_name: p.class_name ?? "未填写",
+        student_no: p.student_no ?? "", full_name: p.full_name ?? "",
+        department: p.department ?? "未填写", class_name: p.class_name ?? "未填写",
         major: p.major ?? "未填写",
         submitted: 0, approved: 0, rejected: 0, pending: 0, total_credit: 0,
       });
@@ -191,15 +106,11 @@ Deno.serve(async (req) => {
       if (a.status === "approved" || a.status === "auto_approved") {
         s.approved += 1;
         s.total_credit += Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
-      } else if (a.status === "rejected" || a.status === "rejected_by_ai") {
-        s.rejected += 1;
-      } else {
-        s.pending += 1;
-      }
+      } else if (a.status === "rejected" || a.status === "rejected_by_ai") s.rejected += 1;
+      else s.pending += 1;
     });
     const stuList = Array.from(byStu.values());
 
-    // KPI
     const totalStudents = stuList.length;
     const submittedStudents = stuList.filter((s) => s.submitted > 0).length;
     const notSubmitted = stuList.filter((s) => s.submitted === 0);
@@ -208,41 +119,29 @@ Deno.serve(async (req) => {
     const appRejected = appList.filter((a) => a.status === "rejected" || a.status === "rejected_by_ai").length;
     const appPending = totalApps - appApproved - appRejected;
     const totalCredit = stuList.reduce((s, x) => s + x.total_credit, 0);
-
     const passN = (th: number) => stuList.filter((s) => s.submitted > 0 && s.total_credit >= th).length;
     const failN = (th: number) => submittedStudents - passN(th);
-    const passMain = passN(PASS_THRESHOLD);
-    const failMain = failN(PASS_THRESHOLD);
+    const passMain = passN(PASS_THRESHOLD), failMain = failN(PASS_THRESHOLD);
 
-    // 状态分布
     const statusDist: Record<string, number> = {};
     appList.forEach((a) => {
       const lbl = STATUS_LABEL[a.status] ?? a.status;
       statusDist[lbl] = (statusDist[lbl] ?? 0) + 1;
     });
 
-    // 14 天趋势
     const dayMap: Record<string, number> = {};
-    appList.forEach((a) => {
-      const d = (a.submitted_at as string).slice(0, 10);
-      dayMap[d] = (dayMap[d] ?? 0) + 1;
-    });
+    appList.forEach((a) => { const d = (a.submitted_at as string).slice(0, 10); dayMap[d] = (dayMap[d] ?? 0) + 1; });
     const trend: { date: string; count: number }[] = [];
     const today = new Date();
     for (let i = 13; i >= 0; i--) {
       const dt = new Date(today); dt.setDate(today.getDate() - i);
-      const key = dt.toISOString().slice(0, 10);
-      trend.push({ date: key.slice(5), count: dayMap[key] ?? 0 });
+      const k = dt.toISOString().slice(0, 10);
+      trend.push({ date: k.slice(5), count: dayMap[k] ?? 0 });
     }
 
-    // 院系 / 专业聚合
-    const groupBy = <T,>(arr: StuAgg[], key: (s: StuAgg) => string) => {
+    const groupBy = (arr: StuAgg[], k: (s: StuAgg) => string) => {
       const m = new Map<string, StuAgg[]>();
-      arr.forEach((s) => {
-        const k = key(s) || "未填写";
-        if (!m.has(k)) m.set(k, []);
-        m.get(k)!.push(s);
-      });
+      arr.forEach((s) => { const key = k(s) || "未填写"; if (!m.has(key)) m.set(key, []); m.get(key)!.push(s); });
       return m;
     };
     const aggGroup = (ss: StuAgg[]) => {
@@ -253,464 +152,266 @@ Deno.serve(async (req) => {
       const pending = ss.reduce((a, s) => a + s.pending, 0);
       const credit = ss.reduce((a, s) => a + s.total_credit, 0);
       const passC = ss.filter((s) => s.submitted > 0 && s.total_credit >= PASS_THRESHOLD).length;
-      const failC = submitted - passC;
       return {
         total, submitted, notSub: total - submitted, approved, rejected, pending,
-        credit, avg: total > 0 ? credit / total : 0, passC, failC,
+        credit, avg: total > 0 ? credit / total : 0,
+        passC, failC: submitted - passC,
         passRate: submitted > 0 ? passC / submitted : 0,
-        subRate: total > 0 ? submitted / total : 0,
       };
     };
     const deptMap = groupBy(stuList, (s) => s.department);
     const majorMap = groupBy(stuList, (s) => s.major);
     const classMap = groupBy(stuList, (s) => s.class_name);
 
-    // === PDF 生成 ===
-    await ensureFonts();
-    const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
-    registerFonts(doc);
-    const FONT = FONT_CACHE.regular ? "NotoSC" : "helvetica";
-    const setFont = (style: "normal" | "bold" = "normal") => doc.setFont(FONT, style);
+    const classEntries = Array.from(classMap.entries()).map(([k, v]) => ({
+      name: k, major: v[0]?.major ?? "", a: aggGroup(v),
+    })).sort((a, b) => b.a.total - a.a.total);
 
-    const PW = doc.internal.pageSize.getWidth();
-    const PH = doc.internal.pageSize.getHeight();
-    const M = 36; // 18mm
-    let y = M;
+    const failClasses = classEntries.map((e) => {
+      const fails = (classMap.get(e.name) ?? [])
+        .filter((s) => s.submitted > 0 && s.total_credit < PASS_THRESHOLD)
+        .map((s) => ({ ...s, gap: PASS_THRESHOLD - s.total_credit }))
+        .sort((a, b) => b.gap - a.gap);
+      return { ...e, fails };
+    }).filter((e) => e.fails.length > 0);
 
-    const setColor = (kind: "fill" | "draw" | "text", c: [number, number, number]) => {
-      if (kind === "fill") doc.setFillColor(c[0], c[1], c[2]);
-      if (kind === "draw") doc.setDrawColor(c[0], c[1], c[2]);
-      if (kind === "text") doc.setTextColor(c[0], c[1], c[2]);
-    };
+    const missClasses = (() => {
+      const m = new Map<string, StuAgg[]>();
+      notSubmitted.forEach((s) => { const k = s.class_name || "未填写"; if (!m.has(k)) m.set(k, []); m.get(k)!.push(s); });
+      return Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length);
+    })();
 
-    const ensure = (need: number) => {
-      if (y + need > PH - M - 20) {
-        doc.addPage();
-        y = M;
-      }
-    };
+    // ===== HTML =====
+    const trendMax = Math.max(1, ...trend.map((t) => t.count));
+    const css = `
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif; color:#1e293b; background:#f1f5f9; }
+.toolbar { position:sticky; top:0; z-index:10; display:flex; gap:12px; padding:12px 24px; background:#0f172aee; backdrop-filter:blur(8px); color:#fff; }
+.toolbar button { background:#3b82f6; color:#fff; border:0; padding:8px 16px; border-radius:6px; font-size:14px; cursor:pointer; font-weight:500; }
+.toolbar button:hover { background:#2563eb; }
+.toolbar .meta { margin-left:auto; opacity:.7; font-size:12px; align-self:center; }
+.page { max-width: 980px; margin: 24px auto; background:#fff; padding:48px 56px; box-shadow:0 4px 24px rgba(15,23,42,.08); border-radius:8px; }
+.cover { background:linear-gradient(135deg,#1F4E79,#3b6fa0); color:#fff; margin:-48px -56px 32px; padding:48px 56px; border-radius:8px 8px 0 0; }
+.cover h1 { margin:0 0 8px; font-size:30px; letter-spacing:1px; }
+.cover .sub { opacity:.85; font-size:14px; margin:4px 0; }
+h2 { font-size:18px; margin:36px 0 16px; padding-left:12px; border-left:4px solid #1F4E79; color:#0f172a; }
+h2 .hint { font-size:12px; color:#64748b; font-weight:400; margin-left:12px; }
+.kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:8px; }
+.kpi { border:1px solid #e2e8f0; background:#f8fafc; border-radius:8px; padding:12px 14px; }
+.kpi .l { font-size:11.5px; color:#64748b; }
+.kpi .v { font-size:22px; font-weight:700; color:#1F4E79; margin-top:6px; line-height:1; }
+.kpi.ok .v { color:#10b981; } .kpi.bad .v { color:#ef4444; } .kpi.warn .v { color:#f59e0b; }
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+th { background:#1F4E79; color:#fff; font-weight:600; text-align:left; padding:8px 10px; }
+td { padding:7px 10px; border-bottom:1px solid #e2e8f0; }
+tbody tr:nth-child(even) td { background:#f5f8fb; }
+tbody tr:hover td { background:#eef4fb; }
+.pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+.pill.ok { background:#dcfce7; color:#15803d; }
+.pill.bad { background:#fee2e2; color:#b91c1c; }
+.pill.warn { background:#fef3c7; color:#a16207; }
+.bar-row { display:grid; grid-template-columns: 130px 1fr 80px; align-items:center; gap:10px; padding:5px 0; font-size:12.5px; }
+.bar { background:#e2e8f0; height:10px; border-radius:5px; overflow:hidden; }
+.bar > span { display:block; height:100%; background:#1F4E79; }
+.bar.ok > span { background:#10b981; } .bar.bad > span { background:#ef4444; } .bar.warn > span { background:#f59e0b; }
+.fail-block { border:1px solid #fecaca; background:#fff7f7; border-radius:8px; padding:14px 16px; margin:14px 0; }
+.fail-block .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.fail-block .head strong { color:#b91c1c; font-size:14px; }
+.fail-block .head .stat { font-size:12px; color:#64748b; }
+.miss-block { margin:14px 0; }
+.miss-block .head { font-weight:600; margin-bottom:6px; color:#0f172a; }
+.empty { color:#10b981; font-weight:600; padding:10px 0; }
+.trend { display:grid; grid-template-columns:repeat(14,1fr); gap:4px; align-items:end; height:120px; padding:8px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+.trend .col { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.trend .bar2 { width:100%; background:linear-gradient(to top,#1F4E79,#3b6fa0); border-radius:3px 3px 0 0; min-height:2px; }
+.trend .lab { font-size:9px; color:#64748b; }
+.trend .num { font-size:9px; color:#1F4E79; font-weight:600; }
+@media print {
+  body { background:#fff; }
+  .toolbar { display:none; }
+  .page { box-shadow:none; margin:0; max-width:none; padding:24px 28px; border-radius:0; }
+  h2 { page-break-after:avoid; }
+  table, .fail-block, .miss-block { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+`;
 
-    const sectionTitle = (text: string) => {
-      ensure(40);
-      setColor("fill", C.primary);
-      doc.rect(M, y, 4, 18, "F");
-      setFont("bold"); doc.setFontSize(14); setColor("text", C.text);
-      doc.text(text, M + 12, y + 14);
-      y += 28;
-      setFont("normal");
-    };
+    const kpiCard = (l: string, v: string | number, tone?: "ok" | "bad" | "warn") =>
+      `<div class="kpi ${tone ?? ""}"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`;
 
-    const subText = (text: string, size = 10, color = C.sub) => {
-      setFont("normal"); doc.setFontSize(size); setColor("text", color);
-      doc.text(text, M, y);
-      y += size + 4;
-    };
+    const statusBars = (() => {
+      const max = Math.max(1, ...Object.values(statusDist));
+      return Object.entries(statusDist).map(([k, v]) => {
+        const tone = k.includes("通过") ? "ok" : k.includes("驳回") ? "bad" : "warn";
+        return `<div class="bar-row"><span>${esc(k)}</span><div class="bar ${tone}"><span style="width:${(v / max * 100).toFixed(1)}%"></span></div><span style="text-align:right">${v} · ${pct(v, totalApps)}</span></div>`;
+      }).join("") || `<div class="empty">本批次暂无申请</div>`;
+    })();
 
-    // ===== 封面 =====
-    setColor("fill", C.primary);
-    doc.rect(0, 0, PW, 90, "F");
-    setColor("text", C.white); setFont("bold"); doc.setFontSize(22);
-    doc.text("批次提交报告", M, 50);
-    setFont("normal"); doc.setFontSize(12);
-    doc.text(`${collegeName} · ${win.name}`, M, 72);
-    y = 110;
+    const trendHtml = `<div class="trend">${trend.map((t) =>
+      `<div class="col"><div class="num">${t.count || ""}</div><div class="bar2" style="height:${(t.count / trendMax * 90).toFixed(1)}px"></div><div class="lab">${t.date}</div></div>`
+    ).join("")}</div>`;
 
-    setColor("text", C.sub); doc.setFontSize(10);
-    doc.text(`批次时间：${fmtDT(startsAt)}  —  ${fmtDT(endsAt)}`, M, y); y += 14;
-    doc.text(`生成时间：${fmtDT(new Date().toISOString())}${actorEmail ? "    生成人：" + actorEmail : ""}`, M, y);
-    y += 24;
+    const tbl = (head: string[], rows: (string | number)[][], opts?: { rowClass?: (i: number) => string }) =>
+      `<table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${
+        (rows.length ? rows : [head.map(() => "—")]).map((r, i) =>
+          `<tr${opts?.rowClass ? ` class="${opts.rowClass(i)}"` : ""}>${r.map((c) => `<td>${typeof c === "string" && c.startsWith("<") ? c : esc(c)}</td>`).join("")}</tr>`
+        ).join("")
+      }</tbody></table>`;
 
-    // KPI 卡片
-    const kpis: { label: string; value: string; tone?: "ok" | "bad" | "warn" }[] = [
-      { label: "学院学生总数", value: String(totalStudents) },
-      { label: "已提交学生", value: String(submittedStudents) },
-      { label: "未提交学生", value: String(notSubmitted.length), tone: notSubmitted.length > 0 ? "warn" : undefined },
-      { label: "提交率", value: pct(submittedStudents, totalStudents) },
-      { label: "申请总数", value: String(totalApps) },
-      { label: "通过申请", value: String(appApproved), tone: "ok" },
-      { label: "驳回申请", value: String(appRejected), tone: "bad" },
-      { label: "待审申请", value: String(appPending), tone: "warn" },
-      { label: "累计通过学分", value: totalCredit.toFixed(1) },
-      { label: `合格人数 (≥${PASS_THRESHOLD})`, value: String(passMain), tone: "ok" },
-      { label: "不合格人数", value: String(failMain), tone: failMain > 0 ? "bad" : undefined },
-      { label: "合格率", value: pct(passMain, submittedStudents) },
-    ];
-    const cardW = (PW - M * 2 - 12) / 4;
-    const cardH = 54;
-    kpis.forEach((k, i) => {
-      const col = i % 4, row = Math.floor(i / 4);
-      const x = M + col * (cardW + 4);
-      const cy = y + row * (cardH + 6);
-      setColor("fill", C.primarySoft); setColor("draw", C.primary);
-      doc.setLineWidth(0.6);
-      doc.roundedRect(x, cy, cardW, cardH, 4, 4, "FD");
-      setColor("text", C.sub); setFont("normal"); doc.setFontSize(8.5);
-      doc.text(k.label, x + 8, cy + 14);
-      setFont("bold"); doc.setFontSize(16);
-      const valColor = k.tone === "ok" ? C.ok : k.tone === "bad" ? C.bad : k.tone === "warn" ? C.warn : C.primary;
-      setColor("text", valColor);
-      doc.text(k.value, x + 8, cy + 36);
-    });
-    y += 3 * (cardH + 6) + 8;
+    const deptRows = Array.from(deptMap.entries()).map(([k, v]) => {
+      const a = aggGroup(v);
+      return [k, a.total, a.submitted, pct(a.submitted, a.total), a.passC, a.failC, pct(a.passC, a.submitted), a.credit.toFixed(1)];
+    }).sort((a, b) => (b[1] as number) - (a[1] as number));
+    const majorRows = Array.from(majorMap.entries()).map(([k, v]) => {
+      const a = aggGroup(v);
+      return [k, a.total, a.submitted, pct(a.submitted, a.total), a.passC, a.failC, pct(a.passC, a.submitted), a.credit.toFixed(1), a.avg.toFixed(2)];
+    }).sort((a, b) => (b[1] as number) - (a[1] as number));
 
-    // ===== 状态分布 =====
-    sectionTitle("申请状态分布");
-    const statusRows = Object.entries(statusDist).map(([k, v]) => [k, v, pct(v, totalApps)]);
-    if (statusRows.length === 0) statusRows.push(["—", 0, "—"]);
-    autoTable(doc, {
-      startY: y,
-      head: [["状态", "数量", "占比"]],
-      body: statusRows as any,
-      theme: "grid",
-      styles: { font: FONT, fontSize: 10, textColor: C.text, lineColor: C.border, cellPadding: 5 },
-      headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white },
-      alternateRowStyles: { fillColor: C.zebra },
-      margin: { left: M, right: M },
-      didDrawCell: (d: any) => {
-        if (d.section === "body" && d.column.index === 0) {
-          const txt = String(d.cell.raw ?? "");
-          let dot: [number, number, number] | null = null;
-          if (txt.includes("通过")) dot = C.ok;
-          else if (txt.includes("驳回")) dot = C.bad;
-          else if (txt.includes("待") || txt.includes("评估")) dot = C.warn;
-          if (dot) {
-            doc.setFillColor(dot[0], dot[1], dot[2]);
-            doc.circle(d.cell.x + 4, d.cell.y + d.cell.height / 2, 2, "F");
-          }
-        }
-      },
-    });
-    y = (doc as any).lastAutoTable.finalY + 14;
+    const classRows = classEntries.map((e) => [
+      e.name, e.major, e.a.total, e.a.submitted, e.a.notSub, pct(e.a.submitted, e.a.total),
+      e.a.approved, e.a.rejected, e.a.pending, e.a.credit.toFixed(1), e.a.avg.toFixed(2),
+      e.a.passC, e.a.failC,
+      `<span class="pill ${e.a.passRate >= 0.8 ? "ok" : e.a.passRate < 0.6 ? "bad" : "warn"}">${pct(e.a.passC, e.a.submitted)}</span>`,
+    ]);
 
-    // ===== 学分合格情况 =====
-    sectionTitle("学分合格情况（按已提交学生）");
-    autoTable(doc, {
-      startY: y,
-      head: [["合格阈值", "合格人数", "不合格人数", "合格率"]],
-      body: [
-        [`≥ 2 学分`, passN(2), failN(2), pct(passN(2), submittedStudents)],
-        [`≥ ${PASS_THRESHOLD} 学分（主）`, passMain, failMain, pct(passMain, submittedStudents)],
-        [`≥ 6 学分`, passN(6), failN(6), pct(passN(6), submittedStudents)],
-      ] as any,
-      theme: "grid",
-      styles: { font: FONT, fontSize: 10, textColor: C.text, lineColor: C.border, cellPadding: 5, halign: "center" },
-      headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white, halign: "center" },
-      alternateRowStyles: { fillColor: C.zebra },
-      margin: { left: M, right: M },
-      didParseCell: (d: any) => {
-        if (d.section === "body" && d.row.index === 1) {
-          d.cell.styles.fontStyle = "bold";
-        }
-      },
-    });
-    y = (doc as any).lastAutoTable.finalY + 14;
+    const failBlocks = failClasses.length === 0
+      ? `<div class="empty">✓ 当前批次无不合格学生</div>`
+      : failClasses.map((e) => `
+        <div class="fail-block">
+          <div class="head">
+            <strong>${esc(e.name)} <span style="color:#64748b;font-weight:400;">（${esc(e.major)}）</span></strong>
+            <span class="stat">不合格 <b style="color:#ef4444">${e.fails.length}</b> / 已提交 ${e.a.submitted} 人 · 合格率 ${pct(e.a.passC, e.a.submitted)} · 未提交 ${e.a.notSub} 人</span>
+          </div>
+          ${tbl(["学号", "姓名", "已提交", "通过", "驳回", "待审", "当前学分", `距合格(${PASS_THRESHOLD})`],
+            e.fails.map((s) => [s.student_no, s.full_name, s.submitted, s.approved, s.rejected, s.pending, s.total_credit.toFixed(1),
+              `<b style="color:#ef4444">${s.gap.toFixed(1)}</b>`]))}
+        </div>`).join("");
 
-    // ===== 14 天趋势 =====
-    sectionTitle("最近 14 天提交趋势");
-    {
-      ensure(120);
-      const cw = PW - M * 2;
-      const ch = 90;
-      const ox = M, oy = y;
-      setColor("draw", C.border); doc.setLineWidth(0.5);
-      doc.rect(ox, oy, cw, ch);
-      const max = Math.max(1, ...trend.map((t) => t.count));
-      const stepX = cw / Math.max(1, trend.length - 1);
-      // grid
-      setColor("draw", [230, 234, 240]);
-      for (let i = 1; i < 4; i++) {
-        const gy = oy + (ch / 4) * i;
-        doc.line(ox, gy, ox + cw, gy);
-      }
-      // line
-      setColor("draw", C.primary); doc.setLineWidth(1.4);
-      let prev: { x: number; y: number } | null = null;
-      trend.forEach((t, i) => {
-        const px = ox + stepX * i;
-        const py = oy + ch - (t.count / max) * (ch - 6) - 3;
-        if (prev) doc.line(prev.x, prev.y, px, py);
-        prev = { x: px, y: py };
-      });
-      // dots + labels
-      setColor("fill", C.primary);
-      trend.forEach((t, i) => {
-        const px = ox + stepX * i;
-        const py = oy + ch - (t.count / max) * (ch - 6) - 3;
-        doc.circle(px, py, 1.6, "F");
-      });
-      setFont("normal"); doc.setFontSize(7); setColor("text", C.sub);
-      trend.forEach((t, i) => {
-        if (i % 2 === 0) {
-          const px = ox + stepX * i;
-          doc.text(t.date, px - 8, oy + ch + 10);
-        }
-      });
-      doc.setFontSize(8);
-      doc.text(`峰值 ${max}`, ox + cw - 40, oy + 10);
-      y += ch + 22;
-    }
+    const missBlocks = missClasses.length === 0
+      ? `<div class="empty">✓ 学院全部学生均已提交</div>`
+      : missClasses.map(([cls, list]) => `
+        <div class="miss-block">
+          <div class="head">${esc(cls)} <span style="color:#64748b;font-weight:400">未提交 ${list.length} 人</span></div>
+          ${tbl(["学号", "姓名", "专业", "院系"], list.map((s) => [s.student_no, s.full_name, s.major, s.department]))}
+        </div>`).join("");
 
-    // ===== 院系 / 专业 =====
-    sectionTitle("按院系分布");
-    const deptRows = Array.from(deptMap.entries())
-      .map(([k, v]) => {
-        const a = aggGroup(v);
-        return [k, a.total, a.submitted, pct(a.submitted, a.total), a.passC, a.failC, pct(a.passC, a.submitted), a.credit.toFixed(1)];
-      })
-      .sort((a: any, b: any) => b[1] - a[1]);
-    autoTable(doc, {
-      startY: y,
-      head: [["院系", "学生", "已提交", "提交率", "合格", "不合格", "合格率", "累计学分"]],
-      body: (deptRows.length ? deptRows : [["—", 0, 0, "—", 0, 0, "—", "0.0"]]) as any,
-      theme: "grid",
-      styles: { font: FONT, fontSize: 9.5, textColor: C.text, lineColor: C.border, cellPadding: 4 },
-      headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white },
-      alternateRowStyles: { fillColor: C.zebra },
-      margin: { left: M, right: M },
-    });
-    y = (doc as any).lastAutoTable.finalY + 14;
-
-    sectionTitle("按专业分布");
-    const majorRows = Array.from(majorMap.entries())
-      .map(([k, v]) => {
-        const a = aggGroup(v);
-        return [k, a.total, a.submitted, pct(a.submitted, a.total), a.passC, a.failC, pct(a.passC, a.submitted), a.credit.toFixed(1), a.avg.toFixed(2)];
-      })
-      .sort((a: any, b: any) => b[1] - a[1]);
-    autoTable(doc, {
-      startY: y,
-      head: [["专业", "学生", "已提交", "提交率", "合格", "不合格", "合格率", "累计学分", "人均学分"]],
-      body: (majorRows.length ? majorRows : [["—", 0, 0, "—", 0, 0, "—", "0.0", "0.00"]]) as any,
-      theme: "grid",
-      styles: { font: FONT, fontSize: 9.5, textColor: C.text, lineColor: C.border, cellPadding: 4 },
-      headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white },
-      alternateRowStyles: { fillColor: C.zebra },
-      margin: { left: M, right: M },
-    });
-    y = (doc as any).lastAutoTable.finalY + 14;
-
-    // ===== 班级分布 =====
-    sectionTitle("按班级分布");
-    const classEntries = Array.from(classMap.entries()).map(([k, v]) => {
-      const sample = v[0];
-      return { name: k, major: sample?.major ?? "", a: aggGroup(v) };
-    }).sort((a, b) => b.a.total - a.a.total);
-    autoTable(doc, {
-      startY: y,
-      head: [["班级", "专业", "人数", "已提交", "未提交", "提交率", "通过", "驳回", "待审", "累计学分", "人均", "合格", "不合格", "合格率"]],
-      body: (classEntries.length
-        ? classEntries.map((e) => [
-            e.name, e.major, e.a.total, e.a.submitted, e.a.notSub,
-            pct(e.a.submitted, e.a.total),
-            e.a.approved, e.a.rejected, e.a.pending,
-            e.a.credit.toFixed(1), e.a.avg.toFixed(2),
-            e.a.passC, e.a.failC, pct(e.a.passC, e.a.submitted),
-          ])
-        : [["—", "—", 0, 0, 0, "—", 0, 0, 0, "0.0", "0.00", 0, 0, "—"]]) as any,
-      theme: "grid",
-      styles: { font: FONT, fontSize: 8.5, textColor: C.text, lineColor: C.border, cellPadding: 3, overflow: "linebreak" },
-      headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white, halign: "center" },
-      alternateRowStyles: { fillColor: C.zebra },
-      margin: { left: M, right: M },
-      didParseCell: (d: any) => {
-        if (d.section === "body" && d.column.index === 13) {
-          const e = classEntries[d.row.index];
-          if (e && e.a.submitted > 0) {
-            if (e.a.passRate >= 0.8) d.cell.styles.textColor = C.ok;
-            else if (e.a.passRate < 0.6) d.cell.styles.textColor = C.bad;
-          }
-        }
-      },
-    });
-    y = (doc as any).lastAutoTable.finalY + 16;
-
-    // ===== 不合格学生（按班级） =====
-    doc.addPage(); y = M;
-    sectionTitle("不合格学生名单（按班级，重点跟进）");
-    subText(`判定标准：本批次内累计通过学分 < ${PASS_THRESHOLD}（不含未提交学生）`);
-    y += 4;
-
-    const classesWithFails = classEntries
-      .map((e) => {
-        const fails = (classMap.get(e.name) ?? [])
-          .filter((s) => s.submitted > 0 && s.total_credit < PASS_THRESHOLD)
-          .map((s) => ({
-            ...s,
-            gap: PASS_THRESHOLD - s.total_credit,
-          }))
-          .sort((a, b) => b.gap - a.gap);
-        return { ...e, fails };
-      })
-      .filter((e) => e.fails.length > 0);
-
-    if (classesWithFails.length === 0) {
-      setColor("text", C.ok); setFont("bold"); doc.setFontSize(11);
-      doc.text("✓ 当前批次无不合格学生", M, y); y += 20;
-    } else {
-      classesWithFails.forEach((e) => {
-        ensure(60);
-        setColor("fill", [254, 242, 242]); setColor("draw", C.bad); doc.setLineWidth(0.5);
-        doc.roundedRect(M, y, PW - M * 2, 22, 3, 3, "FD");
-        setColor("text", C.bad); setFont("bold"); doc.setFontSize(10.5);
-        doc.text(`${e.name}（${e.major}）`, M + 8, y + 14);
-        setFont("normal"); setColor("text", C.text);
-        const stat = `不合格 ${e.fails.length} / 已提交 ${e.a.submitted} 人 · 合格率 ${pct(e.a.passC, e.a.submitted)} · 未提交 ${e.a.notSub} 人`;
-        doc.text(stat, M + 8 + doc.getTextWidth(`${e.name}（${e.major}）`) + 12, y + 14);
-        y += 26;
-        autoTable(doc, {
-          startY: y,
-          head: [["学号", "姓名", "已提交", "通过", "驳回", "待审", "当前学分", `距合格(${PASS_THRESHOLD})`]],
-          body: e.fails.map((s) => [
-            s.student_no, s.full_name, s.submitted, s.approved, s.rejected, s.pending,
-            s.total_credit.toFixed(1), s.gap.toFixed(1),
-          ]) as any,
-          theme: "grid",
-          styles: { font: FONT, fontSize: 9, textColor: C.text, lineColor: C.border, cellPadding: 3.5 },
-          headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white },
-          alternateRowStyles: { fillColor: C.zebra },
-          margin: { left: M, right: M },
-          didParseCell: (d: any) => {
-            if (d.section === "body" && d.column.index === 7) {
-              d.cell.styles.fontStyle = "bold";
-              d.cell.styles.textColor = C.bad;
-            }
-          },
-        });
-        y = (doc as any).lastAutoTable.finalY + 12;
-      });
-    }
-
-    // ===== 未提交名单（按班级） =====
-    doc.addPage(); y = M;
-    sectionTitle("未提交学生名单（按班级）");
-    const classesWithMiss: Map<string, StuAgg[]> = new Map();
-    notSubmitted.forEach((s) => {
-      const k = s.class_name || "未填写";
-      if (!classesWithMiss.has(k)) classesWithMiss.set(k, []);
-      classesWithMiss.get(k)!.push(s);
-    });
-    if (classesWithMiss.size === 0) {
-      setColor("text", C.ok); setFont("bold"); doc.setFontSize(11);
-      doc.text("✓ 学院全部学生均已提交", M, y); y += 20;
-    } else {
-      Array.from(classesWithMiss.entries())
-        .sort((a, b) => b[1].length - a[1].length)
-        .forEach(([cls, list]) => {
-          ensure(50);
-          setColor("text", C.text); setFont("bold"); doc.setFontSize(10.5);
-          doc.text(`${cls}　未提交 ${list.length} 人`, M, y);
-          y += 8;
-          autoTable(doc, {
-            startY: y,
-            head: [["学号", "姓名", "专业", "院系"]],
-            body: list.map((s) => [s.student_no, s.full_name, s.major, s.department]) as any,
-            theme: "grid",
-            styles: { font: FONT, fontSize: 9, textColor: C.text, lineColor: C.border, cellPadding: 3.5 },
-            headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white },
-            alternateRowStyles: { fillColor: C.zebra },
-            margin: { left: M, right: M },
-          });
-          y = (doc as any).lastAutoTable.finalY + 10;
-        });
-    }
-
-    // ===== 申请明细 =====
-    doc.addPage(); y = M;
-    sectionTitle("申请明细（附录）");
     const detailRows = appList.map((a) => {
       const p = profileMap.get(a.student_id) ?? {};
       const r = a.ai_matched_rule_id ? ruleMap.get(a.ai_matched_rule_id) : null;
-      const desc = (a.description ?? "").replace(/\s+/g, " ").slice(0, 50);
+      const desc = (a.description ?? "").replace(/\s+/g, " ").slice(0, 60);
+      const st = STATUS_LABEL[a.status] ?? a.status;
+      const tone = st.includes("通过") ? "ok" : st.includes("驳回") ? "bad" : "warn";
       return [
         fmtDT(a.submitted_at).slice(5, 16),
-        p.student_no ?? "",
-        p.full_name ?? "",
-        p.class_name ?? "",
-        STATUS_LABEL[a.status] ?? a.status,
+        p.student_no ?? "", p.full_name ?? "", p.class_name ?? "",
+        `<span class="pill ${tone}">${esc(st)}</span>`,
         r?.name ?? "—",
         a.ai_suggested_credit ?? "",
         a.final_credit ?? "",
         desc,
       ];
     });
-    autoTable(doc, {
-      startY: y,
-      head: [["时间", "学号", "姓名", "班级", "状态", "匹配规则", "AI建议", "最终", "描述"]],
-      body: (detailRows.length ? detailRows : [["—", "—", "—", "—", "—", "—", "—", "—", "—"]]) as any,
-      theme: "grid",
-      styles: { font: FONT, fontSize: 8, textColor: C.text, lineColor: C.border, cellPadding: 3, overflow: "linebreak" },
-      headStyles: { font: FONT, fontStyle: "bold", fillColor: C.primary, textColor: C.white },
-      alternateRowStyles: { fillColor: C.zebra },
-      columnStyles: {
-        0: { cellWidth: 60 },
-        5: { cellWidth: 80 },
-        8: { cellWidth: 130 },
-      },
-      margin: { left: M, right: M },
-      didParseCell: (d: any) => {
-        if (d.section === "body" && d.column.index === 4) {
-          const t = String(d.cell.raw ?? "");
-          if (t.includes("通过")) { d.cell.styles.textColor = C.ok; d.cell.styles.fontStyle = "bold"; }
-          else if (t.includes("驳回")) { d.cell.styles.textColor = C.bad; d.cell.styles.fontStyle = "bold"; }
-          else { d.cell.styles.textColor = C.warn; }
-        }
-      },
-    });
 
-    // ===== 页脚（每页） =====
-    const pageCount = (doc.internal as any).getNumberOfPages();
-    const footerLeft = `${collegeName} · ${win.name}`;
-    const footerRight = fmtDT(new Date().toISOString());
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      setColor("draw", C.border); doc.setLineWidth(0.4);
-      doc.line(M, PH - M, PW - M, PH - M);
-      setFont("normal"); doc.setFontSize(8); setColor("text", C.sub);
-      doc.text(footerLeft, M, PH - M + 12);
-      const center = `第 ${i} / ${pageCount} 页`;
-      doc.text(center, PW / 2 - doc.getTextWidth(center) / 2, PH - M + 12);
-      doc.text(footerRight, PW - M - doc.getTextWidth(footerRight), PH - M + 12);
-    }
+    const html = `<!doctype html><html lang="zh-CN"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${esc(collegeName)} · ${esc(win.name)} · 批次提交报告</title>
+<style>${css}</style>
+</head><body>
+<div class="toolbar">
+  <button onclick="window.print()">🖨️ 打印 / 保存为 PDF</button>
+  <span class="meta">提示：在打印对话框中可选"另存为 PDF"</span>
+</div>
+<div class="page">
+  <div class="cover">
+    <h1>批次提交报告</h1>
+    <div class="sub">${esc(collegeName)} · ${esc(win.name)}</div>
+    <div class="sub">批次时间：${esc(fmtDT(win.starts_at))} — ${esc(fmtDT(win.ends_at))}</div>
+    <div class="sub">生成：${esc(fmtDT(new Date().toISOString()))}${actorEmail ? ` · ${esc(actorEmail)}` : ""}</div>
+  </div>
 
-    // === 输出 ===
-    const ab = doc.output("arraybuffer");
-    const pdfBuf = new Uint8Array(ab);
-    const filePath = `reports/${collegeId}/${window_id}-${Date.now()}.pdf`;
-    const { error: upErr } = await admin.storage.from("application-files").upload(filePath, pdfBuf, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
+  <h2>关键指标</h2>
+  <div class="kpi-grid">
+    ${kpiCard("学院学生总数", totalStudents)}
+    ${kpiCard("已提交学生", submittedStudents)}
+    ${kpiCard("未提交学生", notSubmitted.length, notSubmitted.length > 0 ? "warn" : undefined)}
+    ${kpiCard("提交率", pct(submittedStudents, totalStudents))}
+    ${kpiCard("申请总数", totalApps)}
+    ${kpiCard("通过申请", appApproved, "ok")}
+    ${kpiCard("驳回申请", appRejected, appRejected > 0 ? "bad" : undefined)}
+    ${kpiCard("待审申请", appPending, appPending > 0 ? "warn" : undefined)}
+    ${kpiCard("累计通过学分", totalCredit.toFixed(1))}
+    ${kpiCard(`合格人数 (≥${PASS_THRESHOLD})`, passMain, "ok")}
+    ${kpiCard("不合格人数", failMain, failMain > 0 ? "bad" : undefined)}
+    ${kpiCard("合格率", pct(passMain, submittedStudents))}
+  </div>
+
+  <h2>申请状态分布</h2>
+  ${statusBars}
+
+  <h2>学分合格情况 <span class="hint">（按已提交学生）</span></h2>
+  ${tbl(["合格阈值", "合格人数", "不合格人数", "合格率"], [
+    ["≥ 2 学分", passN(2), failN(2), pct(passN(2), submittedStudents)],
+    [`≥ ${PASS_THRESHOLD} 学分（主）`, passMain, failMain, pct(passMain, submittedStudents)],
+    ["≥ 6 学分", passN(6), failN(6), pct(passN(6), submittedStudents)],
+  ])}
+
+  <h2>最近 14 天提交趋势</h2>
+  ${trendHtml}
+
+  <h2>按院系分布</h2>
+  ${tbl(["院系", "学生", "已提交", "提交率", "合格", "不合格", "合格率", "累计学分"], deptRows)}
+
+  <h2>按专业分布</h2>
+  ${tbl(["专业", "学生", "已提交", "提交率", "合格", "不合格", "合格率", "累计学分", "人均"], majorRows)}
+
+  <h2>按班级分布</h2>
+  ${tbl(["班级","专业","人数","已提交","未提交","提交率","通过","驳回","待审","累计学分","人均","合格","不合格","合格率"], classRows)}
+
+  <h2>不合格学生名单 <span class="hint">（按班级，重点跟进 · 阈值 ${PASS_THRESHOLD} 学分）</span></h2>
+  ${failBlocks}
+
+  <h2>未提交学生名单 <span class="hint">（按班级）</span></h2>
+  ${missBlocks}
+
+  <h2>申请明细 <span class="hint">（共 ${totalApps} 条）</span></h2>
+  ${tbl(["时间","学号","姓名","班级","状态","匹配规则","AI建议","最终","描述"], detailRows)}
+
+  <div style="margin-top:32px;color:#94a3b8;font-size:11px;text-align:center;">
+    ${esc(collegeName)} · ${esc(win.name)} · 由系统自动生成于 ${esc(fmtDT(new Date().toISOString()))}
+  </div>
+</div>
+</body></html>`;
+
+    const filePath = `reports/${collegeId}/${window_id}-${Date.now()}.html`;
+    const { error: upErr } = await admin.storage.from("application-files").upload(
+      filePath, new TextEncoder().encode(html),
+      { contentType: "text/html; charset=utf-8", upsert: true },
+    );
     if (upErr) throw upErr;
 
     const summary = {
-      window: { id: win.id, name: win.name, starts_at: startsAt, ends_at: endsAt },
+      window: { id: win.id, name: win.name, starts_at: win.starts_at, ends_at: win.ends_at },
       kpi: {
-        total_students: totalStudents,
-        submitted_students: submittedStudents,
-        not_submitted: notSubmitted.length,
-        total_applications: totalApps,
+        total_students: totalStudents, submitted_students: submittedStudents,
+        not_submitted: notSubmitted.length, total_applications: totalApps,
         approved: appApproved, rejected: appRejected, pending: appPending,
-        total_credit: totalCredit,
-        pass: passMain, fail: failMain, pass_threshold: PASS_THRESHOLD,
+        total_credit: totalCredit, pass: passMain, fail: failMain, pass_threshold: PASS_THRESHOLD,
       },
-      class_distribution: classEntries.map((e) => ({
-        class: e.name, major: e.major, ...e.a,
-      })),
-      dept_distribution: Array.from(deptMap.entries()).map(([k, v]) => ({ name: k, ...aggGroup(v) })),
-      status_distribution: statusDist,
-      daily_trend: trend,
-      fail_classes: classesWithFails.map((e) => ({
+      class_distribution: classEntries.map((e) => ({ class: e.name, major: e.major, ...e.a })),
+      fail_classes: failClasses.map((e) => ({
         class: e.name, major: e.major, fail_count: e.fails.length,
         fails: e.fails.map((s) => ({ student_no: s.student_no, full_name: s.full_name, total_credit: s.total_credit, gap: s.gap })),
       })),
+      status_distribution: statusDist,
+      daily_trend: trend,
     };
 
     await admin.from("submission_window_reports").insert({
       window_id, college_id: collegeId, summary, file_path: filePath, generated_by: actorId,
     });
     await admin.from("submission_windows").update({
-      report_generated_at: new Date().toISOString(),
-      report_path: filePath,
+      report_generated_at: new Date().toISOString(), report_path: filePath,
     }).eq("id", window_id);
 
     const { data: signed } = await admin.storage.from("application-files").createSignedUrl(filePath, 300);
@@ -723,7 +424,6 @@ Deno.serve(async (req) => {
 
 function json(obj: unknown, status: number) {
   return new Response(JSON.stringify(obj), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
