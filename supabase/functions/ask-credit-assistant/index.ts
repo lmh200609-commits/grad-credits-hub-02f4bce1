@@ -18,6 +18,7 @@ const SYSTEM_PROMPT = `你是「学分认定规则问答助手」，仅服务于
 4. 拒绝闲聊和与学分认定无关的问题，统一回复："我只能回答学分认定相关问题。"
 5. 涉及"我的"申请/学分明细时，仅可基于下方「我的学分汇总」段落作答；该段落为空时回复"暂无您的申请记录"。绝不编造申请编号、AI 结论、教师评语、学分数。
 6. 严禁泄露任何其他学生的信息。如果用户询问他人，明确拒绝。
+7. 当用户问"我是谁/我叫什么/我学号是多少/我哪个学院/我哪个班/我什么专业"等关于自身身份的问题时，必须严格基于下方"当前登录学生"段落如实回答，绝不允许说不知道或编造；该段落为空时回复"未识别到登录身份，请先登录"。
 
 【输出格式（必须严格遵守）】
 使用 markdown，固定三段，每段以二级标题开头：
@@ -39,6 +40,12 @@ function isPersonalQuery(q: string): boolean {
   const s = (q || "").toLowerCase();
   const personal = ["我的", "我累计", "我提交", "我之前", "我现在", "我已经", "我有多少", "我多少", "我的学分", "我的申请", "我的记录"];
   return personal.some((k) => s.includes(k));
+}
+
+// 识别"我是谁/我叫什么/我学号/我哪个学院/我哪个班"等身份类问题
+function isIdentityQuery(q: string): boolean {
+  const s = (q || "");
+  return /我是谁|我叫(什么|啥)|我的?名字|我学号|我的?学号|我哪个?学院|我哪个?系|我哪个?班|我什么专业|我的?专业|我是哪/.test(s);
 }
 
 // 识别"统计/盘点/总览"类问题：用户问规则/案例/佐证的数量、种类、有哪些类别等
@@ -150,6 +157,7 @@ Deno.serve(async (req) => {
     let myUserId: string | null = null;
     let myProfile: any = null;
     let mySummary = "";
+    let identityBlock = "";
     const authHeader = req.headers.get("Authorization") || "";
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
@@ -164,14 +172,23 @@ Deno.serve(async (req) => {
       } catch (_) { myUserId = null; }
     }
 
-    if (myUserId && isPersonalQuery(query)) {
+    // 无条件加载当前登录学生 profile（用于身份类问题）
+    if (myUserId) {
       const { data: prof } = await supabase
         .from("profiles")
-        .select("user_id, full_name, student_no, department, class_name")
+        .select("user_id, full_name, student_no, department, class_name, major, college_id, email, phone")
         .eq("user_id", myUserId)
         .maybeSingle();
       myProfile = prof || null;
+      let collegeName = "-";
+      if ((prof as any)?.college_id) {
+        const { data: col } = await supabase.from("colleges").select("name,short_name").eq("id", (prof as any).college_id).maybeSingle();
+        if (col) collegeName = (col as any).short_name || (col as any).name || "-";
+      }
+      identityBlock = `===== 当前登录学生 =====\n姓名：${(prof as any)?.full_name ?? "-"}\n学号：${(prof as any)?.student_no ?? "-"}\n所属学院：${collegeName}\n部门：${(prof as any)?.department ?? "-"}\n班级：${(prof as any)?.class_name ?? "-"}\n专业：${(prof as any)?.major ?? "-"}\n邮箱：${(prof as any)?.email ?? "-"}`;
+    }
 
+    if (myUserId && isPersonalQuery(query)) {
       const { data: rows } = await supabase
         .from("submission_summary")
         .select("application_id, status, description, submitted_at, ai_confidence, ai_suggested_credit, ai_reasoning, final_credit, reviewer_name, final_review_note, reviewed_at")
@@ -255,6 +272,15 @@ Deno.serve(async (req) => {
       .map((x) => x.c);
 
     if (scored.length === 0 && scoredCases.length === 0 && !mySummary) {
+      // 身份类问题：基于 identityBlock 直接回答，不再返回"未找到规则"
+      if (identityBlock && isIdentityQuery(query)) {
+        const p: any = myProfile || {};
+        const ans = normalizeMarkdown(`## 结论\n您是 ${p.full_name ?? "-"}（学号 ${p.student_no ?? "-"}）。\n\n## 依据\n- 姓名：${p.full_name ?? "-"}\n- 学号：${p.student_no ?? "-"}\n- 班级：${p.class_name ?? "-"}\n- 专业：${p.major ?? "-"}\n- 部门：${p.department ?? "-"}\n\n## 补充\n如需查询您的申请记录或累计学分，请输入"我的申请"或"我的学分"。`);
+        return new Response(JSON.stringify({
+          answer: ans, sections: toSections(ans), meta: { polished: false },
+          matched_rules: [], matched_cases_count: 0,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       const ans = normalizeMarkdown("## 结论\n未找到相关认定规则或案例，无法回答。\n\n## 依据\n知识库与案例库中暂无与您问题匹配的内容。\n\n## 补充\n请补充关键信息后再试：\n- 成果/证书全称\n- 级别（校级/省级/国家级/国际级）\n- 获奖等级\n- 您的参与角色（第一作者/团队成员等）");
       return new Response(JSON.stringify({
         answer: ans, sections: toSections(ans), meta: { polished: false },
@@ -292,6 +318,7 @@ Deno.serve(async (req) => {
     const fullMessages: Msg[] = [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "system", content: ragContext },
+      ...(identityBlock ? [{ role: "system" as const, content: identityBlock }] : []),
       ...(mySummary ? [{ role: "system" as const, content: mySummary }] : []),
       ...messages.slice(-20),
     ];

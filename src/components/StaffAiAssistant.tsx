@@ -17,8 +17,9 @@ import {
 } from "@/hooks/useStaffAssistantStore";
 
 const StaffAiAssistant = () => {
-  const { hasRole } = useAuth();
-  const role = hasRole("admin") ? "admin" : "teacher";
+  const { hasRole, isSuperAdmin } = useAuth();
+  const role = isSuperAdmin ? "super_admin" : hasRole("admin") ? "admin" : "teacher";
+  const roleLabel = role === "super_admin" ? "超级管理员" : role === "admin" ? "管理员" : "教师";
   const navigate = useNavigate();
   const { open, messages, input } = useStaffAssistantStore();
   const { setOpen, setMessages, setInput, clearMessages } = staffAssistantActions;
@@ -96,7 +97,9 @@ const StaffAiAssistant = () => {
   };
 
   const goCandidate = (c: Candidate) => {
-    const path = role === "admin" ? `/admin/users/students?search=${encodeURIComponent(c.student_no || c.full_name || "")}` : `/teacher/students/${c.user_id}`;
+    const path = role === "teacher"
+      ? `/teacher/students/${c.user_id}`
+      : `/admin/users/students?search=${encodeURIComponent(c.student_no || c.full_name || "")}`;
     navigate(path);
   };
 
@@ -118,7 +121,7 @@ const StaffAiAssistant = () => {
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4" />
           <span className="text-sm font-semibold">工作助手</span>
-          <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{role === "admin" ? "管理员" : "教师"}</span>
+          <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{roleLabel}</span>
         </div>
         <div className="flex items-center gap-1">
           <Button

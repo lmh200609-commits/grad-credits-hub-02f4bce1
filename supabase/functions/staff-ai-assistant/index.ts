@@ -68,6 +68,8 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 8. 【数据来源严格基于数据库】凡涉及具体学生、申请、证书类型、AI/教师审核内容，必须先调用对应工具读取数据库。工具返回为空时必须明确回复"数据库中暂无相关记录"，绝不编造姓名、学号、学分、审核意见、证书类型、典型学分等任何细节。
 9. 询问"某学生的资料/记录/申请/AI审/教师审"时，优先用 student_full_profile + student_submission_history；询问"某次申请怎么走的"用 submission_timeline；询问"某证书几学分/属于哪类"用 certificate_type_lookup。`;
 
+const IDENTITY_RULE = `\n10. 当用户问"我是谁/我叫什么/我什么角色/我哪个学院/我哪个部门/我邮箱"等关于自身身份的问题时，必须严格基于下方系统消息中"当前登录用户"段落如实回答（姓名、角色、所属学院等），绝不允许说不知道或编造。`;
+
 const FORMAT_GUIDE = `\n\n【输出格式】使用 markdown：第一行一句结论；之后用 ## 二级标题分段；列表用 -；并列信息 ≥5 行必须用表格。禁止一级标题、emoji、分割线、整篇代码块、寒暄过程语（如"我将为您查询…"）。`;
 
 const TOOLS = [
@@ -538,14 +540,52 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // ---- 解析当前调用者身份，注入"当前登录用户"上下文 ----
+    let identityBlock = "";
+    const authHeader = req.headers.get("Authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      try {
+        const userClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_ANON_KEY")!,
+          { global: { headers: { Authorization: authHeader } } },
+        );
+        const { data: claims } = await userClient.auth.getClaims(token);
+        const uid = claims?.claims?.sub as string | undefined;
+        if (uid) {
+          const [{ data: prof }, { data: ur }] = await Promise.all([
+            supabase.from("profiles").select("full_name,email,department,class_name,major,student_no,college_id").eq("user_id", uid).maybeSingle(),
+            supabase.from("user_roles").select("role,college_id").eq("user_id", uid),
+          ]);
+          const roles = (ur || []).map((r: any) => r.role);
+          const collegeIds = Array.from(new Set((ur || []).map((r: any) => r.college_id).filter(Boolean)));
+          const cid = (prof as any)?.college_id || collegeIds[0];
+          let collegeName = "（未绑定学院）";
+          if (cid) {
+            const { data: col } = await supabase.from("colleges").select("name,short_name").eq("id", cid).maybeSingle();
+            if (col) collegeName = (col as any).short_name || (col as any).name || collegeName;
+          }
+          const roleZh = roles.includes("super_admin") ? "超级管理员"
+            : roles.includes("admin") ? "学院管理员"
+            : roles.includes("teacher") ? "教师"
+            : roles.includes("student") ? "学生" : "未知角色";
+          const isSuper = roles.includes("super_admin");
+          identityBlock = `===== 当前登录用户 =====\n姓名：${(prof as any)?.full_name ?? "-"}\n邮箱：${(prof as any)?.email ?? "-"}\n角色：${roleZh}${isSuper ? "（可访问全校所有学院数据）" : ""}\n所属学院：${isSuper ? "全校" : collegeName}\n部门/学院：${(prof as any)?.department ?? "-"}\n${(prof as any)?.student_no ? `学号：${(prof as any).student_no}\n` : ""}全部角色：${roles.join("、") || "-"}`;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
     const aiCfg = await getAiConfig("staff-ai-assistant");
     const endpoint = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
     const apiKey = aiCfg.apiKey;
     const model = aiCfg.model;
     const provider = aiCfg.vendor;
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
-    let convo: Msg[] = [sysMsg, ...messages.slice(-12)];
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
+    const convo: Msg[] = [sysMsg];
+    if (identityBlock) convo.push({ role: "system", content: identityBlock });
+    convo.push(...messages.slice(-12));
 
     let action: any = null;
     let candidates: any[] | null = null;
