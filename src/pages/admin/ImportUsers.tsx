@@ -439,6 +439,29 @@ const ImportUsers = () => {
           </CardContent>
 
           <div className="border-t bg-muted/30 p-3">
+            {/* 快速提问模板 — 仅在未进入预览阶段时显示 */}
+            {!pendingRows && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {[
+                  "默认角色=教师",
+                  "默认角色=学生",
+                  "怎么导入教师账号？",
+                  "学院列必须填什么？",
+                  "密码规则是什么？",
+                  "导入失败怎么排查？",
+                ].map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => setInput(q)}
+                    disabled={loading}
+                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <input
                 ref={fileRef}
