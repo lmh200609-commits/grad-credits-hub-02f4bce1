@@ -231,7 +231,7 @@ const ImportUsers = () => {
       push({ kind: "file", name: file.name, rowCount: rows.length });
 
       // Per-row format validation BEFORE allowing import.
-      const rowErrors = rows.map(validateRow);
+      const rowErrors = rows.map((r) => validateRow(r, isSuperAdmin));
       const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
 
       setPendingRows(rows);
@@ -270,7 +270,7 @@ const ImportUsers = () => {
   const confirmImport = async () => {
     if (!pendingRows) return;
     // Block import if any pending row failed format validation.
-    const errs = pendingRows.map(validateRow);
+    const errs = pendingRows.map((r) => validateRow(r, isSuperAdmin));
     const badCount = errs.filter((e) => Object.keys(e).length > 0).length;
     if (badCount > 0) {
       toast({
