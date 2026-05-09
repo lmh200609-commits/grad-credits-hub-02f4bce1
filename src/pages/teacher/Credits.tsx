@@ -10,10 +10,12 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Download, Trophy, Users, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Download, Trophy, Users, CheckCircle2, AlertTriangle, ChevronDown } from "lucide-react";
 import TablePagination from "@/components/TablePagination";
 import * as XLSX from "xlsx";
 
@@ -42,6 +44,11 @@ const Credits = () => {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState(sp.get("dept") ?? ALL);
   const [passFilter, setPassFilter] = useState<PassFilter>((sp.get("passFilter") as PassFilter) ?? "all");
+  const [classes, setClasses] = useState<Set<string>>(() => {
+    const raw = sp.get("classes");
+    return new Set(raw ? raw.split(",").map(decodeURIComponent).filter(Boolean) : []);
+  });
+  const [classQuery, setClassQuery] = useState("");
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -58,11 +65,18 @@ const Credits = () => {
     setSp(next, { replace: true });
   };
 
+  const updateClassesUrl = (set: Set<string>) => {
+    const next = new URLSearchParams(sp);
+    if (set.size === 0) next.delete("classes");
+    else next.set("classes", Array.from(set).map(encodeURIComponent).join(","));
+    setSp(next, { replace: true });
+  };
+
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase.rpc("get_student_credit_ranking");
       if (error) { console.error(error); return; }
-      const list: Row[] = (data ?? []).map((r: any) => ({
+      const sorted = (data ?? []).map((r: any) => ({
         user_id: r.user_id,
         full_name: r.full_name,
         student_no: r.student_no,
@@ -71,9 +85,15 @@ const Credits = () => {
         class_name: r.class_name,
         total_credit: Number(r.total_credit ?? 0),
         approved_count: Number(r.approved_count ?? 0),
-        rank: Number(r.rank ?? 0),
-      }));
-      setRows(list);
+        rank: 0,
+      })).sort((a: Row, b: Row) => b.total_credit - a.total_credit);
+      let rank = 0;
+      let prev = Number.POSITIVE_INFINITY;
+      const ranked: Row[] = sorted.map((r: Row) => {
+        if (r.total_credit < prev) { rank += 1; prev = r.total_credit; }
+        return { ...r, rank };
+      });
+      setRows(ranked);
     })();
   }, []);
 
@@ -82,10 +102,16 @@ const Credits = () => {
     [rows],
   );
 
+  const classOptions = useMemo(() => {
+    const pool = dept === ALL ? rows : rows.filter((r) => r.department === dept);
+    return Array.from(new Set(pool.map((r) => r.class_name).filter(Boolean) as string[])).sort();
+  }, [rows, dept]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (dept !== ALL && r.department !== dept) return false;
+      if (classes.size > 0 && !classes.has(r.class_name ?? "")) return false;
       if (passFilter === "pass" && r.total_credit < PASS_THRESHOLD) return false;
       if (passFilter === "fail" && r.total_credit >= PASS_THRESHOLD) return false;
       if (!q) return true;
@@ -93,9 +119,9 @@ const Credits = () => {
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q));
     });
-  }, [rows, search, dept, passFilter]);
+  }, [rows, search, dept, passFilter, classes]);
 
-  useEffect(() => { setPage(0); }, [search, dept, passFilter]);
+  useEffect(() => { setPage(0); }, [search, dept, passFilter, classes]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const passStats = useMemo(() => ({
@@ -146,7 +172,7 @@ const Credits = () => {
 
         <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-4">
+          <CardContent className="grid gap-3 md:grid-cols-5">
             <Input placeholder="搜索姓名 / 学号 / 班级 / 专业" value={search} onChange={(e) => setSearch(e.target.value)} />
             <Select value={dept} onValueChange={(v) => { setDept(v); updateFilter("dept", v); }}>
               <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
@@ -155,6 +181,58 @@ const Credits = () => {
                 {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="justify-between">
+                  <span className="truncate">{classes.size === 0 ? "全部班级" : `已选 ${classes.size} 个班级`}</span>
+                  <ChevronDown className="ml-2 h-4 w-4 opacity-60" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 p-0">
+                <div className="border-b p-2">
+                  <Input placeholder="搜索班级…" value={classQuery} onChange={(e) => setClassQuery(e.target.value)} className="h-8" />
+                </div>
+                <div className="flex items-center justify-between border-b px-2 py-1.5 text-xs">
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => { const next = new Set(classOptions); setClasses(next); updateClassesUrl(next); }}
+                  >
+                    全选当前
+                  </button>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:underline"
+                    onClick={() => { const next = new Set<string>(); setClasses(next); updateClassesUrl(next); }}
+                  >
+                    清空
+                  </button>
+                </div>
+                <div className="max-h-64 overflow-auto p-1">
+                  {classOptions
+                    .filter((c) => !classQuery.trim() || c.toLowerCase().includes(classQuery.trim().toLowerCase()))
+                    .map((c) => {
+                      const checked = classes.has(c);
+                      return (
+                        <label key={c} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              const next = new Set(classes);
+                              if (v) next.add(c); else next.delete(c);
+                              setClasses(next); updateClassesUrl(next);
+                            }}
+                          />
+                          <span className="truncate">{c}</span>
+                        </label>
+                      );
+                    })}
+                  {classOptions.length === 0 && (
+                    <div className="px-2 py-4 text-center text-xs text-muted-foreground">暂无班级</div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Select value={passFilter} onValueChange={(v) => { setPassFilter(v as PassFilter); updateFilter("passFilter", v); }}>
               <SelectTrigger><SelectValue placeholder="是否合格" /></SelectTrigger>
               <SelectContent>
