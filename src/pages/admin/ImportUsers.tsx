@@ -698,7 +698,7 @@ const MessageBubble = ({
           )}
           {msg.ok ? `导入成功${msg.created ? ` · 共 ${msg.created} 个账号` : ""}` : "导入失败"}
         </div>
-        <div className="text-sm">{msg.text}</div>
+        <div className="text-sm">{toPlainText(msg.text)}</div>
         {msg.ok && msg.sampleNos && msg.sampleNos.length > 0 && (
           <div className="rounded border bg-background/60 px-2 py-1.5 text-xs">
             <span className="text-muted-foreground">示例学号：</span>
