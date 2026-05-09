@@ -209,7 +209,7 @@ const WindowReport = () => {
           <KPI l="通过申请" v={k.approved} tone="ok" />
           <KPI l="驳回申请" v={k.rejected} tone={k.rejected > 0 ? "bad" : undefined} />
           <KPI l="待审申请" v={k.pending} tone={k.pending > 0 ? "warn" : undefined} />
-          <KPI l="累计通过学分" v={Number(k.total_credit).toFixed(1)} />
+          <KPI l="累计通过学分（全学院）" v={Number(k.total_credit).toFixed(1)} />
           <KPI l={`合格人数 (≥${s.pass_threshold})`} v={k.pass} tone="ok" />
           <KPI l="不合格人数" v={k.fail} tone={k.fail > 0 ? "bad" : undefined} />
           <KPI l="合格率" v={pct(k.pass, k.total_students)} />
@@ -236,7 +236,7 @@ const WindowReport = () => {
           </div>
         )}
 
-        <h2 className="section-h">学分合格情况 <span className="hint">（全体学生 · 含未提交者）</span></h2>
+        <h2 className="section-h">学分合格情况 <span className="hint">（全体学生 · 含未提交者 · 学分=全学院累计已通过）</span></h2>
         <RTable
           head={["合格阈值", "合格人数", "不合格人数", "合格率"]}
           rows={s.pass_tiers.map((t: any) => [
