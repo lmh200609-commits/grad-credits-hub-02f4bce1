@@ -63,10 +63,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: roleRow } = await admin
+    // 用户可能同时拥有多条角色记录（admin + super_admin），用 limit(1) 而非
+    // maybeSingle() 以避免 PostgREST 多行错误导致的误 Forbidden。
+    const { data: roleRows } = await admin
       .from("user_roles").select("role")
-      .eq("user_id", callerId).in("role", ["admin", "super_admin"]).maybeSingle();
-    if (!roleRow) return json({ error: "Forbidden" }, 403);
+      .eq("user_id", callerId).in("role", ["admin", "super_admin"]).limit(1);
+    if (!Array.isArray(roleRows) || roleRows.length === 0) {
+      return json({ error: "Forbidden" }, 403);
+    }
 
     const body = await req.json().catch(() => ({}));
     const messages = (body.messages ?? []) as ChatMsg[];
