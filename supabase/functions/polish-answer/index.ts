@@ -1,4 +1,5 @@
 import { getAiConfig } from "../_shared/ai-router.ts";
+import { stripDecorations } from "../_shared/format-answer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,6 +14,7 @@ const SYSTEM_PROMPT = `你是中文排版编辑。把用户给你的内容改写
 - 严禁修改任何数字、姓名、学号、学分、申请编号、日期；
 - 严禁新增事实，也不要省略已有事实；
 - 不要使用一级标题、emoji、HTML、整篇代码块包裹；
+- 严禁使用 **加粗**、__加粗__、*斜体* 等强调符号；严禁使用 1️⃣2️⃣3️⃣ 等带圈数字和 ⚠️📎👇✅❌ 等装饰图标；
 - 只输出整理后的 markdown 正文，不要解释。`;
 
 Deno.serve(async (req) => {
@@ -58,7 +60,7 @@ Deno.serve(async (req) => {
       });
     }
     const data = await resp.json();
-    const polished = data?.choices?.[0]?.message?.content?.trim() || raw;
+    const polished = stripDecorations(data?.choices?.[0]?.message?.content?.trim() || raw);
     return new Response(JSON.stringify({ polished, used: aiCfg.vendor }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
