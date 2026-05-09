@@ -1,55 +1,73 @@
-## 问题
+## 目标
 
-1. **编辑批次弹窗"看不清楚"**（图二）：弹窗背景被穿透，可以透过卡片看到下方表格的内容（"批次列表 / 开始时间 / 结束时间"等），文字与背景叠在一起完全不可读。原因：当前 `Dialog` 用 `bg-background`，而学院主题动态写入的 `--background`（HSL token）在某些情况下与卡片底色一致或半透明，加上 `DialogOverlay` 默认 `bg-black/80` 在低对比度颜色下也压不住后面的卡片纹理。
+重写 `supabase/functions/generate-window-report/index.ts`，让批次报告内容更全面、排版更美观。
 
-2. **操作列四个图标缺少 hover 提示**（图三）：`编辑 / 生成报告 / 下载报告 / 删除` 四个 ghost 按钮只有图标，鼠标悬停时没有任何文字提示，新用户不知道每个图标含义。
+## 阈值约定
 
-## 修复方案
+- "合格" = 学生在该批次内 **累计通过学分 ≥ 4**（与数据看板一致）
+- 同时给出 ≥2、≥6 两档对照人数，便于学院灵活查看
 
-### 一、弹窗内容可读性
+## 引擎切换
 
-在 `src/pages/admin/SubmissionWindows.tsx` 的 `<DialogContent>` 上做两件事：
+`xlsx` 社区版无法设置颜色/边框/合并样式。改用 **ExcelJS**（`https://esm.sh/exceljs@4.4.0`）以支持：表头底色、边框、合并居中、冻结首行、列自动宽度、数字格式、斑马条纹。
 
-- 加 `className="bg-card text-card-foreground shadow-2xl border"`，强制使用 card token（不会被学院主题的 `--background` 覆盖成透明）。
-- 内容容器加足够的 `space-y` 和 `p-6` 已有，标题与表单之间的层次没问题，只是现在透出了背景。改完即可。
+## Sheet 结构（共 7 张）
 
-如果想顺手把整体提升一档，把 DialogTitle 之外补一个 DialogDescription（"修改批次的开放时间和启用状态"），表单字段之间用 `border-t` 分隔，看上去更克制。
+### 1. 「报告概览」
+- 顶部合并大标题：`{学院名} · {批次名} · 提交报告`
+- 副标题：批次时间区间、生成时间、生成人
+- KPI 卡片区（合并单元格 + 配色），分两行：
+  - 行 1：学院学生总数 / 已提交 / 未提交 / 提交率
+  - 行 2：申请总数 / 通过 / 驳回 / 待审
+  - 行 3：累计通过学分 / 合格人数(≥4) / 不合格人数 / 合格率
+- 下方迷你表：状态分布（含百分比）
 
-### 二、四个操作图标加悬浮文字
+### 2. 「按班级分布」⭐新增
+列：班级、专业、班级人数、提交人数、未提交、提交率、申请总数、通过、驳回、待审、累计学分、人均学分、合格人数、不合格人数、合格率
+- 末行汇总（加粗 + 浅灰底）
+- 合格率用百分比格式 + 条件着色（≥80% 绿，<60% 红）
 
-复用项目里已有的 `Tooltip` 组件（`TooltipProvider` 已经在 `src/App.tsx` 全局包裹）。在 `SubmissionWindows.tsx` 顶部新增：
+### 3. 「按院系/专业分布」
+同上结构，按 `department` 与 `major` 两段输出
 
-```tsx
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-```
+### 4. 「学生汇总」（增强）
+列：学号、姓名、院系、专业、班级、提交数、通过、驳回、待审、累计学分、是否合格(≥4)
+- 冻结首行；合格列用 ✓/✗ + 颜色
 
-把每个操作按钮包成：
+### 5. 「申请明细」（增强）
+列：提交时间、学号、姓名、班级、状态、匹配规则、AI 建议学分、AI 置信度、最终学分、关键词、描述、审核时间
+- 状态列条件着色（通过=绿、驳回=红、待审=橙）
+- 描述列限宽 + 自动换行
 
-```tsx
-<Tooltip>
-  <TooltipTrigger asChild>
-    <Button size="sm" variant="ghost" onClick={() => openEdit(w)} aria-label="编辑批次">
-      <Pencil className="h-4 w-4" />
-    </Button>
-  </TooltipTrigger>
-  <TooltipContent>编辑批次</TooltipContent>
-</Tooltip>
-```
+### 6. 「未提交名单」
+列：学号、姓名、院系、专业、班级
+- 可直接发给班主任催办
 
-四个按钮对应文案：
+### 7. 「图表数据」
+保留：状态分布、每日提交趋势、规则匹配 Top 20、院系分布——四张紧凑小表，便于在 Excel 内自行插入图表
 
-- ✏️ Pencil → **编辑批次**
-- 📄 FileSpreadsheet → **生成报告**（生成中改为"生成中…"）
-- ⬇️ Download → **下载报告**
-- 🗑️ Trash2 → **删除批次**（已生成报告不可删，禁用态 tooltip 可显示"已生成报告，无法删除"）
+## 通用样式
 
-## 改动文件
+- 表头：深色底（#1F4E79）+ 白字加粗 + 居中
+- 数据区：12px、左对齐文本/右对齐数字
+- 斑马条纹：偶数行 #F5F8FB
+- 全表细边框
+- 各列宽度按内容估算（中文按 2 字符宽计算）
+- 冻结首行 + 自动筛选
 
-- `src/pages/admin/SubmissionWindows.tsx`（唯一文件）
+## 计算逻辑要点
 
-## 验收
+- `pass_count = 学生在批次内 通过学分汇总 ≥ 4` 的人数
+- `fail_count = 已提交学生数 − pass_count`（未提交不计入合格/不合格）
+- 提交率/合格率保留 1 位小数
+- `summary` JSON 同步加入 `pass`、`class_distribution`、`major_distribution` 字段，供后续前端可视化复用
 
-- 打开"编辑批次"弹窗，背景为不透明的卡片色，表单字段清晰可读，下方表格不再透出来。
-- 鼠标悬停四个操作图标，0.5s 左右出现"编辑批次 / 生成报告 / 下载报告 / 删除批次"提示。
-- 删除按钮在已生成报告时仍禁用，hover 显示禁用原因。
-- 其他功能行为不变。
+## 不改动
+
+- 触发方式、鉴权、文件存储路径、`submission_window_reports` 表结构、前端调用契约
+- 仅扩展 `summary` JSON 字段（向后兼容）
+
+## 风险与回滚
+
+- ExcelJS 在 Deno esm.sh 下可用，已在 supabase edge function 社区案例中验证；如失败回退到 `xlsx-js-style`
+- 本改动只触及单个 edge function 文件，回滚成本低
