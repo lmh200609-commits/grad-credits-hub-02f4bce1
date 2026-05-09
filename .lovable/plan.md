@@ -1,45 +1,61 @@
-# 学生端清理 + 登录按钮修复
+# 学分排名：并列排名 + 班级多选筛选
 
-## 1. 学生端删除"实时一致性"入口
+## 需求
 
-`src/components/AppLayout.tsx` 中 `studentItems`（第 67-73 行）包含一项：
+1. **并列排名**：累计学分相同的学生显示相同名次（dense rank），从高到低。若全员都是 0 分，则全部并列第 1。
+2. **班级筛选支持批量**：在原有「院系」筛选旁新增「班级」筛选，支持多选若干班级，命中其一即纳入。
+
+涉及两个页面：
+- `src/pages/admin/Credits.tsx`（学院管理员 / 超管）
+- `src/pages/teacher/Credits.tsx`（教师，数据来自 RPC `get_student_credit_ranking`）
+
+## 1. 并列排名（dense rank）
+
+前端统一计算，避免依赖后端 RPC：
+
+```ts
+// 排序后计算 dense rank
+let rank = 0, prev = Number.POSITIVE_INFINITY;
+const ranked = sorted.map((r) => {
+  if (r.total_credit < prev) { rank += 1; prev = r.total_credit; }
+  return { ...r, rank };
+});
 ```
-{ title: "实时一致性", url: "/diagnostics/realtime", icon: Activity }
-```
-这是面向运维 / 管理员的诊断页，不应暴露给学生。
 
-**改动**：从 `studentItems` 移除该条目。教师端、学院管理员、超级管理员保留（他们需要排查实时同步问题）。
+- admin 页：在 `setRows` 之前生成 `rank` 字段（Row 类型加 `rank: number`），表格直接渲染 `r.rank`，不再用 `page * PAGE_SIZE + i + 1`。
+- teacher 页：忽略 RPC 返回的 `rank`，按相同逻辑在前端重算（保证「全 0 → 全部第 1」与 admin 一致）。
 
-## 2. 登录按钮"有时消失"的根因
+导出 Excel 同样使用计算后的 `r.rank`。
 
-登录页截图显示「登录」按钮变成了纯白色块，文字不可见。原因：
+## 2. 班级多选筛选
 
-- `src/pages/Login.tsx` 第 82 行的 `<Button>` 使用默认 `variant="default"`，样式是 `bg-primary text-primary-foreground`。
-- `src/hooks/useCollegeTheme.ts` 在用户登录某学院后，会把 `--primary` 写到 `document.documentElement.style` 上（来自学院主题，可能是接近白色的浅色，或来自校徽提取色）。
-- 学生 / 老师**登出**后跳到 `/login`：Login 页面**不渲染** `AppLayout`，因此 `useCollegeTheme` 卸载，但它的清理只在 `collegeId` 变 null 时执行——而登出后整个组件直接卸载，`useEffect` 的 cleanup 只移除 realtime channel，**不会** `removeProperty("--primary")`。残留的浅色 `--primary` 让按钮和背景同色 → "登录"按钮消失。
-- 此外 `--background` 一旦被学院主题覆盖，从未被清除。
+新增交互：
+- 用 `Popover` + 多个 `Checkbox`（shadcn 已有）做下拉多选（不用 Combobox 以减少依赖）。触发器是一个 `Button variant="outline"`，显示「全部班级」/「已选 N 个班级」。
+- 班级列表来自 `rows.map(r => r.class_name)` 去重后字母排序。
+- 顶部加「清空」按钮，并支持「全选 / 反选」操作。
+- URL 同步：`classes=班级A,班级B`（逗号分隔，URL encode）；初次加载从 search params 读入。
+- 筛选逻辑：`if (selectedClasses.size > 0 && !selectedClasses.has(r.class_name ?? "")) return false;`。
+- 计数行更新："共 X 名 · 已选 N 个班级"。
+- 筛选区从 `md:grid-cols-4` 调整为 `md:grid-cols-5` 以容纳新过滤器。
 
-**修复方案（双保险）**：
-
-A. 在 `useCollegeTheme.ts` 的 `useEffect` cleanup 中，无条件 `removeProperty` 所有它可能写入的变量（`--primary`、`--ring`、`--sidebar-primary`、`--sidebar-ring`、`--accent`、`--background`、`--radius`），这样组件卸载时一定会还原。同时把 `collegeId` 为 null 的分支也加上 `--background`、`--accent` 的清理。
-
-B. 把 `Login.tsx` 中的「登录」按钮改成 `variant="solid"`，使用稳定的 `--action` / `--action-foreground` token（上次已加），即便主题变量异常也始终是深底白字。
-
-两步组合后，登录按钮在任何 session 状态下都保持可见。
+为兼容老 URL，仍保留 `dept` 单选。
 
 ## 技术细节
 
 文件改动：
 
-1. `src/components/AppLayout.tsx`
-   - 从 `studentItems` 删除 `实时一致性` 项。
+1. `src/pages/admin/Credits.tsx`
+   - `Row` 增加 `rank: number`；构建列表时按学分降序排序后用 dense-rank 算法填充 `rank`。
+   - 表格渲染 `#{r.rank}`；导出 Excel 用 `r.rank`。
+   - 新状态 `classes: Set<string>`，与 URL 参数 `classes` 双向同步（`updateClassFilter` 写 `next.set/delete`）。
+   - 渲染 Popover：`Button` 触发 → `PopoverContent` 含搜索框（按班级名过滤可选项）+ 「全选 / 清空」+ Checkbox 列表。
+   - `filtered` 中加入班级判断；`useEffect` 重置分页时把 `classes` 也作为依赖。
+   - 计算 `classes` 候选列表：`Array.from(new Set(rows.map(r => r.class_name).filter(Boolean))).sort()`，并按当前 `dept` 过滤后展示（如果选了院系，只显示该院系下的班级）。
 
-2. `src/hooks/useCollegeTheme.ts`
-   - 抽出 `resetThemeVars(root)`，移除 `--primary`、`--ring`、`--sidebar-primary`、`--sidebar-ring`、`--accent`、`--background`、`--radius`。
-   - `collegeId` 为 null 分支调用 `resetThemeVars`。
-   - useEffect 的 cleanup 中追加 `resetThemeVars(document.documentElement)`，确保切换路由 / 登出时彻底清空。
+2. `src/pages/teacher/Credits.tsx`
+   - 同样的 dense-rank 逻辑（覆盖 RPC 的 rank）。
+   - 同样的班级多选 UI 与 URL 同步。
 
-3. `src/pages/Login.tsx`
-   - `<Button type="submit" variant="solid" className="w-full" ...>`。
+3. 不改数据库；RPC 现有字段够用。
 
-不动业务逻辑、RLS、数据表。
+不改 RLS、不改后端逻辑，仅前端展示和筛选。
