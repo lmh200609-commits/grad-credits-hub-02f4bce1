@@ -163,10 +163,16 @@ Deno.serve(async (req) => {
 
     // Build college name -> id lookup once for super_admin imports.
     const collegeByName = new Map<string, string>();
+    const collegeByNormalized = new Map<string, string>();
+    const normalizeCollege = (s: string) =>
+      s.toLowerCase().replace(/[与和&\s院（）()]/g, "");
     if (isSuperAdmin) {
       const { data: cols } = await admin.from("colleges").select("id, name");
       for (const c of cols ?? []) {
-        collegeByName.set(String((c as any).name).trim(), (c as any).id as string);
+        const name = String((c as any).name).trim();
+        const id = (c as any).id as string;
+        collegeByName.set(name, id);
+        collegeByNormalized.set(normalizeCollege(name), id);
       }
     }
 
@@ -200,7 +206,7 @@ Deno.serve(async (req) => {
         if (!cname) {
           errors.push({ line, message: "超级管理员导入必须填写「学院」列" });
         } else {
-          const cid = collegeByName.get(cname);
+          const cid = collegeByName.get(cname) ?? collegeByNormalized.get(normalizeCollege(cname));
           if (!cid) {
             errors.push({ line, message: `学院「${cname}」未在系统中找到，请核对学院名称是否与系统一致` });
           } else {
