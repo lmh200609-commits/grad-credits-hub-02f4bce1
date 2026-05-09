@@ -22,6 +22,21 @@ export function normalizeMarkdown(input: string): string {
   s = s.replace(/\n{3,}/g, "\n\n");
   for (const re of FILLERS) s = s.replace(re, "");
   s = s.replace(/^[ \t]*[•·]\s+/gm, "- ");
+  // 剥离装饰性带圈数字（1️⃣ 2️⃣ ...）和提示性 emoji，避免「AI 感」过重。
+  s = s.replace(/[\u0030-\u0039]\uFE0F?\u20E3/g, "");
+  s = s.replace(/[⚠️📎👇✅❌🎉🤖💡⭐️✨📝📌🔔ℹ️👉👆👀]/g, "");
+  return s.trim();
+}
+
+/** 剥离 markdown 强调符 / 装饰 emoji，用于纯文本输出场景。 */
+export function stripDecorations(input: string): string {
+  if (!input) return "";
+  let s = String(input);
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "$1");
+  s = s.replace(/__([^_\n]+)__/g, "$1");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2");
+  s = s.replace(/[\u0030-\u0039]\uFE0F?\u20E3/g, "");
+  s = s.replace(/[⚠️📎👇✅❌🎉🤖💡⭐️✨📝📌🔔ℹ️👉👆👀]/g, "");
   return s.trim();
 }
 
