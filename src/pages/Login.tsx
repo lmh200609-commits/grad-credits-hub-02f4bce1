@@ -48,13 +48,14 @@ const Login = () => {
   };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-cover bg-center opacity-40 animate-bg-drift"
-        style={{ backgroundImage: `url(${loginBg})`, filter: "blur(2px)" }}
+        className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-50 animate-bg-drift"
+        style={{ backgroundImage: `url(${loginBg})`, filter: "blur(3px)" }}
       />
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-background/40" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-background/50" />
+      <div className="relative z-10 w-full flex items-center justify-center">
       <Card className="w-full max-w-md backdrop-blur-md bg-card/85 border-white/40 shadow-xl">
         <CardHeader className="space-y-2 text-center">
           <CardTitle className="text-2xl">学分认证系统</CardTitle>
