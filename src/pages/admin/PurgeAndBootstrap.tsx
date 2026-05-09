@@ -69,7 +69,7 @@ export default function PurgeAndBootstrap() {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>不可恢复</AlertTitle>
           <AlertDescription>
-            将永久清空：申请、评审、提交流水、审计日志；删除所有 student/teacher 账号及其档案；
+            将永久清空：申请、评审、提交流水、审计日志；删除所有学生与教师账号及其档案；
             创建一个新的 A+8 位数字管理员账号（12 位随机密码）。当前登录的管理员不会被删除。
           </AlertDescription>
         </Alert>

@@ -124,7 +124,7 @@ const RealtimeDiagnostics = () => {
 
     if (!spec.realtimeEnabled) {
       status = "no-realtime";
-      detail = "该表未加入 supabase_realtime 发布，仅依赖轮询";
+      detail = "该表未加入实时发布通道，仅依赖轮询";
     } else if (srv?.error) {
       status = "no-data";
       detail = `查询失败：${srv.error}`;
@@ -299,7 +299,7 @@ const RealtimeDiagnostics = () => {
             <CardTitle className="text-base">使用说明</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>1. 不同角色登录后打开本页面，行数与"服务端最近变更"会按 RLS 自动过滤——学生只看到自己的行，教师/管理员看到全部。</p>
+            <p>1. 不同角色登录后打开本页面，行数与"服务端最近变更"会按权限策略自动过滤——学生只看到自己的行，教师/管理员看到全部。</p>
             <p>2. 在另一个浏览器/窗口里执行操作（提交申请、教师审核），本页面对应表的"最近实时事件"应在 1 秒内更新。</p>
             <p>3. 服务端快照每 15 秒自动刷新一次，也可手动点"刷新服务端"。</p>
             <p>4. 当"服务端最近变更"晚于"事件接收时间"超过 {TOLERANCE_MS / 1000}s，本页面会标红"可能漏事件"。</p>

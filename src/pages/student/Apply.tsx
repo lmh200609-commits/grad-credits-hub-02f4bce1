@@ -731,7 +731,7 @@ const ApplyPage = () => {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
                           <Wand2 className="h-3.5 w-3.5" />
-                          <span>智能推荐（根据您的输入自动匹配 Top {recommendedKeywords.length}）</span>
+                          <span>智能推荐（根据您的输入自动匹配前 {recommendedKeywords.length} 个）</span>
                         </div>
                         <button
                           type="button"
@@ -764,7 +764,7 @@ const ApplyPage = () => {
                       <ChevronDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" />
                     </CollapsibleTrigger>
                     <CollapsibleContent className="space-y-1.5 px-2 pb-2">
-                      <p className="text-[11px] text-muted-foreground">仅供参考，点击 chip 一键加入自定义关键词</p>
+                      <p className="text-[11px] text-muted-foreground">仅供参考，点击标签即可加入自定义关键词</p>
                       <div className="flex flex-wrap gap-1">
                         {libraryKeywords
                           .filter((k) => !customKeywords.includes(k))
