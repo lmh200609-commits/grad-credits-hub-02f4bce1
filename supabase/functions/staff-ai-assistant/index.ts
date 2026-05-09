@@ -199,6 +199,18 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "account_provenance",
+      description: "查询某账号是谁、什么时候、用什么文件导入的。来源为 audit_logs 中的 import_users 事件。入参为姓名或学号。",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "姓名或学号" } },
+        required: ["query"],
+      },
+    },
+  },
 ];
 
 async function execTool(name: string, args: any, supabase: ReturnType<typeof createClient>, userRole: string = "admin") {
