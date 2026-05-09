@@ -131,7 +131,7 @@ const AiModelsPage = () => {
       <div className="mx-auto max-w-6xl space-y-6">
         <PageHeader
           title="AI 模型设置"
-          description="配置系统内部 AI 调用使用的中国厂商模型。每个功能可单独绑定不同提供商。所有 API Key 加密存储，前端不可见。"
+          description="配置系统内部 AI 调用使用的中国厂商模型。每个功能可单独绑定不同提供商。所有 API 密钥 加密存储，前端不可见。"
           actions={
             <Button onClick={() => { setEditing(null); setProviderOpen(true); }}>
               <Plus className="mr-1 h-4 w-4" /> 新增提供商
@@ -446,8 +446,8 @@ const ProviderDialog = ({
   };
 
   const test = async () => {
-    if (!baseUrl) { toast({ title: "请填写 Base URL", variant: "destructive" }); return; }
-    if (!apiKey && !editing) { toast({ title: "请填写 API Key", variant: "destructive" }); return; }
+    if (!baseUrl) { toast({ title: "请填写接口地址", variant: "destructive" }); return; }
+    if (!apiKey && !editing) { toast({ title: "请填写 API 密钥", variant: "destructive" }); return; }
     setTesting(true); setTestResult(null);
     try {
       const preset = VENDOR_PRESETS.find((p) => p.vendor === vendor);
@@ -465,8 +465,8 @@ const ProviderDialog = ({
 
   const save = async () => {
     if (!name.trim()) { toast({ title: "请填写名称", variant: "destructive" }); return; }
-    if (!baseUrl.trim()) { toast({ title: "请填写 Base URL", variant: "destructive" }); return; }
-    if (!editing && !apiKey.trim()) { toast({ title: "请填写 API Key", variant: "destructive" }); return; }
+    if (!baseUrl.trim()) { toast({ title: "请填写接口地址", variant: "destructive" }); return; }
+    if (!editing && !apiKey.trim()) { toast({ title: "请填写 API 密钥", variant: "destructive" }); return; }
     setSaving(true);
     try {
       await callAdmin("upsert_provider", {
