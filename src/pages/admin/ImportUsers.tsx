@@ -47,7 +47,7 @@ type RowErrors = Record<string, string>;
 const CURRENT_YEAR = new Date().getFullYear();
 
 /** Validate a single parsed row. Returns an error map (empty if all good). */
-const validateRow = (r: ParsedRow, requireCollege = false): RowErrors => {
+const validateRow = (r: ParsedRow, requireCollege = false, allowAdminRole = true): RowErrors => {
   const e: RowErrors = {};
 
   if (!r.student_no?.trim()) e.student_no = "学号不能为空";
@@ -113,6 +113,10 @@ const validateRow = (r: ParsedRow, requireCollege = false): RowErrors => {
     if (!r.college_name?.trim()) {
       e.college_name = "超级管理员导入教师/管理员时必须填写「学院」列";
     }
+  }
+
+  if (!allowAdminRole && r.role === "admin") {
+    e.role = "仅超级管理员可导入「管理员」账号";
   }
 
   return e;
@@ -248,7 +252,7 @@ const ImportUsers = () => {
       push({ kind: "file", name: file.name, rowCount: rows.length });
 
       // Per-row format validation BEFORE allowing import.
-      const rowErrors = rows.map((r) => validateRow(r, isSuperAdmin));
+      const rowErrors = rows.map((r) => validateRow(r, isSuperAdmin, isSuperAdmin));
       const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
 
       setPendingRows(rows);
@@ -287,7 +291,7 @@ const ImportUsers = () => {
   const confirmImport = async () => {
     if (!pendingRows) return;
     // Block import if any pending row failed format validation.
-    const errs = pendingRows.map((r) => validateRow(r, isSuperAdmin));
+    const errs = pendingRows.map((r) => validateRow(r, isSuperAdmin, isSuperAdmin));
     const badCount = errs.filter((e) => Object.keys(e).length > 0).length;
     if (badCount > 0) {
       toast({
