@@ -46,14 +46,32 @@ type Spec = {
 };
 
 const SPECS: Spec[] = [
-  { table: "applications",        label: "申请 applications",      changedCol: "updated_at", realtimeEnabled: true },
-  { table: "application_reviews", label: "审核明细 reviews",       changedCol: "created_at", realtimeEnabled: true },
-  { table: "submission_records",  label: "提交记录 records",       changedCol: "created_at", realtimeEnabled: true },
-  { table: "profiles",            label: "用户档案 profiles",      changedCol: "updated_at", realtimeEnabled: true },
-  { table: "user_roles",          label: "用户角色 user_roles",    changedCol: "created_at", realtimeEnabled: false },
+  { table: "applications",        label: "申请",       changedCol: "updated_at", realtimeEnabled: true },
+  { table: "application_reviews", label: "审核明细",   changedCol: "created_at", realtimeEnabled: true },
+  { table: "submission_records",  label: "提交记录",   changedCol: "created_at", realtimeEnabled: true },
+  { table: "profiles",            label: "用户档案",   changedCol: "updated_at", realtimeEnabled: true },
+  { table: "user_roles",          label: "用户角色",   changedCol: "created_at", realtimeEnabled: false },
 ];
 
 const TOLERANCE_MS = 5_000;
+
+const EVENT_LABEL: Record<string, string> = {
+  INSERT: "新增",
+  UPDATE: "更新",
+  DELETE: "删除",
+  RECONNECT: "重连",
+  POLL: "轮询",
+};
+const eventLabel = (t?: string) => (t ? EVENT_LABEL[t] ?? "事件" : "—");
+
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "超级管理员",
+  college_admin: "学院管理员",
+  admin: "学院管理员",
+  teacher: "教师",
+  student: "学生",
+  guest: "访客",
+};
 
 type EventInfo = {
   type: string;          // INSERT / UPDATE / DELETE / RECONNECT / POLL
@@ -76,6 +94,7 @@ const fmtIso = (s: string | null | undefined) =>
 const RealtimeDiagnostics = () => {
   const { roles } = useAuth();
   const role = roles[0] ?? "guest";
+  const roleLabel = ROLE_LABEL[role] ?? role;
 
   const [events, setEvents] = useState<Record<TableKey, EventInfo | null>>(() => {
     const init = {} as Record<TableKey, EventInfo | null>;
@@ -220,7 +239,7 @@ const RealtimeDiagnostics = () => {
           actions={
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="gap-1">
-                <Activity className="h-3 w-3" /> 当前角色：{role}
+                <Activity className="h-3 w-3" /> 当前角色：{roleLabel}
               </Badge>
               <Button size="sm" variant="outline" onClick={fetchServerSnapshot} disabled={refreshing}>
                 <RefreshCw className={`mr-1 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
@@ -255,7 +274,7 @@ const RealtimeDiagnostics = () => {
                   <TableRow key={spec.table}>
                     <TableCell className="font-medium">{spec.label}</TableCell>
                     <TableCell>
-                      {ev ? <Badge variant="secondary">{ev.type}</Badge> : <span className="text-muted-foreground">—</span>}
+                      {ev ? <Badge variant="secondary">{eventLabel(ev.type)}</Badge> : <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="font-mono text-xs">{ev?.pk ?? "—"}</TableCell>
                     <TableCell className="text-xs">{fmtTime(lastEventTs)}</TableCell>
@@ -284,7 +303,7 @@ const RealtimeDiagnostics = () => {
             <p>2. 在另一个浏览器/窗口里执行操作（提交申请、教师审核），本页面对应表的"最近实时事件"应在 1 秒内更新。</p>
             <p>3. 服务端快照每 15 秒自动刷新一次，也可手动点"刷新服务端"。</p>
             <p>4. 当"服务端最近变更"晚于"事件接收时间"超过 {TOLERANCE_MS / 1000}s，本页面会标红"可能漏事件"。</p>
-            <p>5. <code>user_roles</code> 表未加入实时发布，仅作为对照——其状态固定为"未启用实时"。</p>
+            <p>5. "用户角色"表未加入实时发布，仅作为对照——其状态固定为"未启用实时"。</p>
           </CardContent>
         </Card>
       </div>
