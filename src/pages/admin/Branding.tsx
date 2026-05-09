@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/select";
 import { hexToHslTokens, hslTokensToHex } from "@/lib/colorConvert";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Theme = {
   primary?: string; accent?: string; background?: string;
@@ -72,6 +76,7 @@ const Branding = () => {
   const [systemTitle, setSystemTitle] = useState("");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const load = async () => {
     if (!collegeId) return;
@@ -120,7 +125,24 @@ const Branding = () => {
     }).eq("id", collegeId);
     setSaving(false);
     if (error) toast.error(error.message);
-    else { toast.success("已保存，刷新页面后生效"); }
+    else { toast.success("已同步到本学院全部用户"); }
+  };
+
+  const lightnessOf = (tokens?: string) => {
+    if (!tokens) return null;
+    const m = /(\d+(?:\.\d+)?)%\s*$/.exec(tokens);
+    return m ? parseFloat(m[1]) : null;
+  };
+
+  const requestSave = () => {
+    const lp = lightnessOf(theme.primary);
+    const lb = lightnessOf(theme.background);
+    if (lp !== null && lp > 88) {
+      toast.warning("主色过浅，按钮文字可能看不清，建议选择更深的主色");
+    } else if (lp !== null && lb !== null && Math.abs(lp - lb) < 6) {
+      toast.warning("主色与背景色过于接近，按钮可能不可见");
+    }
+    setConfirmOpen(true);
   };
 
   if (!collegeId) {
@@ -131,6 +153,11 @@ const Branding = () => {
     <AppLayout>
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">学院界面风格</h1>
+        <Card>
+          <CardContent className="py-3 text-sm text-muted-foreground">
+            以下修改仅作用于本学院{college?.name ? `（${college.name}）` : ""}，确认后本学院的全部管理员、教师、学生端将自动同步，无需刷新。
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">院徽</CardTitle></CardHeader>
           <CardContent className="flex items-center gap-4">
@@ -179,8 +206,26 @@ const Branding = () => {
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button onClick={save} disabled={saving}>{saving ? "保存中…" : "保存主题"}</Button>
+          <Button variant="outline" onClick={() => void load()} disabled={saving}>还原</Button>
+          <Button onClick={requestSave} disabled={saving} className="!text-white">
+            {saving ? "提交中…" : "确认并提交修改"}
+          </Button>
         </div>
+
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认提交修改？</AlertDialogTitle>
+              <AlertDialogDescription>
+                确认后将把新的界面风格立即应用到本学院{college?.name ? `（${college.name}）` : ""}的所有管理员、教师与学生。其他学院不受影响。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { void save(); }}>确认提交</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
