@@ -139,7 +139,7 @@ const AppSidebar = () => {
 };
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
-  const { user, roles, signOut, hasRole } = useAuth();
+  const { user, roles, signOut, hasRole, isSuperAdmin } = useAuth();
   const college = useCollegeTheme();
   const navigate = useNavigate();
   const location = useLocation();
