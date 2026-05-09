@@ -18,6 +18,7 @@ const SYSTEM_PROMPT = `你是「学分认定规则问答助手」，仅服务于
 4. 拒绝闲聊和与学分认定无关的问题，统一回复："我只能回答学分认定相关问题。"
 5. 涉及"我的"申请/学分明细时，仅可基于下方「我的学分汇总」段落作答；该段落为空时回复"暂无您的申请记录"。绝不编造申请编号、AI 结论、教师评语、学分数。
 6. 严禁泄露任何其他学生的信息。如果用户询问他人，明确拒绝。
+7. 当用户问"我是谁/我叫什么/我学号是多少/我哪个学院/我哪个班/我什么专业"等关于自身身份的问题时，必须严格基于下方"当前登录学生"段落如实回答，绝不允许说不知道或编造；该段落为空时回复"未识别到登录身份，请先登录"。
 
 【输出格式（必须严格遵守）】
 使用 markdown，固定三段，每段以二级标题开头：
@@ -150,6 +151,7 @@ Deno.serve(async (req) => {
     let myUserId: string | null = null;
     let myProfile: any = null;
     let mySummary = "";
+    let identityBlock = "";
     const authHeader = req.headers.get("Authorization") || "";
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
@@ -164,14 +166,23 @@ Deno.serve(async (req) => {
       } catch (_) { myUserId = null; }
     }
 
-    if (myUserId && isPersonalQuery(query)) {
+    // 无条件加载当前登录学生 profile（用于身份类问题）
+    if (myUserId) {
       const { data: prof } = await supabase
         .from("profiles")
-        .select("user_id, full_name, student_no, department, class_name")
+        .select("user_id, full_name, student_no, department, class_name, major, college_id, email, phone")
         .eq("user_id", myUserId)
         .maybeSingle();
       myProfile = prof || null;
+      let collegeName = "-";
+      if ((prof as any)?.college_id) {
+        const { data: col } = await supabase.from("colleges").select("name,short_name").eq("id", (prof as any).college_id).maybeSingle();
+        if (col) collegeName = (col as any).short_name || (col as any).name || "-";
+      }
+      identityBlock = `===== 当前登录学生 =====\n姓名：${(prof as any)?.full_name ?? "-"}\n学号：${(prof as any)?.student_no ?? "-"}\n所属学院：${collegeName}\n部门：${(prof as any)?.department ?? "-"}\n班级：${(prof as any)?.class_name ?? "-"}\n专业：${(prof as any)?.major ?? "-"}\n邮箱：${(prof as any)?.email ?? "-"}`;
+    }
 
+    if (myUserId && isPersonalQuery(query)) {
       const { data: rows } = await supabase
         .from("submission_summary")
         .select("application_id, status, description, submitted_at, ai_confidence, ai_suggested_credit, ai_reasoning, final_credit, reviewer_name, final_review_note, reviewed_at")
@@ -292,6 +303,7 @@ Deno.serve(async (req) => {
     const fullMessages: Msg[] = [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "system", content: ragContext },
+      ...(identityBlock ? [{ role: "system" as const, content: identityBlock }] : []),
       ...(mySummary ? [{ role: "system" as const, content: mySummary }] : []),
       ...messages.slice(-20),
     ];
