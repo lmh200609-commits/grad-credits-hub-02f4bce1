@@ -69,7 +69,7 @@ const ColorField = ({
 };
 
 const Branding = () => {
-  const { collegeId } = useAuth();
+  const { collegeId, loading: authLoading } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [college, setCollege] = useState<any>(null);
   const [theme, setTheme] = useState<Theme>({});
@@ -145,6 +145,9 @@ const Branding = () => {
     setConfirmOpen(true);
   };
 
+  if (authLoading) {
+    return <AppLayout><div className="p-6 text-muted-foreground">加载中…</div></AppLayout>;
+  }
   if (!collegeId) {
     return <AppLayout><div className="p-6 text-muted-foreground">未绑定学院，无法配置主题。</div></AppLayout>;
   }

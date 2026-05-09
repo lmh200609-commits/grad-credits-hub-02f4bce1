@@ -78,7 +78,6 @@ export const useCollegeTheme = () => {
     return () => {
       cancelled = true;
       void supabase.removeChannel(channel);
-      resetThemeVars(document.documentElement);
     };
   }, [collegeId]);
 
