@@ -58,13 +58,14 @@ type Row = {
   apartment_no?: string;
   dorm_room?: string;
   bed_no?: string;
+  college_name?: string;
 };
 
 async function createOneUser(
   admin: ReturnType<typeof createClient>,
   r: Row,
   idx: number,
-  callerCollegeId: string | null,
+  collegeIdForRow: string | null,
 ): Promise<{ user_id: string; student_no: string }> {
   const sno = r.student_no.trim();
   // 合成邮箱必须只包含 ASCII 字母/数字/.-_，否则 Supabase Auth 会拒绝
@@ -98,7 +99,7 @@ async function createOneUser(
       class_name: r.class_name?.trim() || null,
       department: r.department?.trim() || null,
       major: r.major?.trim() || null,
-      college_id: callerCollegeId,
+      college_id: collegeIdForRow,
       email,
       gender: r.gender?.trim() || null,
       ethnicity: r.ethnicity?.trim() || null,
@@ -115,7 +116,7 @@ async function createOneUser(
 
   const { error: re } = await admin
     .from("user_roles")
-    .insert({ user_id: uid, role: r.role, college_id: callerCollegeId });
+    .insert({ user_id: uid, role: r.role, college_id: collegeIdForRow });
   if (re) throw new Error(`第 ${idx + 2} 行分配角色失败: ${re.message}`);
 
   return { user_id: uid, student_no: sno };
@@ -151,7 +152,18 @@ Deno.serve(async (req) => {
       .in("role", ["admin", "super_admin"])
       .maybeSingle();
     if (!roleRow) return json({ error: "Forbidden: admin role required" }, 403);
+    const callerRole = (roleRow as any).role as string;
     const callerCollegeId = (roleRow as any).college_id ?? null;
+    const isSuperAdmin = callerRole === "super_admin";
+
+    // Build college name -> id lookup once for super_admin imports.
+    const collegeByName = new Map<string, string>();
+    if (isSuperAdmin) {
+      const { data: cols } = await admin.from("colleges").select("id, name");
+      for (const c of cols ?? []) {
+        collegeByName.set(String((c as any).name).trim(), (c as any).id as string);
+      }
+    }
 
     const body = await req.json();
     const rows = body.rows as Row[];
@@ -164,6 +176,8 @@ Deno.serve(async (req) => {
     // Validate
     const errors: { line: number; message: string }[] = [];
     const seen = new Set<string>();
+    // Resolve per-row college_id; for super_admin must come from row's college_name.
+    const collegeIdByRow: (string | null)[] = new Array(rows.length).fill(null);
     rows.forEach((r, i) => {
       const line = i + 2;
       if (!r.student_no?.trim()) errors.push({ line, message: "学号/工号为空" });
@@ -175,6 +189,22 @@ Deno.serve(async (req) => {
       const key = r.student_no?.trim();
       if (key && seen.has(key)) errors.push({ line, message: `CSV 内重复学号: ${key}` });
       seen.add(key);
+
+      if (isSuperAdmin) {
+        const cname = r.college_name?.trim();
+        if (!cname) {
+          errors.push({ line, message: "超级管理员导入必须填写「学院」列" });
+        } else {
+          const cid = collegeByName.get(cname);
+          if (!cid) {
+            errors.push({ line, message: `学院「${cname}」未在系统中找到，请核对 colleges 表名称` });
+          } else {
+            collegeIdByRow[i] = cid;
+          }
+        }
+      } else {
+        collegeIdByRow[i] = callerCollegeId;
+      }
     });
     if (errors.length) return json({ error: "校验失败", errors }, 400);
 
@@ -223,7 +253,12 @@ Deno.serve(async (req) => {
         for (let i = 0; i < chunk.length; i += CONCURRENCY) {
           const batch = chunk.slice(i, i + CONCURRENCY);
           const results = await Promise.allSettled(
-            batch.map((r, j) => createOneUser(admin, r, cStart + i + j, callerCollegeId)),
+            batch.map((r, j) => {
+              const absIdx = cStart + i + j;
+              const origIdx = rows.indexOf(r);
+              const cid = origIdx >= 0 ? collegeIdByRow[origIdx] : callerCollegeId;
+              return createOneUser(admin, r, absIdx, cid);
+            }),
           );
           results.forEach((res, j) => {
             const absIdx = cStart + i + j;
