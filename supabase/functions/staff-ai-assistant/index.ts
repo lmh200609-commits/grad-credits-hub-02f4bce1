@@ -540,14 +540,52 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // ---- 解析当前调用者身份，注入"当前登录用户"上下文 ----
+    let identityBlock = "";
+    const authHeader = req.headers.get("Authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      try {
+        const userClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_ANON_KEY")!,
+          { global: { headers: { Authorization: authHeader } } },
+        );
+        const { data: claims } = await userClient.auth.getClaims(token);
+        const uid = claims?.claims?.sub as string | undefined;
+        if (uid) {
+          const [{ data: prof }, { data: ur }] = await Promise.all([
+            supabase.from("profiles").select("full_name,email,department,class_name,major,student_no,college_id").eq("user_id", uid).maybeSingle(),
+            supabase.from("user_roles").select("role,college_id").eq("user_id", uid),
+          ]);
+          const roles = (ur || []).map((r: any) => r.role);
+          const collegeIds = Array.from(new Set((ur || []).map((r: any) => r.college_id).filter(Boolean)));
+          const cid = (prof as any)?.college_id || collegeIds[0];
+          let collegeName = "（未绑定学院）";
+          if (cid) {
+            const { data: col } = await supabase.from("colleges").select("name,short_name").eq("id", cid).maybeSingle();
+            if (col) collegeName = (col as any).short_name || (col as any).name || collegeName;
+          }
+          const roleZh = roles.includes("super_admin") ? "超级管理员"
+            : roles.includes("admin") ? "学院管理员"
+            : roles.includes("teacher") ? "教师"
+            : roles.includes("student") ? "学生" : "未知角色";
+          const isSuper = roles.includes("super_admin");
+          identityBlock = `===== 当前登录用户 =====\n姓名：${(prof as any)?.full_name ?? "-"}\n邮箱：${(prof as any)?.email ?? "-"}\n角色：${roleZh}${isSuper ? "（可访问全校所有学院数据）" : ""}\n所属学院：${isSuper ? "全校" : collegeName}\n部门/学院：${(prof as any)?.department ?? "-"}\n${(prof as any)?.student_no ? `学号：${(prof as any).student_no}\n` : ""}全部角色：${roles.join("、") || "-"}`;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
     const aiCfg = await getAiConfig("staff-ai-assistant");
     const endpoint = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
     const apiKey = aiCfg.apiKey;
     const model = aiCfg.model;
     const provider = aiCfg.vendor;
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
-    let convo: Msg[] = [sysMsg, ...messages.slice(-12)];
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
+    const convo: Msg[] = [sysMsg];
+    if (identityBlock) convo.push({ role: "system", content: identityBlock });
+    convo.push(...messages.slice(-12));
 
     let action: any = null;
     let candidates: any[] | null = null;
