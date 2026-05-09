@@ -1,72 +1,55 @@
 ## 问题
 
-用户在 `/admin/submission-windows`（侧边栏需要向下滚才能看到底部的"实时一致性"）。点击"实时一致性"后，新页面加载，但**侧边栏自身的滚动位置被重置到顶端**，导致刚刚选中的菜单项滚出可视区——视觉上就是"界面突然跳到最上端"。
+1. **编辑批次弹窗"看不清楚"**（图二）：弹窗背景被穿透，可以透过卡片看到下方表格的内容（"批次列表 / 开始时间 / 结束时间"等），文字与背景叠在一起完全不可读。原因：当前 `Dialog` 用 `bg-background`，而学院主题动态写入的 `--background`（HSL token）在某些情况下与卡片底色一致或半透明，加上 `DialogOverlay` 默认 `bg-black/80` 在低对比度颜色下也压不住后面的卡片纹理。
 
-## 根因
+2. **操作列四个图标缺少 hover 提示**（图三）：`编辑 / 生成报告 / 下载报告 / 删除` 四个 ghost 按钮只有图标，鼠标悬停时没有任何文字提示，新用户不知道每个图标含义。
 
-项目里**每个页面**都各自包裹一层 `<AppLayout>`（已确认 30+ 个页面都是这种用法）。路由切换 = 旧 AppLayout 卸载 + 新 AppLayout 重新挂载 = 侧边栏内的滚动容器被重建，`scrollTop` 回到 0。
+## 修复方案
 
-之前我们去掉了 `scrollIntoView`（解决了"主内容区被推走"的跳），但侧边栏自身在重挂时丢失滚动位置这一问题仍在。
+### 一、弹窗内容可读性
 
-## 方案对比
+在 `src/pages/admin/SubmissionWindows.tsx` 的 `<DialogContent>` 上做两件事：
 
-- **方案 A（推荐，最小改动）**：在侧边栏的滚动容器上做"会话级滚动位置保持"。
-  - 在 `AppSidebar` 里给 `<SidebarContent>` 接一个 `ref`，挂载时从 `sessionStorage`（key 例如 `sidebar-scroll-top`）读取并 `scrollTop = saved`。
-  - 监听该容器的 `scroll` 事件（节流），把当前 `scrollTop` 写回 `sessionStorage`。
-  - 这样跨页导航时侧边栏滚动位置保持不变，刚刚点击的菜单项仍然在视区内，不再"跳到最上端"。
-  - 改动只集中在 `src/components/AppLayout.tsx` 内的 `AppSidebar`，零侵入、不影响其他页面。
+- 加 `className="bg-card text-card-foreground shadow-2xl border"`，强制使用 card token（不会被学院主题的 `--background` 覆盖成透明）。
+- 内容容器加足够的 `space-y` 和 `p-6` 已有，标题与表单之间的层次没问题，只是现在透出了背景。改完即可。
 
-- **方案 B（更彻底，但改动大）**：把 `AppLayout` 提升为 React Router 的 layout route（在 `src/App.tsx` 用 `<Route element={<AppLayoutOutlet/>}>` 包裹所有受保护路由），让所有页面共用同一个 AppLayout 实例，从此侧边栏不再随页面卸载。需要逐页删掉 `<AppLayout>` 包裹，并在 `Index.tsx` 等地方调整 `Outlet` 用法，涉及 30+ 文件，回归风险高。
+如果想顺手把整体提升一档，把 DialogTitle 之外补一个 DialogDescription（"修改批次的开放时间和启用状态"），表单字段之间用 `border-t` 分隔，看上去更克制。
 
-→ **采用方案 A。**
+### 二、四个操作图标加悬浮文字
 
-## 改动点（仅一文件）
-
-`src/components/AppLayout.tsx` 的 `AppSidebar`：
+复用项目里已有的 `Tooltip` 组件（`TooltipProvider` 已经在 `src/App.tsx` 全局包裹）。在 `SubmissionWindows.tsx` 顶部新增：
 
 ```tsx
-const AppSidebar = () => {
-  const { state } = useSidebar();
-  const collapsed = state === "collapsed";
-  const { hasRole, isSuperAdmin } = useAuth();
-  const location = useLocation();
-  const items = /* 原逻辑 */;
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // 在挂载时恢复上次滚动位置
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const saved = Number(sessionStorage.getItem("sidebar-scroll-top") || "0");
-    if (saved > 0) el.scrollTop = saved;
-    let raf = 0;
-    const onScroll = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        sessionStorage.setItem("sidebar-scroll-top", String(el.scrollTop));
-      });
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
-  return (
-    <Sidebar collapsible="icon">
-      <SidebarContent ref={scrollRef}>
-        {/* 原内容不变 */}
-      </SidebarContent>
-    </Sidebar>
-  );
-};
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 ```
 
-如 `SidebarContent` 不能直接接 `ref`（看 shadcn 实现是 `forwardRef`，可以），就把 `ref` 放在它里面的第一层 `<div>` 上即可。
+把每个操作按钮包成：
+
+```tsx
+<Tooltip>
+  <TooltipTrigger asChild>
+    <Button size="sm" variant="ghost" onClick={() => openEdit(w)} aria-label="编辑批次">
+      <Pencil className="h-4 w-4" />
+    </Button>
+  </TooltipTrigger>
+  <TooltipContent>编辑批次</TooltipContent>
+</Tooltip>
+```
+
+四个按钮对应文案：
+
+- ✏️ Pencil → **编辑批次**
+- 📄 FileSpreadsheet → **生成报告**（生成中改为"生成中…"）
+- ⬇️ Download → **下载报告**
+- 🗑️ Trash2 → **删除批次**（已生成报告不可删，禁用态 tooltip 可显示"已生成报告，无法删除"）
+
+## 改动文件
+
+- `src/pages/admin/SubmissionWindows.tsx`（唯一文件）
 
 ## 验收
 
-- 在 `/admin/submission-windows` 把侧边栏滚到底部，点击"实时一致性"：跳转到目标页面后，侧边栏依然停在原位，"实时一致性"仍可见且为高亮态。
-- 折叠/展开侧边栏、跨各角色导航均正常。
-- 主内容区滚动位置仍然按浏览器默认行为（每页从顶端开始），不受影响。
+- 打开"编辑批次"弹窗，背景为不透明的卡片色，表单字段清晰可读，下方表格不再透出来。
+- 鼠标悬停四个操作图标，0.5s 左右出现"编辑批次 / 生成报告 / 下载报告 / 删除批次"提示。
+- 删除按钮在已生成报告时仍禁用，hover 显示禁用原因。
+- 其他功能行为不变。
