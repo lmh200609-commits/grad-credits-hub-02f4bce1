@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useRef } from "react";
 import { NavLink, useNavigate, useLocation, matchPath } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useCollegeTheme } from "@/hooks/useCollegeTheme";
@@ -124,11 +124,6 @@ const SidebarNavItem = ({
   url, active, collapsed, icon: Icon, title,
 }: { url: string; active: boolean; collapsed: boolean; icon: typeof LayoutDashboard; title: string }) => {
   const ref = useRef<HTMLAnchorElement>(null);
-  useEffect(() => {
-    if (active && ref.current) {
-      ref.current.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }
-  }, [active]);
   return (
     <NavLink
       ref={ref}
