@@ -1047,6 +1047,21 @@ export type Database = {
         }[]
       }
       gen_certificate_no: { Args: { _app_id: string }; Returns: string }
+      get_student_credit_ranking: {
+        Args: never
+        Returns: {
+          approved_count: number
+          class_name: string
+          college_id: string
+          department: string
+          full_name: string
+          major: string
+          rank: number
+          student_no: string
+          total_credit: number
+          user_id: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

@@ -14,7 +14,6 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Download, Trophy, Users, CheckCircle2, AlertTriangle } from "lucide-react";
-import { fetchAll } from "@/lib/fetchAll";
 import TablePagination from "@/components/TablePagination";
 import * as XLSX from "xlsx";
 
@@ -29,10 +28,10 @@ type Row = {
   class_name: string | null;
   total_credit: number;
   approved_count: number;
+  rank: number;
 };
 
 const ALL = "__all__";
-const APPROVED = ["approved", "auto_approved"];
 
 const PASS_THRESHOLD = 4;
 type PassFilter = "all" | "pass" | "fail";
@@ -61,27 +60,19 @@ const Credits = () => {
 
   useEffect(() => {
     (async () => {
-      const [roles, profiles, apps] = await Promise.all([
-        fetchAll<{ user_id: string }>(supabase.from("user_roles").select("user_id").eq("role", "student")),
-        fetchAll<Omit<Row, "total_credit" | "approved_count">>(supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name")),
-        fetchAll<{ student_id: string; status: string; final_credit: number | null; ai_suggested_credit: number | null }>(
-          supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit")),
-      ]);
-      const ids = new Set(roles.map((r) => r.user_id));
-      const credit = new Map<string, { total: number; count: number }>();
-      apps.forEach((a) => {
-        if (!APPROVED.includes(a.status)) return;
-        const c = Number(a.final_credit ?? a.ai_suggested_credit ?? 0);
-        const cur = credit.get(a.student_id) ?? { total: 0, count: 0 };
-        credit.set(a.student_id, { total: cur.total + c, count: cur.count + 1 });
-      });
-      const list: Row[] = profiles
-        .filter((p) => ids.has(p.user_id))
-        .map((p) => {
-          const c = credit.get(p.user_id) ?? { total: 0, count: 0 };
-          return { ...p, total_credit: c.total, approved_count: c.count };
-        })
-        .sort((a, b) => b.total_credit - a.total_credit);
+      const { data, error } = await supabase.rpc("get_student_credit_ranking");
+      if (error) { console.error(error); return; }
+      const list: Row[] = (data ?? []).map((r: any) => ({
+        user_id: r.user_id,
+        full_name: r.full_name,
+        student_no: r.student_no,
+        department: r.department,
+        major: r.major,
+        class_name: r.class_name,
+        total_credit: Number(r.total_credit ?? 0),
+        approved_count: Number(r.approved_count ?? 0),
+        rank: Number(r.rank ?? 0),
+      }));
       setRows(list);
     })();
   }, []);
@@ -107,22 +98,6 @@ const Credits = () => {
   useEffect(() => { setPage(0); }, [search, dept, passFilter]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
-  // Standard "1224" ranking: same credits => same rank; next distinct credit
-  // skips the tied count. Computed over the filtered list so rank reflects the
-  // currently visible cohort.
-  const rankByUser = useMemo(() => {
-    const m = new Map<string, number>();
-    let lastCredit: number | null = null;
-    let lastRank = 0;
-    filtered.forEach((r, i) => {
-      const rank = lastCredit !== null && r.total_credit === lastCredit ? lastRank : i + 1;
-      m.set(r.user_id, rank);
-      lastCredit = r.total_credit;
-      lastRank = rank;
-    });
-    return m;
-  }, [filtered]);
-
   const passStats = useMemo(() => ({
     pass: rows.filter((r) => r.total_credit >= PASS_THRESHOLD).length,
     fail: rows.filter((r) => r.total_credit < PASS_THRESHOLD).length,
@@ -137,7 +112,7 @@ const Credits = () => {
   const exportXlsx = () => {
     const header = ["排名", "姓名", "学号", "院系", "专业", "班级", "通过申请数", "累计学分", "是否合格"];
     const data = filtered.map((r) => [
-      rankByUser.get(r.user_id) ?? 0, r.full_name ?? "", r.student_no ?? "", r.department ?? "",
+      r.rank, r.full_name ?? "", r.student_no ?? "", r.department ?? "",
       r.major ?? "", r.class_name ?? "", r.approved_count, Number(r.total_credit.toFixed(1)),
       r.total_credit >= PASS_THRESHOLD ? "合格" : "不合格",
     ]);
@@ -215,11 +190,10 @@ const Credits = () => {
                 {filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground">暂无数据</TableCell></TableRow>
                 ) : paged.map((r) => {
-                  const rank = rankByUser.get(r.user_id) ?? 0;
                   const passed = r.total_credit >= PASS_THRESHOLD;
                   return (
                   <TableRow key={r.user_id} className={!passed ? "bg-danger/5 hover:bg-danger/10" : "hover:bg-muted/40"}>
-                    <TableCell className="font-mono text-muted-foreground">#{rank}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">#{r.rank}</TableCell>
                     <TableCell className="font-medium">{r.full_name ?? "—"}</TableCell>
                     <TableCell>{r.student_no ?? "—"}</TableCell>
                     <TableCell>{r.department ?? "—"}</TableCell>
