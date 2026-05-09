@@ -197,6 +197,9 @@ Deno.serve(async (req) => {
       if (!["admin", "teacher", "student"].includes(r.role)) {
         errors.push({ line, message: `角色非法: ${r.role}` });
       }
+      if (!isSuperAdmin && r.role === "admin") {
+        errors.push({ line, message: "仅超级管理员可导入「管理员」账号，请将该行角色改为 教师 或 学生" });
+      }
       const key = r.student_no?.trim();
       if (key && seen.has(key)) errors.push({ line, message: `CSV 内重复学号: ${key}` });
       seen.add(key);

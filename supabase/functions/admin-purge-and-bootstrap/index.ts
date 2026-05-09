@@ -66,8 +66,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: isAdmin } = await admin.rpc("has_role", { _user_id: callerId, _role: "admin" });
-    if (!isAdmin) return json({ error: "Forbidden: admin role required" }, 403);
+    const { data: superRow, error: roleErr } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", callerId)
+      .eq("role", "super_admin")
+      .maybeSingle();
+    if (roleErr) return json({ error: roleErr.message }, 500);
+    if (!superRow) return json({ error: "Forbidden: super_admin only" }, 403);
 
     const body = await req.json().catch(() => ({}));
     if (body?.confirm !== "PURGE") {

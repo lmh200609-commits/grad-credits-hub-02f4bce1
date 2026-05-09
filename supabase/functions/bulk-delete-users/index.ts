@@ -25,8 +25,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: isAdmin } = await admin.rpc("has_role", { _user_id: callerId, _role: "admin" });
-    if (!isAdmin) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
+    const { data: callerRoles, error: roleErr } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", callerId)
+      .in("role", ["admin", "super_admin"]);
+    if (roleErr) return json({ error: roleErr.message }, 500);
+    const canDelete = (callerRoles ?? []).some((r) => r.role === "admin" || r.role === "super_admin");
+    if (!canDelete) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
 
     const body = await req.json();
     let ids: string[] = Array.isArray(body?.user_ids) ? body.user_ids.filter((x: unknown) => typeof x === "string") : [];
