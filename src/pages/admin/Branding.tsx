@@ -169,7 +169,7 @@ const Branding = () => {
             <div className="space-y-2">
               <input ref={fileRef} type="file" accept="image/*" className="hidden"
                 onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-              <Button onClick={onPick} disabled={uploading}>{uploading ? "上传中…" : "上传院徽"}</Button>
+              <Button variant="solid" onClick={onPick} disabled={uploading}>{uploading ? "上传中…" : "上传院徽"}</Button>
               <p className="text-xs text-muted-foreground">PNG/JPG/SVG，≤ 2MB。上传后系统将自动提取主色作为 UI 主题。</p>
             </div>
           </CardContent>
@@ -192,25 +192,27 @@ const Branding = () => {
               <Input value={theme.radius ?? ""} onChange={(e) => setTheme({ ...theme, radius: e.target.value })} placeholder="留空使用默认" />
               <p className="text-xs text-muted-foreground">控制按钮、卡片的圆角程度，留空使用系统默认。</p>
             </div>
-            <div><Label>布局变体</Label>
-              <Select value={theme.layout ?? "sidebar"} onValueChange={(v) => setTheme({ ...theme, layout: v as Theme["layout"] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sidebar">侧边栏（经典）</SelectItem>
-                  <SelectItem value="top-nav">顶部导航</SelectItem>
-                  <SelectItem value="compact">紧凑式</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="md:col-span-2">
+              <Label>布局变体</Label>
+              <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <Select value={theme.layout ?? "sidebar"} onValueChange={(v) => setTheme({ ...theme, layout: v as Theme["layout"] })}>
+                  <SelectTrigger className="md:w-[280px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sidebar">侧边栏（经典）</SelectItem>
+                    <SelectItem value="top-nav">顶部导航</SelectItem>
+                    <SelectItem value="compact">紧凑式</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" onClick={() => void load()} disabled={saving}>还原</Button>
+                  <Button variant="solid" onClick={requestSave} disabled={saving}>
+                    {saving ? "提交中…" : "确认并提交修改"}
+                  </Button>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
-
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => void load()} disabled={saving}>还原</Button>
-          <Button onClick={requestSave} disabled={saving} className="!text-white">
-            {saving ? "提交中…" : "确认并提交修改"}
-          </Button>
-        </div>
 
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogContent>
@@ -222,7 +224,7 @@ const Branding = () => {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { void save(); }}>确认提交</AlertDialogAction>
+              <AlertDialogAction onClick={() => { void save(); }} className="bg-foreground text-background hover:bg-foreground/90">确认提交</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

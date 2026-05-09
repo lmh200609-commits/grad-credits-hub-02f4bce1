@@ -180,7 +180,7 @@ const SubmissionWindows = () => {
           title="提交时间窗口"
           description="设置学生可提交学分申请的批次时间，到期后自动生成可导出的报告"
           actions={
-            <Button onClick={openCreate} className="!text-white"><Plus className="mr-1 h-4 w-4" />新建批次</Button>
+            <Button variant="solid" onClick={openCreate}><Plus className="mr-1 h-4 w-4" />新建批次</Button>
           }
         />
 
@@ -201,9 +201,8 @@ const SubmissionWindows = () => {
         )}
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader>
             <CardTitle>批次列表</CardTitle>
-            <Button size="sm" onClick={openCreate} className="!text-white"><Plus className="mr-1 h-4 w-4" />新建批次</Button>
           </CardHeader>
           <CardContent>
             <Table>
@@ -226,7 +225,7 @@ const SubmissionWindows = () => {
                     <TableCell colSpan={7} className="py-10 text-center">
                       <div className="flex flex-col items-center gap-3 text-muted-foreground">
                         <span>暂无批次</span>
-                        <Button onClick={openCreate} className="!text-white"><Plus className="mr-1 h-4 w-4" />新建第一个批次</Button>
+                        <Button variant="solid" onClick={openCreate}><Plus className="mr-1 h-4 w-4" />新建第一个批次</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -295,7 +294,7 @@ const SubmissionWindows = () => {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDialogOpen(false)}>取消</Button>
-            <Button onClick={save} className="!text-white">保存</Button>
+            <Button variant="solid" onClick={save}>保存</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
