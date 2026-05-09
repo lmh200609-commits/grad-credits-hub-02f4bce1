@@ -413,7 +413,11 @@ const ImportUsers = () => {
             </div>
             <Button onClick={downloadRosterTemplate} variant="outline" size="sm">
               <Download className="mr-2 h-4 w-4" />
-              下载导入模板
+              下载学生模板
+            </Button>
+            <Button onClick={downloadTeacherTemplate} variant="outline" size="sm">
+              <Download className="mr-2 h-4 w-4" />
+              下载教师模板
             </Button>
             <Button onClick={() => fileRef.current?.click()} disabled={loading} size="sm">
               <Upload className="mr-2 h-4 w-4" />
