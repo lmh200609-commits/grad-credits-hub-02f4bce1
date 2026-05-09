@@ -774,3 +774,15 @@ docker compose exec db psql -U postgres -c \
 - 紧急回滚：保留最近 3 个 dist 版本目录（`/var/www/credits-v1/...`），用 nginx symlink 切换
 
 完。
+
+## 批次报告 PDF 导出（局域网/离线可用）
+
+提交时间窗口的报告页（`/admin/window-report/:windowId`）完全在浏览器端渲染：
+
+- **数据来源**：自托管 PostgreSQL 的 `submission_window_reports.summary`（jsonb），edge function `generate-window-report` 写入快照。
+- **PDF 导出**：使用浏览器原生 `window.print()` + `@media print` 样式，**不依赖**外网、Lovable Cloud、jsPDF、字体 CDN 或对象存储。
+- **中文字体**：来自客户端操作系统：
+  - Windows：微软雅黑 / 等线（系统自带）
+  - macOS：PingFang SC（系统自带）
+  - Linux：建议安装 `fonts-noto-cjk`（`apt install fonts-noto-cjk`）
+- **联网要求**：仅前端能访问自托管的 Supabase（数据库 + Edge Function）即可，全程可在内网完成。
