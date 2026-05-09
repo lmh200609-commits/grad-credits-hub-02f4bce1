@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { extractPaletteFromImage } from "@/lib/extractPalette";
@@ -12,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { hexToHslTokens, hslTokensToHex } from "@/lib/colorConvert";
+import { Input } from "@/components/ui/input";
 
 type Theme = {
   primary?: string; accent?: string; background?: string;
@@ -40,10 +40,10 @@ const ColorField = ({
           type="color"
           value={hex}
           onChange={(e) => setHex(e.target.value)}
-          className="h-10 w-14 cursor-pointer rounded border bg-background p-1"
+          className="h-10 w-16 cursor-pointer rounded border bg-background p-1"
           aria-label={`${label} 拾色器`}
         />
-        <Input value={hex} onChange={(e) => setHex(e.target.value)} className="font-mono" />
+        <span className="text-sm text-muted-foreground">点击左侧色块或选择下方预设</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {PRESETS.map((p) => (
@@ -161,8 +161,9 @@ const Branding = () => {
             <ColorField label="主色" value={theme.primary} onChange={(v) => setTheme({ ...theme, primary: v })} />
             <ColorField label="辅色" value={theme.accent} onChange={(v) => setTheme({ ...theme, accent: v })} />
             <ColorField label="背景色" value={theme.background} onChange={(v) => setTheme({ ...theme, background: v })} />
-            <div><Label>圆角大小</Label>
-              <Input value={theme.radius ?? ""} onChange={(e) => setTheme({ ...theme, radius: e.target.value })} placeholder="0.5rem" />
+            <div className="space-y-2"><Label>圆角大小</Label>
+              <Input value={theme.radius ?? ""} onChange={(e) => setTheme({ ...theme, radius: e.target.value })} placeholder="留空使用默认" />
+              <p className="text-xs text-muted-foreground">控制按钮、卡片的圆角程度，留空使用系统默认。</p>
             </div>
             <div><Label>布局变体</Label>
               <Select value={theme.layout ?? "sidebar"} onValueChange={(v) => setTheme({ ...theme, layout: v as Theme["layout"] })}>
