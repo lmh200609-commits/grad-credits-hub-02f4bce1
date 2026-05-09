@@ -1,61 +1,28 @@
-# 学分排名：并列排名 + 班级多选筛选
+## 问题
+工作助手悬浮面板有时整块"透明"，文字与下层表格重叠看不清。
 
-## 需求
+## 根因分析
+1. **面板背景不够稳健**：`StaffAiAssistant.tsx` 第 119 行使用 `bg-background`。该变量被 `useCollegeTheme` 在登录后通过 `document.documentElement.style.setProperty("--background", ...)` 动态覆盖，如果某个学院主题里写了带 alpha 或浅色低对比的 HSL，整个面板就会"看不见"。
+2. **缺少独立堆叠上下文**：面板没有 `isolate`，如果父级里有 `mix-blend-*` 或半透明遮罩（登录页背景动画、AI 评估卡片等）会污染它。
+3. **header 渐变失效**：第 120 行用 `to-primary-glow`，但 `tailwind.config.ts` 的 `colors` 里没有定义 `primary-glow`，这个类不生成 CSS，渐变退化为 `primary → transparent`，所以顶栏色条也会"消失"。
 
-1. **并列排名**：累计学分相同的学生显示相同名次（dense rank），从高到低。若全员都是 0 分，则全部并列第 1。
-2. **班级筛选支持批量**：在原有「院系」筛选旁新增「班级」筛选，支持多选若干班级，命中其一即纳入。
+## 改动计划
 
-涉及两个页面：
-- `src/pages/admin/Credits.tsx`（学院管理员 / 超管）
-- `src/pages/teacher/Credits.tsx`（教师，数据来自 RPC `get_student_credit_ranking`）
+### 1. `src/components/StaffAiAssistant.tsx`
+- 面板根 `<div>`：把 `bg-background` 换成 **`bg-card`** 并新增 `isolate`，再加一层兜底内联色 `style={{ backgroundColor: "hsl(var(--card))" }}`，确保不论主题如何覆盖 `--background` 都不会透明。
+- 顶栏 header：把 `bg-gradient-to-r from-primary to-primary-glow` 换成已注册的 token 写法 `style={{ background: "linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary-glow)))" }}`，避免依赖未注册的 Tailwind 颜色。
 
-## 1. 并列排名（dense rank）
+### 2. `tailwind.config.ts`
+- 在 `colors` 里补充 `"primary-glow": "hsl(var(--primary-glow))"`，让其它使用 `from-primary-glow / to-primary-glow / bg-primary-glow` 的地方也能正常渲染（顺手修，不破坏现有）。
 
-前端统一计算，避免依赖后端 RPC：
+### 3. 防止重复渲染
+- 全项目搜索 `<StaffAiAssistant`，确认只在 `AppLayout` 渲染一次；若存在多处再清理。
 
-```ts
-// 排序后计算 dense rank
-let rank = 0, prev = Number.POSITIVE_INFINITY;
-const ranked = sorted.map((r) => {
-  if (r.total_credit < prev) { rank += 1; prev = r.total_credit; }
-  return { ...r, rank };
-});
-```
+## 不改动
+- 助手的逻辑、消息存储、调用 edge function 全部保持不变。
+- 不动登录页背景与其他页面样式。
 
-- admin 页：在 `setRows` 之前生成 `rank` 字段（Row 类型加 `rank: number`），表格直接渲染 `r.rank`，不再用 `page * PAGE_SIZE + i + 1`。
-- teacher 页：忽略 RPC 返回的 `rank`，按相同逻辑在前端重算（保证「全 0 → 全部第 1」与 admin 一致）。
-
-导出 Excel 同样使用计算后的 `r.rank`。
-
-## 2. 班级多选筛选
-
-新增交互：
-- 用 `Popover` + 多个 `Checkbox`（shadcn 已有）做下拉多选（不用 Combobox 以减少依赖）。触发器是一个 `Button variant="outline"`，显示「全部班级」/「已选 N 个班级」。
-- 班级列表来自 `rows.map(r => r.class_name)` 去重后字母排序。
-- 顶部加「清空」按钮，并支持「全选 / 反选」操作。
-- URL 同步：`classes=班级A,班级B`（逗号分隔，URL encode）；初次加载从 search params 读入。
-- 筛选逻辑：`if (selectedClasses.size > 0 && !selectedClasses.has(r.class_name ?? "")) return false;`。
-- 计数行更新："共 X 名 · 已选 N 个班级"。
-- 筛选区从 `md:grid-cols-4` 调整为 `md:grid-cols-5` 以容纳新过滤器。
-
-为兼容老 URL，仍保留 `dept` 单选。
-
-## 技术细节
-
-文件改动：
-
-1. `src/pages/admin/Credits.tsx`
-   - `Row` 增加 `rank: number`；构建列表时按学分降序排序后用 dense-rank 算法填充 `rank`。
-   - 表格渲染 `#{r.rank}`；导出 Excel 用 `r.rank`。
-   - 新状态 `classes: Set<string>`，与 URL 参数 `classes` 双向同步（`updateClassFilter` 写 `next.set/delete`）。
-   - 渲染 Popover：`Button` 触发 → `PopoverContent` 含搜索框（按班级名过滤可选项）+ 「全选 / 清空」+ Checkbox 列表。
-   - `filtered` 中加入班级判断；`useEffect` 重置分页时把 `classes` 也作为依赖。
-   - 计算 `classes` 候选列表：`Array.from(new Set(rows.map(r => r.class_name).filter(Boolean))).sort()`，并按当前 `dept` 过滤后展示（如果选了院系，只显示该院系下的班级）。
-
-2. `src/pages/teacher/Credits.tsx`
-   - 同样的 dense-rank 逻辑（覆盖 RPC 的 rank）。
-   - 同样的班级多选 UI 与 URL 同步。
-
-3. 不改数据库；RPC 现有字段够用。
-
-不改 RLS、不改后端逻辑，仅前端展示和筛选。
+## 验收
+- 切换不同学院/主题进入 `/admin/credits` 打开工作助手，面板背景始终为不透明卡片色。
+- 顶部标题栏显示完整的主色 → 主色亮色 渐变。
+- 面板与下层表格不再透视重叠。

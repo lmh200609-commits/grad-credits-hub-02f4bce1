@@ -116,8 +116,14 @@ const StaffAiAssistant = () => {
   }
 
   return (
-    <div className="fixed bottom-20 right-6 z-50 flex h-[min(520px,calc(100vh-6rem))] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-[420px] flex-col overflow-hidden rounded-xl border bg-background shadow-2xl sm:w-[420px]">
-      <header className="flex items-center justify-between border-b bg-gradient-to-r from-primary to-primary-glow px-4 py-3 text-primary-foreground rounded-t-xl">
+    <div
+      className="fixed bottom-20 right-6 z-50 isolate flex h-[min(520px,calc(100vh-6rem))] max-h-[calc(100vh-6rem)] w-[calc(100vw-2rem)] max-w-[420px] flex-col overflow-hidden rounded-xl border bg-card shadow-2xl sm:w-[420px]"
+      style={{ backgroundColor: "hsl(var(--card))" }}
+    >
+      <header
+        className="flex items-center justify-between border-b px-4 py-3 text-primary-foreground rounded-t-xl"
+        style={{ background: "linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary-glow)))" }}
+      >
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4" />
           <span className="text-sm font-semibold">工作助手</span>
