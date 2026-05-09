@@ -341,12 +341,12 @@ const BindingRow = ({
         <div className="mt-0.5 text-xs text-muted-foreground">{meta.desc}</div>
         <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{binding.function_key}</div>
       </TableCell>
-      <TableCell className="align-top">
-        <div className="flex items-center gap-1">
+      <TableCell className="max-w-[260px] align-top">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant={isBound ? "default" : "secondary"}>{isBound ? "已绑定" : "环境回退"}</Badge>
-          <span className="text-sm font-medium">{activeName}</span>
+          <span className="truncate text-sm font-medium" title={activeName}>{activeName}</span>
         </div>
-        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground" title={activeBase}>{activeBase}</div>
+        <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground" title={activeBase}>{activeBase}</div>
         <div className="mt-0.5 font-mono text-[11px]">{activeModel}</div>
       </TableCell>
       <TableCell className="min-w-[340px] align-top">
