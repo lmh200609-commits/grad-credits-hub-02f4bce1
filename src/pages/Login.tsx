@@ -79,7 +79,7 @@ const Login = () => {
               />
               {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
             </div>
-            <Button type="submit" className="w-full" disabled={submitting}>
+            <Button type="submit" variant="solid" className="w-full" disabled={submitting}>
               {submitting ? "登录中…" : "登录"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
