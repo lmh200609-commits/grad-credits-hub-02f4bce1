@@ -11,6 +11,48 @@ const FILLERS = [
 const KEYCAP_DIGITS = /[\u0030-\u0039]\uFE0F?\u20E3/g; // 1️⃣ 2️⃣ ... 0️⃣
 const DECOR_EMOJI = /[⚠️📎👇✅❌🎉🤖💡⭐️✨📝📌🔔ℹ️👉👆👀]/g;
 
+// 数据库字段/表名 -> 中文显示名。用于把后端泄漏的英文标识翻译成自然中文。
+// 顺序很重要：长 key 必须排在短 key 之前，避免被部分匹配。
+const FIELD_LABELS: Array<[RegExp, string]> = [
+  [/\bstudent_no\b/g, "学号/工号"],
+  [/\bfull_name\b/g, "姓名"],
+  [/\bcollege_name\b/g, "学院"],
+  [/\bcollege_id\b/g, "学院"],
+  [/\bclass_name\b/g, "班级"],
+  [/\benrollment_year\b/g, "年级"],
+  [/\bbirth_date\b/g, "出生日期"],
+  [/\bpolitical_status\b/g, "政治面貌"],
+  [/\bapartment_no\b/g, "公寓号"],
+  [/\bdorm_room\b/g, "宿舍号"],
+  [/\bbed_no\b/g, "床号"],
+  [/\bid_card\b/g, "身份证号"],
+  [/\buser_id\b/g, "用户编号"],
+  [/\bapplication_id\b/g, "申请编号"],
+  [/\bsubmitted_at\b/g, "提交时间"],
+  [/\bcreated_at\b/g, "创建时间"],
+  [/\bdepartment\b/g, "院系"],
+  [/\bmajor\b/g, "专业"],
+  [/\bphone\b/g, "手机号"],
+  [/\bpassword\b/g, "密码"],
+  [/\bgender\b/g, "性别"],
+  [/\bethnicity\b/g, "民族"],
+  [/\badvisor\b/g, "辅导员"],
+  [/\bemail\b/g, "邮箱"],
+  // 表名
+  [/\bcolleges\b/g, "学院名单"],
+  [/\buser_roles\b/g, "角色记录"],
+  [/\bprofiles\b/g, "用户档案"],
+  [/\bapplications\b/g, "申请记录"],
+];
+
+/** 把英文字段名 / 表名翻译为中文显示名。 */
+export function translateFieldNames(input: string): string {
+  if (!input) return "";
+  let s = String(input);
+  for (const [re, zh] of FIELD_LABELS) s = s.replace(re, zh);
+  return s;
+}
+
 export function sanitizeMarkdown(input: string): string {
   if (!input) return "";
   let s = String(input).trim();
@@ -55,5 +97,7 @@ export function toPlainText(input: string): string {
   s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
   // 多余空格 / 空行
   s = s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n");
+  // 把残留的字段名/表名翻译成中文
+  s = translateFieldNames(s);
   return s.trim();
 }
