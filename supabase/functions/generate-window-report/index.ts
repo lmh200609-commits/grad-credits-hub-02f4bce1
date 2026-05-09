@@ -111,8 +111,10 @@ Deno.serve(async (req) => {
     const appRejected = appList.filter((a) => a.status === "rejected" || a.status === "rejected_by_ai").length;
     const appPending = totalApps - appApproved - appRejected;
     const totalCredit = stuList.reduce((s, x) => s + x.total_credit, 0);
-    const passN = (th: number) => stuList.filter((s) => s.submitted > 0 && s.total_credit >= th).length;
-    const passMain = passN(PASS_THRESHOLD), failMain = submittedStudents - passMain;
+    // 口径：全体学生（含未提交）中，total_credit < 阈值 即不合格
+    const passN = (th: number) => stuList.filter((s) => s.total_credit >= th).length;
+    const passMain = passN(PASS_THRESHOLD);
+    const failMain = totalStudents - passMain;
 
     const statusDist: Record<string, number> = {};
     appList.forEach((a) => {
@@ -142,11 +144,11 @@ Deno.serve(async (req) => {
       const rejected = ss.reduce((a, s) => a + s.rejected, 0);
       const pending = ss.reduce((a, s) => a + s.pending, 0);
       const credit = ss.reduce((a, s) => a + s.total_credit, 0);
-      const passC = ss.filter((s) => s.submitted > 0 && s.total_credit >= PASS_THRESHOLD).length;
+      const passC = ss.filter((s) => s.total_credit >= PASS_THRESHOLD).length;
       return {
         total, submitted, not_sub: total - submitted, approved, rejected, pending,
         credit, avg: total > 0 ? credit / total : 0,
-        pass_c: passC, fail_c: submitted - passC,
+        pass_c: passC, fail_c: total - passC,
       };
     };
 
@@ -163,15 +165,16 @@ Deno.serve(async (req) => {
 
     const failClasses = classDist.map((e) => {
       const fails = (classMap.get(e.name) ?? [])
-        .filter((s) => s.submitted > 0 && s.total_credit < PASS_THRESHOLD)
+        .filter((s) => s.total_credit < PASS_THRESHOLD)
         .map((s) => ({
           student_no: s.student_no, full_name: s.full_name,
           submitted: s.submitted, approved: s.approved, rejected: s.rejected, pending: s.pending,
           total_credit: s.total_credit, gap: PASS_THRESHOLD - s.total_credit,
+          not_submitted: s.submitted === 0,
         }))
         .sort((a, b) => b.gap - a.gap);
       return {
-        class: e.name, major: e.major,
+        class: e.name, major: e.major, total: e.total,
         submitted: e.submitted, pass_c: e.pass_c, fail_c: e.fail_c, not_sub: e.not_sub,
         fails,
       };
@@ -219,9 +222,9 @@ Deno.serve(async (req) => {
         total_credit: totalCredit, pass: passMain, fail: failMain,
       },
       pass_tiers: [
-        { th: 2, pass: passN(2), fail: submittedStudents - passN(2) },
+        { th: 2, pass: passN(2), fail: totalStudents - passN(2) },
         { th: PASS_THRESHOLD, pass: passMain, fail: failMain },
-        { th: 6, pass: passN(6), fail: submittedStudents - passN(6) },
+        { th: 6, pass: passN(6), fail: totalStudents - passN(6) },
       ],
       status_distribution: statusDist,
       daily_trend: trend,
