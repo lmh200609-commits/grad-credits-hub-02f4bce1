@@ -1,4 +1,4 @@
-// AIGC 鉴别（阿里云内容安全 · ImageModeration aigcCheck_pro 旗舰版）
+// AIGC 鉴别（阿里云内容安全 · ImageModeration aigcDetector_ultra 旗舰版）
 // 仅检测学生上传图片是否为 AI 生成（Midjourney / SD / 豆包 Seedream / 通义万相 / Flux 等）。
 // 写入 applications.aigc_* 字段，并按学院阈值更新 status：
 //   real    → 保持 pending_ai，正常进学分评估
@@ -13,9 +13,60 @@ const corsHeaders = {
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
 const DEFAULT_SUSPECT = 0.40;
 const DEFAULT_FAKE = 0.80;
+type JwtHeader = { alg?: string; kid?: string };
+type JwtClaims = { sub?: string; exp?: number; iss?: string; aud?: string; [key: string]: unknown };
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
+function base64UrlToBytes(input: string): Uint8Array {
+  const padded = input.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(input.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+
+function base64UrlJson<T>(input: string): T {
+  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(input))) as T;
+}
+
+function cryptoAlg(alg?: string): EcKeyImportParams | RsaHashedImportParams {
+  if (alg === "ES256") return { name: "ECDSA", namedCurve: "P-256", hash: "SHA-256" };
+  if (alg === "RS256") return { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
+  throw new Error("Unsupported JWT alg");
+}
+
+async function loadJwks(supaUrl: string): Promise<{ keys: JsonWebKey[] }> {
+  const configured = Deno.env.get("SUPABASE_JWKS");
+  if (configured) {
+    try {
+      const parsed = JSON.parse(configured);
+      if (Array.isArray(parsed?.keys)) return parsed;
+    } catch (_) {
+      console.warn("[aigc-detect] SUPABASE_JWKS is not valid JSON, fetching JWKS instead");
+    }
+  }
+  const resp = await fetch(`${supaUrl}/auth/v1/.well-known/jwks.json`);
+  if (!resp.ok) throw new Error(`JWKS fetch failed: ${resp.status}`);
+  return await resp.json();
+}
+
+async function verifyJwtLocally(token: string, supaUrl: string): Promise<JwtClaims> {
+  const [rawHeader, rawPayload, rawSignature] = token.split(".");
+  if (!rawHeader || !rawPayload || !rawSignature) throw new Error("Invalid JWT structure");
+  const header = base64UrlJson<JwtHeader>(rawHeader);
+  const payload = base64UrlJson<JwtClaims>(rawPayload);
+  if (!payload.sub) throw new Error("Missing sub claim");
+  if (!payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) throw new Error("JWT has expired");
+  if (payload.iss && payload.iss !== `${supaUrl}/auth/v1`) throw new Error("Invalid issuer");
+
+  const jwks = await loadJwks(supaUrl);
+  const jwk = jwks.keys?.find((k) => k.kid === header.kid);
+  if (!jwk) throw new Error(`JWT signing key not found: ${header.kid ?? "missing kid"}`);
+  const algorithm = cryptoAlg(header.alg);
+  const key = await crypto.subtle.importKey("jwk", jwk, algorithm, true, ["verify"]);
+  const valid = await crypto.subtle.verify(algorithm, key, base64UrlToBytes(rawSignature), enc.encode(`${rawHeader}.${rawPayload}`));
+  if (!valid) throw new Error("Invalid JWT signature");
+  return payload;
 }
 
 // ---------- Aliyun V3 (ACS3-HMAC-SHA256) signing ----------
@@ -115,11 +166,10 @@ Deno.serve(async (req) => {
   try {
     const supaUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const ak = Deno.env.get("ALIYUN_AK_ID");
     const sk = Deno.env.get("ALIYUN_AK_SECRET");
     const region = Deno.env.get("ALIYUN_GREEN_REGION") || "cn-shanghai";
-    const service = Deno.env.get("ALIYUN_AIGC_SERVICE") || "aigcCheck_pro";
+    const service = Deno.env.get("ALIYUN_AIGC_SERVICE") || "aigcDetector_ultra";
     if (!ak || !sk) return json({ error: "ALIYUN_AK_ID / ALIYUN_AK_SECRET 未配置" }, 500);
 
     const auth = req.headers.get("Authorization") ?? "";
@@ -128,14 +178,15 @@ Deno.serve(async (req) => {
     let callerId: string | null = null;
     if (!isService) {
       if (!auth.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
-      const caller = createClient(supaUrl, anonKey, { global: { headers: { Authorization: auth } } });
       const token = auth.slice("Bearer ".length);
-      const { data: cd, error: ce } = await caller.auth.getClaims(token);
-      if (ce || !cd?.claims?.sub) {
-        console.error("[aigc-detect] getClaims failed:", ce?.message);
+      let claims: JwtClaims;
+      try {
+        claims = await verifyJwtLocally(token, supaUrl);
+      } catch (e) {
+        console.error("[aigc-detect] JWT verify failed:", (e as Error).message);
         return json({ error: "Unauthorized" }, 401);
       }
-      callerId = cd.claims.sub as string;
+      callerId = claims.sub as string;
     }
 
     const body = await req.json().catch(() => ({}));
