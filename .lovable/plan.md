@@ -1,74 +1,59 @@
-## 你看到的两个症状，根因都在 `import-assistant-chat` 边缘函数
+## 问题诊断
 
-### 1. "权限限制太死，很多问题答不了"
-当前 `SYSTEM_PROMPT` 把助手死死锁在「批量导入」这一个页面：
-> 如果用户问的内容与导入无关，礼貌引导回到导入主题。
+**问题 1：明明是 AI 图，系统却显示"真实拍摄 0.0%"**
 
-凡是顺带问到 **账号管理 / 角色权限 / 学院归属 / 密码重置 / 登录失败 / 学生管理 / AI 模型配置** 等"系统级"问题，模型都会被这条规则憋回去，回一句"请回到导入主题"。但管理员真实场景里这些问题都是连着问的。
+不是"传给阿里云的是一串代码"——阿里云后台截图（图3）能看到我们传过去的 `图片URL` 完全正常，是 Supabase 签名 URL，阿里云也成功拉取并识别成了"高风险 risk_aigc / risk_edit"。
 
-### 2. "不同的问题输出相同的无关回答"
-函数顶部有一段 `QUICK_ANSWERS` 正则白名单（密码 / 学院 / 表头 / 失败排查 / 教师导入 5 条）。**只要用户句子里出现关键词，就直接绕过模型返回固定文本**：
+真正的 bug 在 `supabase/functions/aigc-detect/index.ts` 的 `parseAliyunResult()`：阿里云 `aigcDetector_ultra` 返回的标签实际叫 `risk_aigc` / `risk_edit` / `nonLabel`，但代码里写的是：
 
 ```ts
-test: (q) => /(默认密码|初始密码)/.test(q)  // 命中 → 永远返回密码那段
+if (/^(ai|aigc|fake|generated|...)/.test(label))
 ```
 
-实际触发的"误命中"举例：
-- 问"密码忘了怎么改" → 命中"密码"，返回的是"初始密码生成规则"。
-- 问"学院列写错了能改吗" → 命中"学院"，返回的是"学院列要填学院名称"。
-- 问"教师导完账号后怎么分配课程" → 命中"导入教师步骤"，返回的还是导入流程。
+`risk_aigc` 不以 `ai|aigc|fake` 开头 → 命中分始终 = 0 → 永远判成 `real`。同时也没有读阿里云顶层返回的 `RiskLevel`（"高风险"/"无风险"），白白扔掉了最直接的判定信号。
 
-加上历史只截取了 `messages.slice(-6)` 且 temperature=0.4，模型本身也容易在多轮里反复抄第一次的答案。
+**问题 2：每次都要手动点"处理队列"才会跑 AI 鉴别**
 
----
+数据库触发器其实已经在每次学生提交时自动把任务塞进 `aigc_detect_queue`（迁移 `20260510114509`），但消费这个队列的 `process-aigc-queue` 函数 **从来没被注册成 pg_cron 定时任务**。对比 `process-eval-queue` 是每分钟跑一次（迁移 `20260510131543`），AIGC 队列就只能靠管理员去 `/admin/aigc` 页面手动点按钮触发。
 
-## 改造方案
+## 修复方案
 
-### A. 把 QUICK_ANSWERS 改为"严格短问匹配"，否则一律走模型
+### A. 修正阿里云返回解析（`supabase/functions/aigc-detect/index.ts`）
 
-- 加一条前置守卫：用户消息长度 > 18 个字符、或包含「怎么改 / 改不了 / 没生效 / 为什么 / 失败了 / 帮我」等"追问 / 排错"语气词时，**不**走 QUICK_ANSWERS。
-- 每个 QA 的正则都要求"问句近似等于该主题"（如要命中密码 QA，必须满足：长度≤14 且整句只问密码规则，不能含"改/重置/忘"等动词）。
-- 仍命中时，在固定回答末尾追加一句"如果你问的是其他场景，请直接发详细问题，我重新回答"，避免用户怀疑助手卡死。
+重写 `parseAliyunResult()`：
 
-### B. 拓宽 SYSTEM_PROMPT 的回答边界
+1. 标签匹配扩展为 `/^(risk_aigc|risk_edit|ai|aigc|fake|generated|sd|midjourney|seedream|flux|kling)/`，把 `risk_aigc` / `risk_edit` 都当作 AI 生成的强证据。
+2. 增加顶层 `RiskLevel` 兜底：`high` → 至少 0.9，`medium` → 至少 0.6，`low` → 至少 0.3，避免极端情况下数组解析不到东西时全部判成真实。
+3. `suspected_models` 从 `Description` / `SubLabels` 里提取常见模型名（Midjourney / SD / Flux / 豆包 Seedream / 通义万相 / 可灵 / Sora 等），写到 `aigc_detail.suspected_models`，方便审核员看。
 
-把"无关就拒答"改成"分层回答"：
+不动签名、不动请求体、不动 imageUrl 流程——阿里云那边证明拉图本身是好的。
 
-1. 第一优先：批量导入相关 → 详细回答，可分步骤。
-2. 第二优先：账号 / 角色 / 学院 / 密码 / 登录 / 学生与教师管理 / 申请审核 / AI 配置等"本系统其他模块"的问题 → 用 1-3 句给出操作指引（"在【用户管理】页面 → 选中用户 → 重置密码"），并附上对应路由名。
-3. 第三优先：与本系统完全无关（天气、聊天、写代码）→ 才礼貌拒答并引回导入主题。
+### B. 让 AIGC 队列自动跑（新建一条迁移）
 
-同时新增一段"系统知识小抄"，列出常用页面与能力，让模型有据可依：
+仿照 `process-eval-queue` 的 cron，新增 pg_cron 任务，每分钟调用一次 `process-aigc-queue`：
 
-- 用户管理（/admin/users）：增删改、重置密码、调整角色、转学院。
-- 学生管理（/teacher/students）：查看名单、跳转个人详情。
-- 学院管理（/super/colleges）、管理员管理（/super/admins）。
-- 提交窗口（/admin/submission-windows）：开/关学生提交。
-- 审核（/admin/review、/reviews）：人工复核 AI 初审结果。
-- AI 模型（/admin/ai-models）、关键词（/admin/keywords）、规则（/admin/rules）。
+```sql
+SELECT cron.schedule(
+  'process-aigc-queue-every-minute',
+  '* * * * *',
+  $$ SELECT net.http_post(
+       url:='https://eceqokilpppnwtfzgbvq.supabase.co/functions/v1/process-aigc-queue',
+       headers:='{"Content-Type":"application/json","Authorization":"Bearer <anon-key>"}'::jsonb,
+       body:='{}'::jsonb
+     ); $$
+);
+```
 
-### C. 让多轮对话不再"复读"
+并把当前所有卡在 `aigc_status='pending'` 的旧申请重新塞回队列一次（`next_run_at = now()`），让定时任务下一分钟就把历史欠账消化掉。
 
-- `messages.slice(-6)` 改成 `slice(-12)`，并且**保留所有 user 消息**（assistant 长消息可截断到 600 字），保证模型看得到"已经问过什么"。
-- SYSTEM_PROMPT 中明确：「如果上一条助手消息已经覆盖了用户当前问题的核心，请直接说『前面已经回答过：…，简要补一句新信息』，禁止整段复制上一条回复」。
-- temperature 从 0.4 提到 0.6，避免每次都吐出几乎相同的句子。
-- 前端 `askAi`：发送前在 history 末尾再附一条隐式系统提示「下面是用户的新问题，请只回答这一句，不要重复之前已经讲过的导入流程」。（在 edge function 端拼接，前端不动。）
+### C. 验证
 
-### D. 模型可调
+- 手动 curl `aigc-detect` 一条已知是 AI 生成的旧申请，确认命中分 ≥ 0.9、`aigc_status=fake`、`suspected_models` 里有具体模型名。
+- 提交一条新申请，等 1 分钟内 `aigc_status` 自动从 `pending` → `real/suspect/fake`，无需人工点按钮。
+- 确认 `数据看板` / `复核中心` 的"系统核验中"数量会随之自动下降，与"待教师复核"保持一致。
 
-如果 DashScope/Qwen 在多轮压抑性 prompt 下表现仍差，提供一个 fallback：当本次响应判定"和上一条 assistant 文本重复度 > 80%"时，**自动用 Lovable AI Gateway（`google/gemini-3-flash-preview`）重试一次**，返回更灵活的答案。这一段加在 `aiResp` 解析后。
+## 不在范围内
 
-### E. 验证
-
-1. 连续问：「默认密码是什么？」→「那密码忘了怎么改？」→「能改成统一的 abc123 吗？」 → 三个回答必须各不相同，第二个要指向"用户管理-重置密码"，第三个明确说"系统不支持自定义初始密码"。
-2. 问「我想给某个学生改学院」 → 应当指向「用户管理 → 编辑 → 学院」而不是回一句"请回到导入主题"。
-3. 问「为什么我登录不上」 → 应给出 2-3 步排查（密码/网络/角色），不再被卡。
-4. 问「批量导入怎么用」（首次问）→ 仍然完整给出 4 步流程；再问「上传后没看到学生」→ 简短答"请确认是否点了确认导入按钮"，不重复完整流程。
-
-## 不在本次改动范围
-
-- 不改前端 UI 和聊天气泡。
-- 不改默认 AI 提供商（继续用现配的 DashScope/Qwen，仅在重复时自动 fallback）。
-- 不动 `format-answer.ts` 和字段中文化映射。
-
-确认后我进入 build 模式按 A→B→C→D→E 顺序实施并自检。
+- 不动 `evaluate-application`、不动学分评估逻辑。
+- 不动前端 `AigcDetectAlert` / `AigcAdmin` UI（手动按钮保留作应急用）。
+- 不调整学院端 `suspect` / `fake` 阈值，仍走 `colleges.theme.aigc` 配置。
