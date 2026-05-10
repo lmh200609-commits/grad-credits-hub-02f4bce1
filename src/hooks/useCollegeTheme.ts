@@ -35,6 +35,13 @@ export const useCollegeTheme = () => {
     root.style.removeProperty("--radius");
   };
 
+  // 仅接受形如 "H S% L%" 的 HSL 三元组（H: 0-360，S/L: 0-100%）
+  const isValidHsl = (v?: string) => {
+    if (!v || typeof v !== "string") return false;
+    return /^\s*\d{1,3}(\.\d+)?\s+\d{1,3}(\.\d+)?%\s+\d{1,3}(\.\d+)?%\s*$/.test(v);
+  };
+  const isValidRadius = (v?: string) => !!v && /^\d+(\.\d+)?(rem|px|em)$/.test(v);
+
   useEffect(() => {
     if (!collegeId) {
       setCollege(null);
@@ -47,15 +54,17 @@ export const useCollegeTheme = () => {
       setCollege(data as College);
       const t = (data.theme ?? {}) as CollegeTheme;
       const root = document.documentElement;
-      if (t.primary) {
+      // 先重置，避免上一次的非法值残留
+      resetThemeVars(root);
+      if (isValidHsl(t.primary)) {
         root.style.setProperty("--primary", t.primary);
         root.style.setProperty("--ring", t.primary);
         root.style.setProperty("--sidebar-primary", t.primary);
         root.style.setProperty("--sidebar-ring", t.primary);
       }
-      if (t.accent) root.style.setProperty("--accent", t.accent);
-      if (t.background) root.style.setProperty("--background", t.background);
-      if (t.radius) root.style.setProperty("--radius", t.radius);
+      if (isValidHsl(t.accent)) root.style.setProperty("--accent", t.accent!);
+      if (isValidHsl(t.background)) root.style.setProperty("--background", t.background!);
+      if (isValidRadius(t.radius)) root.style.setProperty("--radius", t.radius!);
     };
     const fetchOnce = async () => {
       const { data } = await supabase
