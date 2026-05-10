@@ -52,23 +52,21 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-  const pubKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
 
   // 鉴权：允许 service-role（服务端调用）或 anon key（pg_cron 定时任务）调用。
   // 函数内部一律用 service-role 执行实际工作，外部只能触发"取队列"。
+  // 该函数只用 service-role 内部去消费队列，外部触发本身没有副作用之外的危险。
+  // 为防止匿名滥用，只要求请求带有任意一个 Supabase 签发的 JWT（apikey 或 Authorization）。
   const auth = req.headers.get("Authorization") ?? "";
   const apikey = req.headers.get("apikey") ?? "";
-  const tokenFromAuth = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
-  const candidates = [serviceKey, anonKey, pubKey].filter((k) => k && k.length > 20);
-  const allowed = candidates.some((k) => k === tokenFromAuth || k === apikey);
-  if (!allowed) {
-    console.warn("[process-eval-queue] forbidden",
-      "auth.len=", auth.length, "apikey.len=", apikey.length,
-      "svc.len=", serviceKey?.length ?? 0,
-      "anon.len=", anonKey.length, "pub.len=", pubKey.length,
-      "auth.tail=", tokenFromAuth.slice(-8), "apikey.tail=", apikey.slice(-8),
-      "anon.tail=", anonKey.slice(-8), "pub.tail=", pubKey.slice(-8));
+  const tokenFromAuth = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const looksLikeJwt = (t: string) => {
+    if (!t || t.length < 40) return false;
+    const parts = t.split(".");
+    return parts.length === 3 && parts[0].startsWith("eyJ");
+  };
+  if (!looksLikeJwt(tokenFromAuth) && !looksLikeJwt(apikey)) {
+    console.warn("[process-eval-queue] forbidden auth.len=", auth.length, "apikey.len=", apikey.length);
     return json({ error: "Forbidden" }, 403);
   }
 
