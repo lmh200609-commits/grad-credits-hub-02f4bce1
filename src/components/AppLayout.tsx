@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation, matchPath } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useCollegeTheme } from "@/hooks/useCollegeTheme";
+import { usePreviewTheme } from "@/hooks/usePreviewTheme";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
@@ -84,11 +85,19 @@ const AppSidebar = () => {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { hasRole, isSuperAdmin, collegeId } = useAuth();
+  const { active: previewActive, roleView } = usePreviewTheme();
   const location = useLocation();
-  const items = isSuperAdmin
-    ? superAdminItems
-    : hasRole("admin") ? adminItems
-    : hasRole("teacher") ? teacherItems
+  const effectiveRole: "super_admin" | "admin" | "teacher" | "student" =
+    previewActive && roleView
+      ? roleView
+      : isSuperAdmin ? "super_admin"
+      : hasRole("admin") ? "admin"
+      : hasRole("teacher") ? "teacher"
+      : "student";
+  const items =
+    effectiveRole === "super_admin" ? superAdminItems
+    : effectiveRole === "admin" ? adminItems
+    : effectiveRole === "teacher" ? teacherItems
     : studentItems;
 
   const isItemActive = (url: string) =>
@@ -172,6 +181,7 @@ const SidebarNavItem = ({
 const AppLayout = ({ children }: { children: ReactNode }) => {
   const { user, roles, signOut, hasRole, isSuperAdmin } = useAuth();
   const college = useCollegeTheme();
+  const { active: previewActive, roleView } = usePreviewTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const handleSignOut = async () => {
@@ -179,11 +189,17 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     navigate("/login", { replace: true });
   };
   const collegeShort = college?.short_name || college?.name || "";
-  const roleLabel = roles.includes("super_admin") ? "超级管理员"
+  const realLabel = roles.includes("super_admin") ? "超级管理员"
     : roles.includes("admin") ? (collegeShort ? `${collegeShort}管理员` : "学院管理员")
     : roles.includes("teacher") ? (collegeShort ? `${collegeShort}教师` : "教师")
     : roles.includes("student") ? (collegeShort ? `${collegeShort}学生` : "学生")
     : "未分配";
+  const previewLabel = roleView === "admin" ? "管理员" : roleView === "teacher" ? "教师" : roleView === "student" ? "学生" : "";
+  const roleLabel = previewActive && roleView ? `预览：${previewLabel}视角` : realLabel;
+  const showStudentAssistant = previewActive && roleView ? roleView === "student" : hasRole("student");
+  const showStaffAssistant = previewActive && roleView
+    ? (roleView === "admin" || roleView === "teacher")
+    : (isSuperAdmin || hasRole("admin") || hasRole("teacher"));
 
   const allMenuItems = [...superAdminItems, ...adminItems, ...teacherItems, ...studentItems];
   const currentTitle =
@@ -228,8 +244,8 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           </header>
           <main className="flex-1 overflow-auto bg-muted/30 p-3 sm:p-6">{children}</main>
         </div>
-        {hasRole("student") && <AiAssistant />}
-        {(isSuperAdmin || hasRole("admin") || hasRole("teacher")) && <StaffAiAssistant />}
+        {showStudentAssistant && <AiAssistant />}
+        {showStaffAssistant && <StaffAiAssistant />}
       </div>
     </SidebarProvider>
   );
