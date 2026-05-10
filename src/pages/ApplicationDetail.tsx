@@ -895,6 +895,18 @@ const ApplicationDetail = () => {
           <DialogHeader>
             <DialogTitle>学分认定证明 · 预览</DialogTitle>
           </DialogHeader>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={materialPreviewOpen} onOpenChange={setMaterialPreviewOpen}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>提交材料 · 放大查看</DialogTitle>
+          </DialogHeader>
+          {fileUrl && <ZoomableImage src={fileUrl} alt="学生提交的材料" openUrl={fileUrl} />}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={previewOpen && false} onOpenChange={() => {}}>
+        <DialogContent>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">PDF 方向：</span>
             <ToggleGroup
