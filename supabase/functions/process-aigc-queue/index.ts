@@ -47,7 +47,25 @@ Deno.serve(async (req) => {
   const supaUrl = Deno.env.get("SUPABASE_URL")!;
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const auth = req.headers.get("Authorization") ?? "";
-  if (!auth.includes(key)) return json({ error: "Forbidden" }, 403);
+  let allowed = auth.includes(key);
+  if (!allowed && auth.startsWith("Bearer ")) {
+    const userClient = createClient(supaUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: auth } },
+    });
+    const { data: userData } = await userClient.auth.getUser();
+    const uid = userData?.user?.id;
+    if (uid) {
+      const adminCheck = createClient(supaUrl, key);
+      const { data: roles } = await adminCheck
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", uid)
+        .eq("role", "super_admin")
+        .limit(1);
+      allowed = !!(roles && roles.length > 0);
+    }
+  }
+  if (!allowed) return json({ error: "Forbidden" }, 403);
 
   let batch = DEFAULT_BATCH, concurrency = DEFAULT_CONCURRENCY;
   try {
