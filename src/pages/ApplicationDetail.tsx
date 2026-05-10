@@ -15,7 +15,8 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AiVerdictCard, ReviewSourceBadge } from "@/components/AiVerdictCard";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle, Award } from "lucide-react";
+import { ArrowLeft, Check, X, FileDown, ImageIcon, RefreshCw, Undo2, AlertTriangle, Award, ZoomIn } from "lucide-react";
+import ZoomableImage from "@/components/ZoomableImage";
 import { normalizeKeyword } from "@/lib/keywords";
 import { toPlainText } from "@/lib/sanitizeMarkdown";
 import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
@@ -98,6 +99,7 @@ const ApplicationDetail = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
   const [preparing, setPreparing] = useState(false);
+  const [materialPreviewOpen, setMaterialPreviewOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -585,13 +587,23 @@ const ApplicationDetail = () => {
                 </div>
                 {fileUrl ? (
                   /\.(jpe?g|png|webp|gif)$/i.test(app.file_path) ? (
-                    <a href={fileUrl} target="_blank" rel="noreferrer" className="block">
+                    <button
+                      type="button"
+                      onClick={() => setMaterialPreviewOpen(true)}
+                      className="group relative block w-full text-left"
+                      title="点击放大查看"
+                    >
                       <img
                         src={fileUrl}
                         alt="学生提交的材料"
+                        loading="eager"
+                        decoding="sync"
                         className="max-h-96 w-auto rounded border bg-muted/30 object-contain"
                       />
-                    </a>
+                      <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground">
+                        <ZoomIn className="h-3.5 w-3.5" /> 点击放大查看
+                      </span>
+                    </button>
                   ) : (
                     <Button variant="outline" size="sm" asChild>
                       <a href={fileUrl} target="_blank" rel="noreferrer"><FileDown className="mr-1 h-4 w-4" /> 查看附件</a>
@@ -919,6 +931,14 @@ const ApplicationDetail = () => {
               {exporting ? "导出中…" : "下载 PDF"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={materialPreviewOpen} onOpenChange={setMaterialPreviewOpen}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>提交材料 · 放大查看</DialogTitle>
+          </DialogHeader>
+          {fileUrl && <ZoomableImage src={fileUrl} alt="学生提交的材料" openUrl={fileUrl} />}
         </DialogContent>
       </Dialog>
     </AppLayout>
