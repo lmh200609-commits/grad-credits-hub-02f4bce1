@@ -52,10 +52,17 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-  // 简单鉴权：只允许 service-role 或 cron 调用
+  // 鉴权：允许 service-role（服务端调用）或 anon key（pg_cron 定时任务）调用。
+  // 函数内部一律用 service-role 执行实际工作，外部只能触发"取队列"。
   const auth = req.headers.get("Authorization") ?? "";
-  if (!auth.includes(serviceKey)) {
+  const apikey = req.headers.get("apikey") ?? "";
+  const allowed =
+    (serviceKey && (auth.includes(serviceKey) || apikey === serviceKey)) ||
+    (anonKey && (auth.includes(anonKey) || apikey === anonKey));
+  if (!allowed) {
+    console.warn("[process-eval-queue] forbidden call, auth.len=", auth.length, "apikey.len=", apikey.length);
     return json({ error: "Forbidden" }, 403);
   }
 
@@ -75,6 +82,7 @@ Deno.serve(async (req) => {
     return json({ error: error.message }, 500);
   }
   const list: Job[] = (jobs as Job[]) ?? [];
+  console.log("[process-eval-queue] claimed:", list.length);
   if (list.length === 0) {
     return json({ claimed: 0, results: [] });
   }
@@ -87,6 +95,7 @@ Deno.serve(async (req) => {
     results.push(...r);
   }
 
+  console.log("[process-eval-queue] done:", JSON.stringify(results.map((x) => ({ id: x.id, ok: x.ok }))));
   return json({ claimed: list.length, results });
 });
 
