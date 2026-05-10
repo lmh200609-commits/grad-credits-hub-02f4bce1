@@ -37,7 +37,14 @@ function cryptoAlg(alg?: string): EcKeyImportParams | RsaHashedImportParams {
 
 async function loadJwks(supaUrl: string): Promise<{ keys: JsonWebKey[] }> {
   const configured = Deno.env.get("SUPABASE_JWKS");
-  if (configured) return JSON.parse(configured);
+  if (configured) {
+    try {
+      const parsed = JSON.parse(configured);
+      if (Array.isArray(parsed?.keys)) return parsed;
+    } catch (_) {
+      console.warn("[aigc-detect] SUPABASE_JWKS is not valid JSON, fetching JWKS instead");
+    }
+  }
   const resp = await fetch(`${supaUrl}/auth/v1/.well-known/jwks.json`);
   if (!resp.ok) throw new Error(`JWKS fetch failed: ${resp.status}`);
   return await resp.json();
