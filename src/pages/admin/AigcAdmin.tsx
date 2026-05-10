@@ -98,7 +98,16 @@ const AigcAdmin = () => {
     try {
       const { data, error } = await supabase.functions.invoke("process-aigc-queue", { body: {} });
       if (error) throw error;
-      toast({ title: "已触发处理", description: JSON.stringify(data).slice(0, 120) });
+      const claimed = (data as any)?.claimed ?? 0;
+      const results = ((data as any)?.results ?? []) as Array<{ ok: boolean }>;
+      const ok = results.filter((r) => r.ok).length;
+      const fail = results.length - ok;
+      toast({
+        title: "已触发处理",
+        description: claimed === 0
+          ? "当前没有待处理任务"
+          : `本次领取 ${claimed} 条，成功 ${ok} 条，失败 ${fail} 条`,
+      });
       await load();
     } catch (e) {
       toast({ title: "执行失败", description: (e as Error).message, variant: "destructive" });
