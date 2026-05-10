@@ -146,15 +146,24 @@ function parseAliyunResult(raw: any): { score: number; labels: string[]; suspect
     const label = String(r?.Label ?? "").toLowerCase();
     const conf = Math.max(0, Math.min(100, Number(r?.Confidence ?? 0))) / 100;
     if (label) labels.push(`${label}:${(conf * 100).toFixed(1)}%`);
-    // ai / aigc / fake / generated 视为 AI 生成正向证据
-    if (/^(ai|aigc|fake|generated|ai_generated|sd|midjourney|seedream|flux|kling)/.test(label)) {
+    // 阿里云 aigcDetector_ultra 实际返回 risk_aigc / risk_edit / nonLabel 等标签；
+    // 同时兼容旧的 ai / aigc / fake / generated 等命名
+    if (/(risk_aigc|risk_edit|^ai$|^aigc|^fake|^generated|^ai_generated|^sd|^midjourney|^seedream|^flux|^kling)/.test(label)) {
       aiScore = Math.max(aiScore, conf);
-      // 旗舰版有时把模型名写在 Description 或 SubLabels
-      const desc = r?.Description ?? "";
-      const m = String(desc).match(/(midjourney|stable\s*diffusion|sd|flux|seedream|豆包|通义万相|wanxiang|kling|可灵|dalle|sora)/i);
+      // 旗舰版有时把模型名写在 Description / SubLabels
+      const desc = `${r?.Description ?? ""} ${JSON.stringify(r?.SubLabels ?? "")}`;
+      const m = desc.match(/(midjourney|stable\s*diffusion|\bsd\b|flux|seedream|豆包|通义万相|wanxiang|kling|可灵|dalle|sora)/i);
       if (m) suspectedModels.push({ name: m[0], score: conf });
       else suspectedModels.push({ name: label, score: conf });
     }
+  }
+  // 兜底：若 Result 里没解析到分数，但顶层 RiskLevel 已明确给出风险等级，按等级给一个保守估计
+  if (aiScore === 0) {
+    const riskLevel = String(data?.RiskLevel ?? raw?.RiskLevel ?? "").toLowerCase();
+    if (riskLevel === "high") aiScore = 0.92;
+    else if (riskLevel === "medium") aiScore = 0.65;
+    else if (riskLevel === "low") aiScore = 0.35;
+    if (aiScore > 0) labels.push(`riskLevel:${riskLevel}`);
   }
   const topLabel = aiScore >= 0.5 ? "aigc" : "real";
   return { score: aiScore, labels, suspectedModels, topLabel };
