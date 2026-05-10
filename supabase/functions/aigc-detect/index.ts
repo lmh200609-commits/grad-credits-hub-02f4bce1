@@ -129,9 +129,13 @@ Deno.serve(async (req) => {
     if (!isService) {
       if (!auth.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
       const caller = createClient(supaUrl, anonKey, { global: { headers: { Authorization: auth } } });
-      const { data: ud, error: ue } = await caller.auth.getUser();
-      if (ue || !ud?.user) return json({ error: "Unauthorized" }, 401);
-      callerId = ud.user.id;
+      const token = auth.slice("Bearer ".length);
+      const { data: cd, error: ce } = await caller.auth.getClaims(token);
+      if (ce || !cd?.claims?.sub) {
+        console.error("[aigc-detect] getClaims failed:", ce?.message);
+        return json({ error: "Unauthorized" }, 401);
+      }
+      callerId = cd.claims.sub as string;
     }
 
     const body = await req.json().catch(() => ({}));
