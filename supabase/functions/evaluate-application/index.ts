@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: app, error: appErr } = await admin
+    let { data: app, error: appErr } = await admin
       .from("applications")
       .select("*")
       .eq("id", application_id)
@@ -144,6 +144,35 @@ Deno.serve(async (req) => {
         return json({ error: "Forbidden" }, 403);
       }
     }
+
+    // ---- AIGC 鉴别前置 ----
+    // 若尚未跑过 AIGC 检测且本次有图片附件 → 同步触发一次，避免乱序。
+    if (app.aigc_status === "pending" && app.file_path) {
+      try {
+        const supaUrl = Deno.env.get("SUPABASE_URL")!;
+        const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        await fetch(`${supaUrl}/functions/v1/aigc-detect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${svcKey}`, apikey: svcKey },
+          body: JSON.stringify({ application_id }),
+        });
+        const { data: refreshed } = await admin.from("applications").select("*").eq("id", application_id).single();
+        if (refreshed) app = refreshed;
+      } catch (e) {
+        console.error("[evaluate-application] inline aigc-detect failed:", e);
+      }
+    }
+
+    // 若 AIGC 鉴定为 AI 生成图（fake）→ 已被 aigc-detect 置为 rejected_by_ai，直接返回
+    if (app.aigc_status === "fake" || app.status === "rejected_by_ai") {
+      return json({
+        status: app.status,
+        skipped: true,
+        reason: app.aigc_status === "fake" ? "aigc_fake" : "already_rejected",
+      });
+    }
+    const aigcSuspect = app.aigc_status === "suspect";
+    const aigcScore = typeof app.aigc_score === "number" ? app.aigc_score : Number(app.aigc_score ?? 0);
 
     const { data: studentProfile } = await admin
       .from("profiles")
@@ -291,7 +320,14 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
 
 【工具使用】可主动调用 web_search 工具（最多 2 次）辅助 D 项判断；完成全部核验后必须调用 submit_evaluation 提交结果。`;
 
-    const fullSystemPrompt = systemPrompt + extraPrompt;
+    let aigcExtraPrompt = "";
+    if (aigcSuspect) {
+      const models = (app.aigc_detail as any)?.suspected_models?.slice(0, 3)?.map((m: any) => `${m.name}(${(m.score * 100).toFixed(0)}%)`).join("、") || "未知";
+      aigcExtraPrompt = `\n\n【风险信号】阿里云 AIGC 鉴别旗舰版判定本图疑似 AI 生成（概率 ${(aigcScore * 100).toFixed(1)}%，疑似来源：${models}）。请在 authenticity 维度从严判断，禁止 auto_approved。`;
+    } else if (aigcScore > 0) {
+      aigcExtraPrompt = `\n\n【AIGC 鉴别】阿里云判定本图为真实拍摄概率较高（AI 生成概率 ${(aigcScore * 100).toFixed(1)}%）。`;
+    }
+    const fullSystemPrompt = systemPrompt + extraPrompt + aigcExtraPrompt;
 
     const userPayload = {
       student: {
@@ -601,10 +637,14 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       // 学生选的关键词与图片识别结果对应不同案例 → 不能自动通过
       nextStatus = result.recommendation === "reject" ? "rejected_by_ai" : "pending_review";
     } else if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
-      nextStatus = "auto_approved";
+      nextStatus = aigcSuspect ? "pending_review" : "auto_approved";
     } else if (result.recommendation === "reject" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "rejected_by_ai";
     } else {
+      nextStatus = "pending_review";
+    }
+
+    if (aigcSuspect && nextStatus === "auto_approved") {
       nextStatus = "pending_review";
     }
 

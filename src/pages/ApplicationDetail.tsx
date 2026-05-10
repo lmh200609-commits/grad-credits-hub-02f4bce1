@@ -22,6 +22,7 @@ import { formatDepositDate, EMPTY_PLACEHOLDER } from "@/lib/utils";
 import CertificatePreview, { CertificateData } from "@/components/CertificatePreview";
 import { exportElementToPdf, makeQrDataUrl, urlToDataUrl } from "@/lib/certificate";
 import FaceMatchAlert from "@/components/FaceMatchAlert";
+import AigcDetectAlert from "@/components/AigcDetectAlert";
 import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -58,6 +59,10 @@ type App = {
   face_match_score?: number | null;
   face_match_note?: string | null;
   face_checked_at?: string | null;
+  aigc_status?: "pending" | "real" | "suspect" | "fake" | "skipped" | "error" | null;
+  aigc_score?: number | null;
+  aigc_detail?: any;
+  aigc_checked_at?: string | null;
 };
 type Review = {
   id: string; action: string; decision: string; credit: number | null;
@@ -523,6 +528,16 @@ const ApplicationDetail = () => {
             {app.certificate_issued_at && <> · 首次签发：{new Date(app.certificate_issued_at).toLocaleString()}</>}
           </div>
         )}
+
+        <AigcDetectAlert
+          applicationId={app.id}
+          status={app.aigc_status}
+          score={app.aigc_score ?? null}
+          detail={app.aigc_detail ?? null}
+          checkedAt={app.aigc_checked_at ?? null}
+          visible={isReviewer}
+          onRefreshed={load}
+        />
 
         <FaceMatchAlert
           applicationId={app.id}
