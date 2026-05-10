@@ -174,6 +174,17 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // 问候 / 能力询问：直接给出友好引导，不走 RAG 也不报"无法回答"
+    if (isGreeting(query) || isCapabilityQuery(query)) {
+      const ans = normalizeMarkdown(
+        `## 结论\n你好，我是「学分认定规则问答助手」，很高兴为你服务。\n\n## 依据\n我可以帮你做这些事：\n- 解释学分认定规则（例如"国家级竞赛一等奖能认定多少学分？"）\n- 查询历史相似案例（例如"互联网+ 省赛银奖以往怎么认定？"）\n- 查看你自己的申请与累计学分（输入"我的申请"或"我的学分"）\n- 回答你的身份信息（输入"我是谁/我学号是多少"）\n\n## 补充\n请尽量在提问时附上：成果/证书全称、级别（校级/省级/国家级/国际级）、获奖等级、你的参与角色，这样我能给出更准确的参考结论。`
+      );
+      return new Response(JSON.stringify({
+        answer: ans, sections: toSections(ans), meta: { polished: false },
+        matched_rules: [], matched_cases_count: 0,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // —— 识别学生身份（用 JWT），仅用于"我的"类问题 ——
     let myUserId: string | null = null;
     let myProfile: any = null;
