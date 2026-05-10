@@ -38,7 +38,8 @@ async function callAliyunImageModeration(opts: {
   const host = `green-cip.${opts.region}.aliyuncs.com`;
   const action = "ImageModeration";
   const version = "2022-03-02";
-  const date = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  // 阿里云 ACS3-HMAC-SHA256 要求 ISO8601 扩展格式：2026-05-10T12:18:38Z（保留 - 和 :，去掉毫秒）
+  const date = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const nonce = crypto.randomUUID().replace(/-/g, "");
 
   const bodyObj = {
