@@ -12,7 +12,7 @@ import StaffAiAssistant from "@/components/StaffAiAssistant";
 import {
   LayoutDashboard, Upload, BookOpen, ClipboardCheck, FileText, Library, LogOut,
   Users, BarChart3, Trophy, UserCog, Inbox, Send, ScrollText, Tags, History, Cpu, IdCard,
-  Activity, Palette, Building2, Shield, CalendarRange,
+  Activity, Palette, Building2, Shield, CalendarRange, ScanEye,
 } from "lucide-react";
 
 type Item = { title: string; url: string; icon: typeof LayoutDashboard };
@@ -50,6 +50,7 @@ const superAdminItems: Item[] = [
   { title: "教师管理", url: "/admin/users/teachers", icon: UserCog },
   { title: "批量导入账号", url: "/admin/import", icon: Upload },
   { title: "AI 模型设置", url: "/admin/ai-models", icon: Cpu },
+  { title: "AIGC 图像鉴别", url: "/admin/aigc", icon: ScanEye },
   { title: "审计日志", url: "/admin/audit-logs", icon: ScrollText },
   { title: "提交时间窗口", url: "/admin/submission-windows", icon: CalendarRange },
   { title: "实时一致性", url: "/diagnostics/realtime", icon: Activity },
