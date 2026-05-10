@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: app, error: appErr } = await admin
+    let { data: app, error: appErr } = await admin
       .from("applications")
       .select("*")
       .eq("id", application_id)
@@ -144,6 +144,35 @@ Deno.serve(async (req) => {
         return json({ error: "Forbidden" }, 403);
       }
     }
+
+    // ---- AIGC 鉴别前置 ----
+    // 若尚未跑过 AIGC 检测且本次有图片附件 → 同步触发一次，避免乱序。
+    if (app.aigc_status === "pending" && app.file_path) {
+      try {
+        const supaUrl = Deno.env.get("SUPABASE_URL")!;
+        const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        await fetch(`${supaUrl}/functions/v1/aigc-detect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${svcKey}`, apikey: svcKey },
+          body: JSON.stringify({ application_id }),
+        });
+        const { data: refreshed } = await admin.from("applications").select("*").eq("id", application_id).single();
+        if (refreshed) app = refreshed;
+      } catch (e) {
+        console.error("[evaluate-application] inline aigc-detect failed:", e);
+      }
+    }
+
+    // 若 AIGC 鉴定为 AI 生成图（fake）→ 已被 aigc-detect 置为 rejected_by_ai，直接返回
+    if (app.aigc_status === "fake" || app.status === "rejected_by_ai") {
+      return json({
+        status: app.status,
+        skipped: true,
+        reason: app.aigc_status === "fake" ? "aigc_fake" : "already_rejected",
+      });
+    }
+    const aigcSuspect = app.aigc_status === "suspect";
+    const aigcScore = typeof app.aigc_score === "number" ? app.aigc_score : Number(app.aigc_score ?? 0);
 
     const { data: studentProfile } = await admin
       .from("profiles")
