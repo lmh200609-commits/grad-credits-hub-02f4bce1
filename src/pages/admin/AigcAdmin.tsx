@@ -123,7 +123,7 @@ const AigcAdmin = () => {
       <div className="mx-auto max-w-6xl space-y-6">
         <PageHeader
           title="AIGC 图像鉴别"
-          description="阿里云内容安全 · AI 生成图片鉴别（旗舰版 aigcCheck_pro）。审查学生提交的证书/材料图片是否为豆包(Seedream)、MJ、SD、Flux 等 AI 模型生成。密钥通过 Secrets 管理：ALIYUN_AK_ID / ALIYUN_AK_SECRET。"
+          description="阿里云内容安全 · AI 生成图片鉴别旗舰版。审查学生提交的证书/材料图片是否为豆包、即梦、通义万相、midjourney、混元等 AI 模型生成。密钥已通过密钥管理安全存储。"
           actions={
             <Button onClick={runWorker} disabled={running}>
               {running ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
@@ -150,7 +150,7 @@ const AigcAdmin = () => {
               <ScanEye className="h-4 w-4" /> 学院级配置
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              每个学院可单独开关并设置阈值。<b>疑似阈值</b>：分数 ≥ 此值则注入风险信号到 AI 评估、禁止自动通过；<b>判定阈值</b>：分数 ≥ 此值则直接拒绝（rejected_by_ai）。默认 0.4 / 0.8。
+              每个学院可单独开关并设置阈值。<b>疑似阈值</b>：分数 ≥ 此值则向 AI 评估注入风险信号、禁止自动通过；<b>判定阈值</b>：分数 ≥ 此值则直接判定为 AI 生成图并拒绝。默认 0.4 / 0.8。
             </p>
           </CardHeader>
           <CardContent>
