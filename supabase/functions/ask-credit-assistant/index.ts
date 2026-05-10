@@ -57,6 +57,26 @@ function isStatsQuery(q: string): boolean {
   return intent.some((k) => s.includes(k)) && subject.some((k) => s.includes(k));
 }
 
+// 识别问候/寒暄（你好、在吗、hi 等），用于给出友好引导而不是冷冰冰的"无法回答"
+function isGreeting(q: string): boolean {
+  const s = (q || "").trim().toLowerCase();
+  if (!s) return false;
+  if (s.length > 12) return false;
+  const patterns = [
+    /^(你好|您好|哈喽|哈啰|嗨|hi|hello|hey|in)[!！。.~\s]*$/i,
+    /^(在吗|在么|在不在|有人吗|请问|早上好|中午好|下午好|晚上好|晚安)[!！。.~\s]*$/,
+    /^(谢谢|感谢|thx|thanks|多谢|辛苦了|好的|ok|okay)[!！。.~\s]*$/i,
+    /^(测试|test|ping)[!！。.~\s]*$/i,
+  ];
+  return patterns.some((p) => p.test(s));
+}
+
+// 询问助手能力 / "你能做什么"
+function isCapabilityQuery(q: string): boolean {
+  const s = (q || "").toLowerCase();
+  return /(你能|你可以|你会|帮我做什么|能做什么|有什么功能|怎么用|如何使用|使用说明|帮助)/.test(s);
+}
+
 function formatStats(rules: any[], casesCount: number, keywordsCount: number): string {
   const total = rules.length;
   const byCategory = new Map<string, number>();
