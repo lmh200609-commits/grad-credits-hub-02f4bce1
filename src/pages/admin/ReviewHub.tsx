@@ -45,7 +45,7 @@ type Row = {
 type ProfileLite = { user_id: string; full_name: string | null; student_no: string | null };
 
 const STATUS_TABS = [
-  { key: "pending_review", label: "待复核", icon: Clock, color: "text-warning" },
+  { key: "pending_review", label: "待教师复核", icon: Clock, color: "text-warning" },
   { key: "auto_approved", label: "系统已通过", icon: Sparkles, color: "text-success" },
   { key: "rejected_by_ai", label: "系统未通过", icon: XCircle, color: "text-danger" },
   { key: "pending_ai", label: "系统核验中", icon: CheckCircle2, color: "text-muted-foreground" },
