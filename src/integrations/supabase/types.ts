@@ -151,6 +151,69 @@ export type Database = {
         }
         Relationships: []
       }
+      aigc_detect_failures: {
+        Row: {
+          application_id: string
+          attempts: number
+          failed_at: string
+          id: string
+          last_error: string | null
+        }
+        Insert: {
+          application_id: string
+          attempts: number
+          failed_at?: string
+          id?: string
+          last_error?: string | null
+        }
+        Update: {
+          application_id?: string
+          attempts?: number
+          failed_at?: string
+          id?: string
+          last_error?: string | null
+        }
+        Relationships: []
+      }
+      aigc_detect_queue: {
+        Row: {
+          application_id: string
+          attempts: number
+          created_at: string
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          max_attempts: number
+          next_run_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          application_id: string
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_run_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          application_id?: string
+          attempts?: number
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_run_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       application_reviews: {
         Row: {
           action: Database["public"]["Enums"]["review_action"]
@@ -239,6 +302,11 @@ export type Database = {
           ai_reasoning: string | null
           ai_reasoning_short: string | null
           ai_suggested_credit: number | null
+          aigc_checked_at: string | null
+          aigc_detail: Json | null
+          aigc_provider: string | null
+          aigc_score: number | null
+          aigc_status: string
           certificate_issued_at: string | null
           certificate_no: string | null
           college_id: string | null
@@ -288,6 +356,11 @@ export type Database = {
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
+          aigc_checked_at?: string | null
+          aigc_detail?: Json | null
+          aigc_provider?: string | null
+          aigc_score?: number | null
+          aigc_status?: string
           certificate_issued_at?: string | null
           certificate_no?: string | null
           college_id?: string | null
@@ -337,6 +410,11 @@ export type Database = {
           ai_reasoning?: string | null
           ai_reasoning_short?: string | null
           ai_suggested_credit?: number | null
+          aigc_checked_at?: string | null
+          aigc_detail?: Json | null
+          aigc_provider?: string | null
+          aigc_score?: number | null
+          aigc_status?: string
           certificate_issued_at?: string | null
           certificate_no?: string | null
           college_id?: string | null
@@ -1025,6 +1103,14 @@ export type Database = {
           id: string
         }[]
       }
+      claim_aigc_jobs: {
+        Args: { _limit?: number }
+        Returns: {
+          application_id: string
+          attempts: number
+          id: string
+        }[]
+      }
       current_open_window: {
         Args: { _college: string }
         Returns: {
@@ -1073,6 +1159,11 @@ export type Database = {
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
       mark_ai_eval_done: { Args: { _id: string }; Returns: undefined }
       mark_ai_eval_failed: {
+        Args: { _error: string; _id: string }
+        Returns: undefined
+      }
+      mark_aigc_done: { Args: { _id: string }; Returns: undefined }
+      mark_aigc_failed: {
         Args: { _error: string; _id: string }
         Returns: undefined
       }
