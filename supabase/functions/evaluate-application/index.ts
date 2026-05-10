@@ -637,10 +637,14 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       // 学生选的关键词与图片识别结果对应不同案例 → 不能自动通过
       nextStatus = result.recommendation === "reject" ? "rejected_by_ai" : "pending_review";
     } else if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
-      nextStatus = "auto_approved";
+      nextStatus = aigcSuspect ? "pending_review" : "auto_approved";
     } else if (result.recommendation === "reject" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "rejected_by_ai";
     } else {
+      nextStatus = "pending_review";
+    }
+
+    if (aigcSuspect && nextStatus === "auto_approved") {
       nextStatus = "pending_review";
     }
 
