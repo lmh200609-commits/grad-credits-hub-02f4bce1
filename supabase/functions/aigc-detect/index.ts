@@ -172,14 +172,15 @@ Deno.serve(async (req) => {
     let callerId: string | null = null;
     if (!isService) {
       if (!auth.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
-      const caller = createClient(supaUrl, anonKey, { global: { headers: { Authorization: auth } } });
       const token = auth.slice("Bearer ".length);
-      const { data: cd, error: ce } = await caller.auth.getClaims(token);
-      if (ce || !cd?.claims?.sub) {
-        console.error("[aigc-detect] getClaims failed:", ce?.message);
+      let claims: JwtClaims;
+      try {
+        claims = await verifyJwtLocally(token, supaUrl);
+      } catch (e) {
+        console.error("[aigc-detect] JWT verify failed:", (e as Error).message);
         return json({ error: "Unauthorized" }, 401);
       }
-      callerId = cd.claims.sub as string;
+      callerId = claims.sub as string;
     }
 
     const body = await req.json().catch(() => ({}));
