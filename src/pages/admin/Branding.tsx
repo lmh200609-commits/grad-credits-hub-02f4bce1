@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/select";
 import { hexToHslTokens, hslTokensToHex } from "@/lib/colorConvert";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { usePreviewTheme } from "@/hooks/usePreviewTheme";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
