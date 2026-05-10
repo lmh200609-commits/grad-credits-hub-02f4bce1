@@ -582,7 +582,6 @@ const ApplicationDetail = () => {
               <div className="space-y-2">
                 <div className="text-muted-foreground flex items-center gap-1">
                   <ImageIcon className="h-3.5 w-3.5" /> 提交材料
-                  <span className="text-xs break-all">（{app.file_path.split("/").pop()}）</span>
                 </div>
                 {fileUrl ? (
                   /\.(jpe?g|png|webp|gif)$/i.test(app.file_path) ? (
