@@ -147,7 +147,7 @@ const ApplicationDetail = () => {
   useRealtimeTable("applications", reload, { filter: id ? `id=eq.${id}` : undefined });
   useRealtimeTable("application_reviews", reload, { filter: id ? `application_id=eq.${id}` : undefined });
 
-  const isReviewer = !!app && (hasRole("admin") || hasRole("teacher"));
+  const isReviewer = !!app && (hasRole("admin") || hasRole("teacher") || hasRole("super_admin"));
 
   // 已发生的人工复核次数（teacher_review / admin_review）
   const manualReviewCount = reviews.filter(
@@ -545,7 +545,7 @@ const ApplicationDetail = () => {
           score={app.face_match_score ?? null}
           note={app.face_match_note ?? null}
           checkedAt={app.face_checked_at ?? null}
-          visible={isReviewer}
+          visible={isReviewer && !!student?.photo_url}
           onRefreshed={load}
         />
 

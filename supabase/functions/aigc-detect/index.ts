@@ -260,6 +260,7 @@ Deno.serve(async (req) => {
     const detail = {
       provider: "aliyun",
       service,
+      region,
       labels: parsed.labels,
       suspected_models: parsed.suspectedModels.slice(0, 5),
       request_id: aly.requestId,

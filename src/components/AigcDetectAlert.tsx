@@ -121,6 +121,18 @@ export default function AigcDetectAlert({
           )}
           {detail?.request_id && <div className="opacity-70">RequestId: {String(detail.request_id)}</div>}
           {detail?.provider && <div className="opacity-70">检测后端：{detail.provider}{detail.service ? ` / ${detail.service}` : ""}</div>}
+          {detail?.region && (
+            <div className="opacity-70">
+              区域：{String(detail.region)} · {" "}
+              <a
+                href="https://yundun.console.aliyun.com/?p=cts#/imageaudit/dashboard?regionId=cn-shanghai"
+                target="_blank" rel="noreferrer"
+                className="underline hover:opacity-100"
+              >
+                在阿里云控制台查询调用记录
+              </a>
+            </div>
+          )}
           {checkedAt && <div className="opacity-70">检测时间：{new Date(checkedAt).toLocaleString()}</div>}
         </div>
       )}

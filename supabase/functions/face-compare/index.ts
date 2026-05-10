@@ -87,8 +87,8 @@ Deno.serve(async (req) => {
         .eq("id", application_id);
 
     if (!profile?.photo_url) {
-      await note("学生未上传证件照，无法比对", null, "unknown");
-      return json({ status: "unknown", note: "学生未上传证件照" });
+      // 学生还没上传证件照：不写库，避免给申请打上"unknown"噪音
+      return json({ status: "skipped", note: "学生未上传证件照，已跳过人脸比对" });
     }
     if (!app.file_path || !IMAGE_EXT.test(app.file_path)) {
       await note("申请材料不是图片或缺失，无需比对", null, "unknown");
