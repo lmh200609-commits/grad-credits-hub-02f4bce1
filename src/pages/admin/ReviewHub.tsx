@@ -157,7 +157,10 @@ const ReviewHub = () => {
   const reload = useSerializedReload(useCallback(async () => {
     await Promise.all([loadCounts(), loadList()]);
   }, [loadCounts, loadList]));
-  useEffect(() => { reload(); }, [reload]);
+  // Re-fetch whenever the active tab / pagination / search / source filter changes.
+  // `reload` itself is stable (useCallback []), so we depend on the underlying
+  // inputs of loadList so switching tabs actually triggers a new fetch.
+  useEffect(() => { reload(); }, [reload, tab, page, debounced, sourceFilter]);
   const { collegeId, isSuperAdmin } = useAuth();
   const collegeFilter = isSuperAdmin ? undefined : (collegeId ? `college_id=eq.${collegeId}` : null);
   useRealtimeTable("applications", reload, { filter: collegeFilter });
