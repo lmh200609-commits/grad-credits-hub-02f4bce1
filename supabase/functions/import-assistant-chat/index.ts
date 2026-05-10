@@ -219,7 +219,7 @@ Deno.serve(async (req) => {
 
     const contextHint = `[当前默认值] 角色=${defaults.role}，密码=${defaults.password}`;
     const antiRepeatHint =
-      "下面是用户的最新一句问题，请只针对这一句作答；如果与上一条助手回复主题不同，请重新理解，不要复制上一条；如果主题相同，请用一句话指出"前面已经回答过"再补充新增信息。";
+      "下面是用户的最新一句问题，请只针对这一句作答；如果与上一条助手回复主题不同，请重新理解，不要复制上一条；如果主题相同，请用一句话指出「前面已经回答过」再补充新增信息。";
 
     let aiResp: Response | null = null;
     let lastErr = "";
