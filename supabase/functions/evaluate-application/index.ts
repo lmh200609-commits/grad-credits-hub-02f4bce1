@@ -179,10 +179,6 @@ Deno.serve(async (req) => {
     // 下载附件图片
     let imageDataUrl: string | null = null;
     let attachmentNote = "无附件";
-    let sightengine: { score: number | null; label: string; error?: string } = {
-      score: null,
-      label: "unknown",
-    };
     if (app.file_path) {
       if (IMAGE_EXT.test(app.file_path)) {
         const { data: blob, error: dlErr } = await admin.storage
@@ -196,19 +192,17 @@ Deno.serve(async (req) => {
           const ext = app.file_path.split(".").pop()!.toLowerCase();
           const mime = ext === "jpg" ? "jpeg" : ext;
           imageDataUrl = `data:image/${mime};base64,${b64}`;
-          attachmentNote = "已附图片";
-          // Sightengine AI 生成检测（与 AI 视觉评估并行执行，失败不阻断）
-          try {
-            const fname = app.file_path.split("/").pop() || `image.${ext}`;
-            const fresh = new Blob([buf], { type: `image/${mime}` });
-            sightengine = await sightengineDetectAi(fresh, fname);
-            if (sightengine.score != null) {
-              attachmentNote = `已附图片；Sightengine AI 生成概率 ${(sightengine.score * 100).toFixed(1)}%`;
-            } else if (sightengine.error) {
-              console.warn("[sightengine] skip:", sightengine.error);
-            }
-          } catch (e) {
-            console.warn("[sightengine] error:", (e as Error).message);
+          // 阿里云鉴别结果由独立队列预先写入 applications.aigc_*，这里直接复用其结论
+          if (app.aigc_status === "real" && aigcScore >= 0) {
+            attachmentNote = `已附图片；阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%（判定为真实拍摄）`;
+          } else if (app.aigc_status === "suspect") {
+            attachmentNote = `已附图片；阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%（疑似 AI 生成，已转人工复核）`;
+          } else if (app.aigc_status === "skipped") {
+            attachmentNote = "已附图片；未做 AI 生成鉴别（学院已关闭或附件不支持）";
+          } else if (app.aigc_status === "error") {
+            attachmentNote = "已附图片；AI 生成鉴别调用失败，本次按真实素材处理";
+          } else {
+            attachmentNote = "已附图片";
           }
         } else {
           attachmentNote = "附件下载失败";
