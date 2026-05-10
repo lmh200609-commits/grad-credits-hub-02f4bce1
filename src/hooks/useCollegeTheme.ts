@@ -33,7 +33,10 @@ export const useCollegeTheme = () => {
     root.style.removeProperty("--sidebar-primary");
     root.style.removeProperty("--sidebar-ring");
     root.style.removeProperty("--accent");
+    root.style.removeProperty("--sidebar-accent");
     root.style.removeProperty("--background");
+    root.style.removeProperty("--sidebar-background");
+    root.style.removeProperty("--card");
     root.style.removeProperty("--radius");
   };
 
@@ -65,8 +68,15 @@ export const useCollegeTheme = () => {
         root.style.setProperty("--sidebar-primary", t.primary);
         root.style.setProperty("--sidebar-ring", t.primary);
       }
-      if (isValidHsl(t.accent)) root.style.setProperty("--accent", t.accent!);
-      if (isValidHsl(t.background)) root.style.setProperty("--background", t.background!);
+      if (isValidHsl(t.accent)) {
+        root.style.setProperty("--accent", t.accent!);
+        root.style.setProperty("--sidebar-accent", t.accent!);
+      }
+      if (isValidHsl(t.background)) {
+        root.style.setProperty("--background", t.background!);
+        root.style.setProperty("--card", t.background!);
+        root.style.setProperty("--sidebar-background", t.background!);
+      }
       if (isValidRadius(t.radius)) root.style.setProperty("--radius", t.radius!);
     };
     const fetchOnce = async () => {
