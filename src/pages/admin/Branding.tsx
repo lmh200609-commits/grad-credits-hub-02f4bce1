@@ -239,7 +239,6 @@ const Branding = () => {
           </CardContent>
         </Card>
 
-        <Card>
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
