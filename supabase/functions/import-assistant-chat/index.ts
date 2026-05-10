@@ -193,20 +193,23 @@ Deno.serve(async (req) => {
     const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content?.trim();
     if (!lastUser) return json({ error: "messages 不能为空" }, 400);
 
-    // 命中常见问题的快速回答，直接返回，避免模型每次重复同一段导入流程。
-    for (let i = 0; i < QUICK_ANSWERS.length; i++) {
-      const qa = QUICK_ANSWERS[i];
-      if (qa.test(lastUser)) {
-        console.log(`[import-assistant] quick-answer hit #${i} for: ${lastUser.slice(0, 60)}`);
-        return json({ answer: qa.answer });
-      }
+    // 命中"高置信度短问"才走快捷回答，否则全部交给模型。
+    const qaIdx = shouldUseQuickAnswer(lastUser);
+    if (qaIdx >= 0) {
+      console.log(`[import-assistant] quick-answer hit #${qaIdx} for: ${lastUser.slice(0, 60)}`);
+      return json({ answer: QUICK_ANSWERS[qaIdx].answer });
     }
 
-    // Trim history to last 6 messages to keep prompts small.
-    const trimmed = messages.slice(-6).map((m) => ({
+    // 保留更长的历史窗口（最多 12 条），并把过长的 assistant 内容截断，
+    // 让模型看到"已经回答过什么"，避免重复输出同一段话。
+    const trimmed = messages.slice(-12).map((m) => ({
       role: m.role,
-      content: String(m.content ?? "").slice(0, 2000),
+      content:
+        m.role === "assistant"
+          ? String(m.content ?? "").slice(0, 600)
+          : String(m.content ?? "").slice(0, 2000),
     }));
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
 
     let aiCfg;
     try { aiCfg = await getAiConfig("import-assistant-chat"); }
@@ -215,6 +218,8 @@ Deno.serve(async (req) => {
     const aiUrl = `${aiCfg.baseUrl.replace(/\/+$/, "")}/chat/completions`;
 
     const contextHint = `[当前默认值] 角色=${defaults.role}，密码=${defaults.password}`;
+    const antiRepeatHint =
+      "下面是用户的最新一句问题，请只针对这一句作答；如果与上一条助手回复主题不同，请重新理解，不要复制上一条；如果主题相同，请用一句话指出"前面已经回答过"再补充新增信息。";
 
     let aiResp: Response | null = null;
     let lastErr = "";
@@ -228,9 +233,10 @@ Deno.serve(async (req) => {
             messages: [
               { role: "system", content: SYSTEM_PROMPT },
               { role: "system", content: contextHint },
+              { role: "system", content: antiRepeatHint },
               ...trimmed,
             ],
-            temperature: 0.4,
+            temperature: 0.6,
           }),
         });
         if (aiResp.ok) break;
@@ -252,13 +258,67 @@ Deno.serve(async (req) => {
     }
 
     const data = await aiResp.json();
-    const raw = data?.choices?.[0]?.message?.content?.trim() || "（无回答）";
-    const answer = translateFields(stripDecorations(raw));
+    let raw = data?.choices?.[0]?.message?.content?.trim() || "（无回答）";
+    let answer = translateFields(stripDecorations(raw));
+
+    // 如果与上一条助手回复高度重复（>=80% 字符相同），用 Lovable AI Gateway 重试一次，
+    // 让回答更贴合"当前这一句问题"。
+    if (lastAssistant && similarity(answer, lastAssistant) >= 0.8) {
+      const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+      if (lovableKey) {
+        try {
+          const retry = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${lovableKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-3-flash-preview",
+              messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "system", content: contextHint },
+                {
+                  role: "system",
+                  content:
+                    "上一次回答与历史助手回复几乎相同，已被判定为复读。请重新理解用户最新这一句问题，给出与之前明显不同、且更贴合的回答。",
+                },
+                ...trimmed,
+              ],
+              temperature: 0.7,
+            }),
+          });
+          if (retry.ok) {
+            const rd = await retry.json();
+            const rraw = rd?.choices?.[0]?.message?.content?.trim();
+            if (rraw) answer = translateFields(stripDecorations(rraw));
+          }
+        } catch (_) { /* fall through */ }
+      }
+    }
+
     return json({ answer });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
 });
+
+// 粗略字符级相似度（基于 bigram 集合 Jaccard），够用即可。
+function similarity(a: string, b: string): number {
+  const norm = (s: string) => s.replace(/\s+/g, "");
+  const A = norm(a), B = norm(b);
+  if (!A || !B) return 0;
+  const grams = (s: string) => {
+    const set = new Set<string>();
+    for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+    return set;
+  };
+  const sa = grams(A), sb = grams(B);
+  let inter = 0;
+  for (const g of sa) if (sb.has(g)) inter++;
+  const union = sa.size + sb.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
