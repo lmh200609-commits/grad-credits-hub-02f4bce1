@@ -99,6 +99,7 @@ const ApplicationDetail = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
   const [preparing, setPreparing] = useState(false);
+  const [materialPreviewOpen, setMaterialPreviewOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
