@@ -24,7 +24,7 @@ const DEPT_COLORS = ["#6366f1", "#ec4899", "#14b8a6", "#f97316", "#8b5cf6", "#0e
 const PASS_COLORS = ["#10b981", "#ef4444"];
 
 type DashboardStats = {
-  kpi: { total: number; approved: number; pending: number; rejected: number; total_credit: number };
+  kpi: { total: number; approved: number; pending: number; pending_ai: number; pending_review: number; rejected: number; total_credit: number };
   status: { name: string; value: number }[];
   pass: { pass: number; fail: number; total: number };
   trend: { date: string; count: number }[];
@@ -54,7 +54,7 @@ const TeacherDashboard = () => {
   useRealtimeTable("applications", reload, { filter: collegeFilter });
   useRealtimeTable("profiles", reload, { filter: collegeFilter });
 
-  const stats = data?.kpi ?? { total: 0, approved: 0, pending: 0, rejected: 0, total_credit: 0 };
+  const stats = data?.kpi ?? { total: 0, approved: 0, pending: 0, pending_ai: 0, pending_review: 0, rejected: 0, total_credit: 0 };
   const passStats = data?.pass ?? { pass: 0, fail: 0, total: 0 };
   const trend = data?.trend ?? [];
   const statusPie = data?.status ?? [];
@@ -95,7 +95,8 @@ const TeacherDashboard = () => {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <StatCard label="申请总数" value={stats.total} accent="text-indigo-600" />
           <StatCard label="已通过" value={stats.approved} accent="text-emerald-600" />
-          <StatCard label="待复核" value={stats.pending} accent="text-amber-600" />
+          <StatCard label="系统核验中" value={stats.pending_ai} accent="text-sky-600" onClick={() => navigate("/reviews?status=pending_ai")} />
+          <StatCard label="待教师复核" value={stats.pending_review} accent="text-amber-600" onClick={() => navigate("/reviews?status=pending_review")} />
           <StatCard label="已拒绝" value={stats.rejected} accent="text-rose-600" />
           <StatCard label="累计学分" value={Number(stats.total_credit).toFixed(1)} accent="text-fuchsia-600" />
           <StatCard
