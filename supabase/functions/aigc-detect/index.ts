@@ -1,4 +1,4 @@
-// AIGC 鉴别（阿里云内容安全 · ImageModeration aigcCheck_pro 旗舰版）
+// AIGC 鉴别（阿里云内容安全 · ImageModeration aigcDetector_ultra 旗舰版）
 // 仅检测学生上传图片是否为 AI 生成（Midjourney / SD / 豆包 Seedream / 通义万相 / Flux 等）。
 // 写入 applications.aigc_* 字段，并按学院阈值更新 status：
 //   real    → 保持 pending_ai，正常进学分评估
@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
     const ak = Deno.env.get("ALIYUN_AK_ID");
     const sk = Deno.env.get("ALIYUN_AK_SECRET");
     const region = Deno.env.get("ALIYUN_GREEN_REGION") || "cn-shanghai";
-    const service = Deno.env.get("ALIYUN_AIGC_SERVICE") || "aigcCheck_pro";
+    const service = Deno.env.get("ALIYUN_AIGC_SERVICE") || "aigcDetector_ultra";
     if (!ak || !sk) return json({ error: "ALIYUN_AK_ID / ALIYUN_AK_SECRET 未配置" }, 500);
 
     const auth = req.headers.get("Authorization") ?? "";
