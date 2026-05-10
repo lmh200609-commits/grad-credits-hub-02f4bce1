@@ -194,9 +194,14 @@ const ImportUsers = () => {
       });
       return;
     }
-    // Detect "import intent" — user is asking to import but hasn't uploaded a file yet.
-    const importIntent = /(导入|上传|开始|帮我|怎么(用|做|导)|如何(导入|上传))/.test(text);
-    if (importIntent && !pendingRows) {
+    // Detect explicit "how do I start importing" intent. Keep this narrow so other
+    // questions (密码 / 学院 / 失败排查 …) fall through to the AI instead of always
+    // returning the same canned 3-step blurb. Only intercept on the very first turn.
+    const importIntent =
+      /^(我要|我想|请帮我|帮我|怎么|如何)\s*(开始)?(批量)?(导入|上传)/.test(text) ||
+      /^(怎么|如何)\s*(用|使用|操作)\s*$/.test(text);
+    const isFirstTurn = messages.filter((m) => m.kind === "user").length === 0;
+    if (importIntent && isFirstTurn && !pendingRows) {
       push({
         kind: "ai",
         text:
