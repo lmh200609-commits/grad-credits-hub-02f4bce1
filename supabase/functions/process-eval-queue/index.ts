@@ -53,16 +53,22 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  const pubKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
 
   // 鉴权：允许 service-role（服务端调用）或 anon key（pg_cron 定时任务）调用。
   // 函数内部一律用 service-role 执行实际工作，外部只能触发"取队列"。
   const auth = req.headers.get("Authorization") ?? "";
   const apikey = req.headers.get("apikey") ?? "";
-  const allowed =
-    (serviceKey && (auth.includes(serviceKey) || apikey === serviceKey)) ||
-    (anonKey && (auth.includes(anonKey) || apikey === anonKey));
+  const tokenFromAuth = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
+  const candidates = [serviceKey, anonKey, pubKey].filter((k) => k && k.length > 20);
+  const allowed = candidates.some((k) => k === tokenFromAuth || k === apikey);
   if (!allowed) {
-    console.warn("[process-eval-queue] forbidden call, auth.len=", auth.length, "apikey.len=", apikey.length);
+    console.warn("[process-eval-queue] forbidden",
+      "auth.len=", auth.length, "apikey.len=", apikey.length,
+      "svc.len=", serviceKey?.length ?? 0,
+      "anon.len=", anonKey.length, "pub.len=", pubKey.length,
+      "auth.tail=", tokenFromAuth.slice(-8), "apikey.tail=", apikey.slice(-8),
+      "anon.tail=", anonKey.slice(-8), "pub.tail=", pubKey.slice(-8));
     return json({ error: "Forbidden" }, 403);
   }
 
