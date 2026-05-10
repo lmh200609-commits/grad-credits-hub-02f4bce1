@@ -148,7 +148,7 @@ const ReviewsList = () => {
   useRealtimeTable("applications", reload, { filter: collegeFilter });
 
   const tabLabel = useMemo(() => ({
-    all: "全部", pending_review: "待复核", auto_approved: "系统已通过",
+    all: "全部", pending_review: "待教师复核", auto_approved: "系统已通过",
     rejected_by_ai: "系统未通过", approved: "已通过", rejected: "已驳回",
     pending_ai: "系统核验中", finished: "已完成",
   } as Record<string, string>), []);
@@ -172,7 +172,7 @@ const ReviewsList = () => {
           <TabsList className="flex-wrap">
             <TabsTrigger value="all">全部</TabsTrigger>
             <TabsTrigger value="pending_ai">系统核验中</TabsTrigger>
-            <TabsTrigger value="pending_review">待复核</TabsTrigger>
+            <TabsTrigger value="pending_review">待教师复核</TabsTrigger>
             <TabsTrigger value="auto_approved">系统已通过</TabsTrigger>
             <TabsTrigger value="rejected_by_ai">系统未通过</TabsTrigger>
             <TabsTrigger value="finished">人工已完成</TabsTrigger>
