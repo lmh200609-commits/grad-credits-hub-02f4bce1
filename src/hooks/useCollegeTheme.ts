@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { usePreviewTheme } from "@/hooks/usePreviewTheme";
 
 export type CollegeTheme = {
   primary?: string; // "H S% L%"
@@ -23,6 +24,7 @@ export type College = {
 
 export const useCollegeTheme = () => {
   const { collegeId } = useAuth();
+  const { active: previewActive } = usePreviewTheme();
   const [college, setCollege] = useState<College | null>(null);
 
   const resetThemeVars = (root: HTMLElement) => {
@@ -52,6 +54,7 @@ export const useCollegeTheme = () => {
     const applyTheme = (data: any) => {
       if (!data) return;
       setCollege(data as College);
+      if (previewActive) return; // 预览中不要覆盖 CSS 变量
       const t = (data.theme ?? {}) as CollegeTheme;
       const root = document.documentElement;
       // 先重置，避免上一次的非法值残留
@@ -76,6 +79,8 @@ export const useCollegeTheme = () => {
       applyTheme(data);
     };
     void fetchOnce();
+    const onExit = () => { void fetchOnce(); };
+    window.addEventListener("preview-theme-exit", onExit);
     const channel = supabase
       .channel(`college-theme-${collegeId}`)
       .on(
@@ -86,9 +91,10 @@ export const useCollegeTheme = () => {
       .subscribe();
     return () => {
       cancelled = true;
+      window.removeEventListener("preview-theme-exit", onExit);
       void supabase.removeChannel(channel);
     };
-  }, [collegeId]);
+  }, [collegeId, previewActive]);
 
   return college;
 };
