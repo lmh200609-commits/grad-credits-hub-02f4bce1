@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -13,6 +14,7 @@ import {
 import { hexToHslTokens, hslTokensToHex } from "@/lib/colorConvert";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { usePreviewTheme } from "@/hooks/usePreviewTheme";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -71,6 +73,8 @@ const ColorField = ({
 
 const Branding = () => {
   const { collegeId, loading: authLoading } = useAuth();
+  const { enterPreview } = usePreviewTheme();
+  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [college, setCollege] = useState<any>(null);
   const [theme, setTheme] = useState<Theme>({});
@@ -209,6 +213,23 @@ const Branding = () => {
                 </Select>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" onClick={() => void load()} disabled={saving}>还原</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const lp = lightnessOf(theme.primary);
+                      const lb = lightnessOf(theme.background);
+                      if (lp !== null && lp > 88) {
+                        toast.warning("主色过浅，按钮文字可能看不清");
+                      } else if (lp !== null && lb !== null && Math.abs(lp - lb) < 6) {
+                        toast.warning("主色与背景色过于接近，按钮可能不可见");
+                      }
+                      enterPreview(theme);
+                      navigate("/admin/dashboard");
+                    }}
+                    disabled={saving}
+                  >
+                    进入全局预览
+                  </Button>
                   <Button variant="solid" onClick={requestSave} disabled={saving}>
                     {saving ? "提交中…" : "确认并提交修改"}
                   </Button>
