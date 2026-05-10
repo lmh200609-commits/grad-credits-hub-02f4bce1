@@ -57,6 +57,26 @@ function isStatsQuery(q: string): boolean {
   return intent.some((k) => s.includes(k)) && subject.some((k) => s.includes(k));
 }
 
+// 识别问候/寒暄（你好、在吗、hi 等），用于给出友好引导而不是冷冰冰的"无法回答"
+function isGreeting(q: string): boolean {
+  const s = (q || "").trim().toLowerCase();
+  if (!s) return false;
+  if (s.length > 12) return false;
+  const patterns = [
+    /^(你好|您好|哈喽|哈啰|嗨|hi|hello|hey|in)[!！。.~\s]*$/i,
+    /^(在吗|在么|在不在|有人吗|请问|早上好|中午好|下午好|晚上好|晚安)[!！。.~\s]*$/,
+    /^(谢谢|感谢|thx|thanks|多谢|辛苦了|好的|ok|okay)[!！。.~\s]*$/i,
+    /^(测试|test|ping)[!！。.~\s]*$/i,
+  ];
+  return patterns.some((p) => p.test(s));
+}
+
+// 询问助手能力 / "你能做什么"
+function isCapabilityQuery(q: string): boolean {
+  const s = (q || "").toLowerCase();
+  return /(你能|你可以|你会|帮我做什么|能做什么|有什么功能|怎么用|如何使用|使用说明|帮助)/.test(s);
+}
+
 function formatStats(rules: any[], casesCount: number, keywordsCount: number): string {
   const total = rules.length;
   const byCategory = new Map<string, number>();
@@ -153,6 +173,17 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    // 问候 / 能力询问：直接给出友好引导，不走 RAG 也不报"无法回答"
+    if (isGreeting(query) || isCapabilityQuery(query)) {
+      const ans = normalizeMarkdown(
+        `## 结论\n你好，我是「学分认定规则问答助手」，很高兴为你服务。\n\n## 依据\n我可以帮你做这些事：\n- 解释学分认定规则（例如"国家级竞赛一等奖能认定多少学分？"）\n- 查询历史相似案例（例如"互联网+ 省赛银奖以往怎么认定？"）\n- 查看你自己的申请与累计学分（输入"我的申请"或"我的学分"）\n- 回答你的身份信息（输入"我是谁/我学号是多少"）\n\n## 补充\n请尽量在提问时附上：成果/证书全称、级别（校级/省级/国家级/国际级）、获奖等级、你的参与角色，这样我能给出更准确的参考结论。`
+      );
+      return new Response(JSON.stringify({
+        answer: ans, sections: toSections(ans), meta: { polished: false },
+        matched_rules: [], matched_cases_count: 0,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // —— 识别学生身份（用 JWT），仅用于"我的"类问题 ——
     let myUserId: string | null = null;
