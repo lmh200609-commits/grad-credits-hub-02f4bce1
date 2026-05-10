@@ -1,162 +1,93 @@
-## 目标
+# 修复"系统核验中"卡死等四个问题
 
-在「学生提交 → 学分评估」之间插入一个**专用节点**：调用**阿里云内容安全 · AI 生成图片鉴别（旗舰版）**，对学生上传的证书图片做 AIGC 鉴伪，结果写入申请并影响后续流程。
+排查结论：四个问题在数据库、Edge Function 和前端三层各有独立成因，需要分别处理。
 
-```text
-学生提交
-  ↓
-[新] AIGC 鉴别 (aigc-detect)        ← 调阿里云旗舰版
-  ↓
-人脸比对 (face-compare)
-  ↓
-AI 学分评估 (evaluate-application)
-  ↓
-教师 / 管理员复核
+---
+
+## 问题 1 — 申请一直卡在"系统核验中"
+
+**根因**：数据库触发器 `enqueue_ai_eval` 只在 `applications.status` 改变时触发；AIGC 检测完成后只更新 `aigc_status`（real/suspect/skipped/error），`status` 仍是 `pending_ai`，因此 `ai_eval_queue` 永远不会被入队，`process-eval-queue` worker 自然不会评估，状态永远停在"系统核验中"。
+
+数据库已确认：当前申请 `aigc_status=real` 且 AIGC 队列已 `done`，但 `ai_eval_queue` 中没有这条记录。
+
+**修复**：新建迁移，增加一个 UPDATE OF aigc_status 的触发器，当 aigc_status 从 pending 变为终态（real/suspect/skipped/error）且 status 仍是 pending_ai 时，向 ai_eval_queue 入队（与 enqueue_ai_eval 相同逻辑，UPSERT 防重复）。同时把 enqueue_ai_eval() 内部条件保留作 INSERT 时兜底。
+
+并补一条一次性回填语句，把所有"status=pending_ai 且 aigc_status∈(real,suspect,skipped,error) 且 ai_eval_queue 中无记录"的旧申请重新入队，治好已经卡住的存量数据。
+
+## 问题 2 — 学生未提交证件照时不应跑人脸比对
+
+**现状**：`face-compare/index.ts` 在 `profile.photo_url` 缺失时已写入 `face_match_status='unknown'` 并返回，逻辑本身是正确的；但前端 `FaceMatchAlert` 仍显示"暂未比对 / 重新比对"按钮，且如果有定时/触发任务调用就会无谓写表。
+
+**修复**：
+- `aigc-detect` 评估完成后不再隐式触发人脸比对（当前流程中 evaluate-application/aigc-detect 都未自动触发，确认无队列调度），保持手动触发。
+- `face-compare` 在 `profile.photo_url` 为空时直接 return 不写库，避免给学生无证件照的申请打上"unknown"噪音。
+- 前端 `ApplicationDetail.tsx` 把 `<FaceMatchAlert />` 的 `visible` 改为 `isReviewer && !!studentHasPhoto`（通过已加载的 student profile 判断），学生未上传证件照时整块不渲染。
+
+## 问题 3 — 超级管理员看不到 AI 生图鉴别 / 人脸核验面板
+
+**根因**：`src/pages/ApplicationDetail.tsx:150`
+```ts
+const isReviewer = !!app && (hasRole("admin") || hasRole("teacher"));
+```
+漏掉了 `super_admin` 角色。所有依赖 `isReviewer` 的 UI（AigcDetectAlert、FaceMatchAlert、复审按钮、AI 推理详情等）对超管都隐藏。
+
+**修复**：把判定改为 `hasRole("admin") || hasRole("teacher") || hasRole("super_admin")`。同时审查同文件其它 isReviewer 用法，确保超管获得与管理员一致的视图与操作权限。
+
+## 问题 4 — 系统提示已 AI 鉴别，但阿里云控制台看不到记录
+
+**排查**：数据库里这条申请的 `aigc_provider=aliyun:aigcDetector_ultra`、`aigc_detail.request_id=D56F2730-8444-56C7-A33D-248AC0901D67`，说明请求确实成功打到了阿里云（否则不会有 RequestId）。
+
+阿里云内容安全控制台分两类页面：
+- **图片审核（ImageModeration / 同步检测）调用记录**：在「内容安全 → 图片审核 → 调用记录」里看，且必须切到 **cn-shanghai** 区域；当前函数固定 `ALIYUN_GREEN_REGION=cn-shanghai`，若用户在控制台切到杭州/北京就什么都看不到。
+- **AIGC 检测**走的是同一接口 `ImageModeration` 的 `aigcDetector_ultra` 服务码，记录会出现在"图片审核"列表里，**不在**"AIGC 检测专项"页签（那是另一条产品线，含独立计费）。
+
+**修复**：
+- 在 `aigc-detect/index.ts` 写入 `aigc_detail` 时额外保存 `region` 与控制台直达链接，并打印到函数日志，方便用户对照。
+- 在 `AigcDetectAlert` 展开区显示 region 和"在阿里云控制台查询此 RequestId"的链接（指向 `https://yundun.console.aliyun.com/?p=cts#/imageaudit/dashboard?regionId=cn-shanghai`），消除"看不到记录"的误会。
+- 文档不改服务码（`aigcDetector_ultra` 是当前生效且能返回 RequestId 的旗舰版）。
+
+---
+
+## 技术细节
+
+**新迁移 SQL（要点）**
+```sql
+CREATE OR REPLACE FUNCTION public.enqueue_ai_eval_after_aigc()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+  IF NEW.status = 'pending_ai'
+     AND NEW.aigc_status IN ('real','suspect','skipped','error')
+     AND (OLD.aigc_status IS DISTINCT FROM NEW.aigc_status) THEN
+    INSERT INTO public.ai_eval_queue (application_id, status, next_run_at, attempts, last_error, locked_at)
+    VALUES (NEW.id, 'queued', now(), 0, NULL, NULL)
+    ON CONFLICT (application_id) DO UPDATE
+      SET status='queued', next_run_at=now(), attempts=0, last_error=NULL, locked_at=NULL, updated_at=now();
+  END IF;
+  RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_enqueue_ai_eval_after_aigc
+  AFTER UPDATE OF aigc_status ON public.applications
+  FOR EACH ROW EXECUTE FUNCTION public.enqueue_ai_eval_after_aigc();
+
+-- 回填存量
+INSERT INTO public.ai_eval_queue (application_id, status, next_run_at)
+SELECT a.id, 'queued', now()
+  FROM public.applications a
+ WHERE a.status='pending_ai'
+   AND a.aigc_status IN ('real','suspect','skipped','error')
+   AND NOT EXISTS (SELECT 1 FROM public.ai_eval_queue q WHERE q.application_id = a.id)
+ON CONFLICT (application_id) DO UPDATE
+  SET status='queued', next_run_at=now(), attempts=0, last_error=NULL, locked_at=NULL, updated_at=now();
 ```
 
----
+**前端修改**
+- `src/pages/ApplicationDetail.tsx:150` 加入 `super_admin`
+- 同文件 `<FaceMatchAlert visible={...} />` 增加学生证件照存在性判断
+- `src/components/AigcDetectAlert.tsx` 展开区追加 region + 控制台链接
 
-## 一、阿里云接口对接要点
+**Edge Function**
+- `supabase/functions/face-compare/index.ts`：`profile.photo_url` 为空时直接 return，不再写 unknown
+- `supabase/functions/aigc-detect/index.ts`：detail 增加 `region` 字段
 
-- **服务**：内容安全 2022 (`Green20220302`) → `ImageModerationPlus`
-- **场景值（Service）**：`aigcCheck_pro`（旗舰版）
-- **区域 endpoint**：`green-cip.cn-shanghai.aliyuncs.com`（默认上海，可后台改）
-- **鉴权**：阿里云 V3 签名（AccessKey ID + Secret）
-- **入参**：图片可访问 URL（用 Supabase Storage 的 signed URL，5 分钟有效期）
-- **关键返回**：`Result[].Label`（normal / aigc 等）+ `Result[].Confidence`（0–100）；旗舰版还会返回**可疑生成模型来源**（Midjourney / SD / 豆包 Seedream / 通义万相 / Flux 等）和置信度明细
-
-我们把 `Confidence` 归一到 0–1 的 `aigc_score` 写库，模型来源放进 `aigc_detail`。
-
----
-
-## 二、需要的密钥（要你确认后通过 add_secret 添加）
-
-| 名称 | 用途 |
-|---|---|
-| `ALIYUN_AK_ID` | 阿里云 AccessKey ID |
-| `ALIYUN_AK_SECRET` | 阿里云 AccessKey Secret |
-
-可选（不填走默认值）：
-- `ALIYUN_GREEN_REGION`：默认 `cn-shanghai`
-- `ALIYUN_AIGC_SERVICE`：默认 `aigcCheck_pro`
-
-> 现有 `SIGHTENGINE_*` 密钥保留，方便后续做"双引擎复核"（旗舰版 + Sightenge）时直接启用。
-
----
-
-## 三、数据库改动（一次迁移）
-
-### `applications` 新增 5 列
-
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `aigc_status` | text，默认 `pending` | `pending / real / suspect / fake / skipped / error` |
-| `aigc_score` | numeric(4,3) | AI 生成概率 0–1（越高越像 AI 生成） |
-| `aigc_detail` | jsonb | `{provider:"aliyun", service:"aigcCheck_pro", labels:[...], suspected_models:[{name:"Midjourney",score:0.82}], request_id, raw}` |
-| `aigc_checked_at` | timestamptz | |
-| `aigc_provider` | text | 实际后端（审计 + 后续多引擎切换） |
-
-### 触发器
-
-- 扩展 `applications_block_student_protected_writes`：把上述 5 列加入禁止学生改写白名单
-- 新增 `aigc_detect_queue` 表（结构对齐 `ai_eval_queue`）+ RPC `claim_aigc_jobs / mark_aigc_done / mark_aigc_failed`（仿现有 `claim_ai_eval_jobs`）
-- 新增 `enqueue_aigc_detect` 触发器：`INSERT applications` 后入 `aigc_detect_queue`
-- 改造 `enqueue_ai_eval`：仅当 `aigc_status ∈ (real, suspect, skipped)` 才进 `ai_eval_queue`；若 `fake` 直接 `status='rejected_by_ai'` 跳过学分评估，节省 token
-
-### 阈值配置
-
-学院粒度，写入 `colleges.theme` jsonb 的 `aigc` 字段：
-```json
-{ "aigc": { "suspect": 0.40, "fake": 0.80, "enabled": true } }
-```
-默认 `suspect=0.40 / fake=0.80`，超管和学院 admin 可在「AI 模型设置」页调整。
-
----
-
-## 四、新增 / 修改的边缘函数
-
-### 1. 新增 `supabase/functions/aigc-detect/index.ts`
-
-- **强鉴权**：Bearer JWT 必须存在，且为申请者本人 / 教师 / 管理员 / 服务角色（修复历史 face-compare 同款洞）
-- 流程：取 `application_id` → 读 `file_path` → 生成 5 分钟 signed URL → 调阿里云旗舰版 → 解析 → 写 `aigc_*` 字段 → 按学院阈值更新 `applications.status`：
-  - `real`：状态保持 `pending_ai`，正常进队
-  - `suspect`：状态保持 `pending_ai`；同时给 `evaluate-application` 注入风险信号；最终若学分评估给 `auto_approved` 强制降级为 `pending_review`
-  - `fake`：直接 `rejected_by_ai`，不再进学分评估
-  - 非图片文件：`skipped`，不阻断
-- 阿里云 V3 签名实现独立放在 `_shared/aliyun-sign.ts`，便于复用
-- 三次重试 + 指数退避；失败置 `aigc_status='error'` 并入失败队列，**不阻断主流程**（避免阿里云抖动卡死系统）
-
-### 2. 新增 `supabase/functions/process-aigc-queue/index.ts`
-
-完全仿照 `process-eval-queue/index.ts`：service-role、批量领任务、并发执行。
-
-### 3. 修改 `supabase/functions/evaluate-application/index.ts`
-
-- 启动时若 `aigc_status='pending'` → 同步先调 `aigc-detect`（避免乱序）
-- prompt 注入风险信号：`本材料 AIGC 鉴别概率 X%（阿里云旗舰版），疑似来源：[Midjourney 0.82, SD 0.31]`
-- 若 `aigc_status='suspect'`，强制最终结果不得高于 `pending_review`
-
-### 4. `supabase/config.toml`
-
-注册 `aigc-detect`、`process-aigc-queue`，`verify_jwt = false`（鉴权代码内做，与现有约定一致）。
-
----
-
-## 五、前端改动
-
-### 学生端
-
-- `Apply.tsx` 上传区追加红字提示：「系统将自动检测 AI 合成/生图，伪造材料将被驳回并记入诚信记录」
-- `ProcessSteps.tsx`：扩展节点显示为「材料初审 → 智能审核 → 教师复核」，把 AIGC + 人脸合并叫"材料初审"，**不暴露"AIGC"字样**避免反向调试
-- `MyApplications.tsx` / `ApplicationDetail.tsx`：`fake` 件文案脱敏为"材料未通过初审，请提交真实证书原件照片"
-
-### 教师 / 管理员端
-
-- 新增 `src/components/AigcDetectAlert.tsx`（仿 `FaceMatchAlert`）：
-  - 红/黄/绿三档徽章 + AI 生成概率百分比
-  - 展开显示：阿里云返回的疑似来源模型 TOP-3、置信度、请求 ID、检测时间
-  - 「重新检测」按钮（重跑 `aigc-detect`，阈值改了之后可复核）
-- 在 `ApplicationDetail.tsx` 把它放在 `FaceMatchAlert` **上方**（这是更前置的风险信号）
-- `ReviewHub.tsx` 顶部新增筛选 chip：「疑似 AI 生图」「AIGC 已拒」；高风险件加红色边框
-
-### 管理员后台
-
-- `src/pages/admin/AiModels.tsx` 加一个独立卡片「AIGC 鉴别（阿里云旗舰版）」：
-  - 显示当前 AK ID 末 4 位（从 `aigc_provider` 派生）
-  - 编辑两档阈值（suspect / fake），写到 `colleges.theme.aigc`
-  - 「测试一张图」按钮：选 storage 任意图片直接打一次接口，回显原始 JSON
-
----
-
-## 六、安全与成本
-
-- 强鉴权 + service role 白名单
-- 图片在送入接口前 server 端缩放到 ≤1024px 并转 jpeg 80%（控制阿里云出网流量与计费）
-- 单申请最多重试 3 次，指数退避（30s · 2^n），与现有 ai_eval 保持一致
-- `aigc_provider` + 阿里云 RequestId 全部入库，方便对账与申诉
-- 不做永久缓存（同一 `file_path` 改了就重新检测）
-
----
-
-## 七、回滚 / 容灾
-
-- `colleges.theme.aigc.enabled=false` 一键关闭整个节点（队列直接 skip）
-- AK 失效或 5xx → `aigc_status='error'`，不影响后续学分评估
-- 后期若想换/加 Sightenge 二次复核，只需在 `aigc-detect` 内并联第二个 provider，DB schema 不变
-
----
-
-## 八、实施顺序
-
-1. 你确认后 → `add_secret(ALIYUN_AK_ID, ALIYUN_AK_SECRET)`
-2. 数据库迁移：5 列 + 队列表 + 触发器 + RPC + 改造 `enqueue_ai_eval` + 学院阈值默认值
-3. 新增边缘函数 `aigc-detect` + `process-aigc-queue` + `_shared/aliyun-sign.ts`
-4. 改造 `evaluate-application`：读取 + prompt 注入 + 降级保护
-5. 前端：`AigcDetectAlert` + `ProcessSteps` 文案 + `Apply` 提示 + `ReviewHub` 筛选 + 管理员阈值面板
-6. 用真实图片（一张真证书 + 一张豆包/MJ 生成图）跑端到端验证
-
----
-
-## 需要你确认的 1 件事
-
-**密钥**：阿里云 AccessKey 用**主账号 AK** 还是**子账号 AK**？强烈建议用 RAM 子账号、只授权"内容安全只读+图片审核"权限，最小化风险。确认后我直接发起 `add_secret` 让你填入 `ALIYUN_AK_ID` 和 `ALIYUN_AK_SECRET`。
+完成后预期：当前卡住的申请会在 worker 下一轮（约几十秒内）自动进入"待人工复核 / 自动通过"；超管能看到与管理员相同的 AI/人脸面板；学生没传证件照的申请不再显示人脸卡片；用户在阿里云 cn-shanghai 区的图片审核控制台能按 RequestId 查到调用记录。
