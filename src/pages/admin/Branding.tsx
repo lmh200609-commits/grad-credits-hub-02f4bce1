@@ -81,8 +81,6 @@ const Branding = () => {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [extracted, setExtracted] = useState<Theme | null>(null);
-  const [extractOpen, setExtractOpen] = useState(false);
 
   const load = async () => {
     if (!collegeId) return;
@@ -107,34 +105,25 @@ const Branding = () => {
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from("college-badges").getPublicUrl(path);
       const url = pub.publicUrl;
-      const { error } = await supabase.from("colleges").update({ badge_url: url }).eq("id", collegeId);
-      if (error) throw error;
-      toast.success("院徽已上传");
-      await load();
+      const isHsl = (v?: string) => !!v && /^\s*\d{1,3}(\.\d+)?\s+\d{1,3}(\.\d+)?%\s+\d{1,3}(\.\d+)?%\s*$/.test(v);
       const palette = await extractPaletteFromImage(url).catch(() => null);
-      if (palette && Object.keys(palette).length > 0) {
-        setExtracted(palette as Theme);
-        setExtractOpen(true);
-      } else {
-        toast.message("未能识别院徽主色，已保留原主题");
+      const valid: Theme = {};
+      if (palette) {
+        if (isHsl(palette.primary)) valid.primary = palette.primary;
+        if (isHsl(palette.background)) valid.background = palette.background;
+        if (isHsl(palette.accent)) valid.accent = palette.accent;
       }
+      const newTheme: Theme = { ...theme, ...valid };
+      const { error } = await supabase.from("colleges").update({ badge_url: url, theme: newTheme }).eq("id", collegeId);
+      if (error) throw error;
+      setTheme(newTheme);
+      toast.success(Object.keys(valid).length > 0 ? "院徽已上传，主题已自动更新" : "院徽已上传（未识别到合适主色，主题未变）");
+      await load();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setUploading(false);
     }
-  };
-
-  const applyExtracted = async () => {
-    if (!collegeId || !extracted) return;
-    const newTheme: Theme = { ...theme, ...extracted };
-    setTheme(newTheme);
-    const { error } = await supabase.from("colleges").update({ theme: newTheme }).eq("id", collegeId);
-    if (error) { toast.error(error.message); return; }
-    toast.success("主题已更新");
-    setExtractOpen(false);
-    setExtracted(null);
-    void load();
   };
 
   const save = async () => {
@@ -265,43 +254,6 @@ const Branding = () => {
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
               <AlertDialogAction onClick={() => { void save(); }} className="bg-action text-action-foreground hover:bg-action/90">确认提交</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <AlertDialog open={extractOpen} onOpenChange={setExtractOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>检测到院徽主色，是否应用为 UI 主题？</AlertDialogTitle>
-              <AlertDialogDescription>
-                应用后将覆盖当前的主色 / 背景 / 强调色；如果想保留现有主题，请选择「保留原主题」。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-2">
-              {[
-                { title: "保留原主题", t: theme },
-                { title: "应用新提取", t: { ...theme, ...(extracted ?? {}) } },
-              ].map((col) => (
-                <div key={col.title} className="rounded-lg border p-3">
-                  <div className="mb-2 text-sm font-medium">{col.title}</div>
-                  <div className="space-y-2 text-xs">
-                    {(["primary", "background", "accent"] as const).map((k) => {
-                      const hex = hslTokensToHex(col.t[k]);
-                      return (
-                        <div key={k} className="flex items-center gap-2">
-                          <span className="inline-block h-5 w-5 rounded border" style={{ backgroundColor: hex || "transparent" }} />
-                          <span className="w-20 text-muted-foreground">{k}</span>
-                          <span className="font-mono">{hex || "—"}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => { setExtracted(null); }}>保留原主题</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { void applyExtracted(); }} className="bg-action text-action-foreground hover:bg-action/90">应用新主题</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
