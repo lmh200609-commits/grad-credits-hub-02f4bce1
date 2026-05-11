@@ -1095,6 +1095,10 @@ export type Database = {
           last4: string
         }[]
       }
+      can_manage_college_badge_object: {
+        Args: { _object_name: string }
+        Returns: boolean
+      }
       claim_ai_eval_jobs: {
         Args: { _limit?: number }
         Returns: {
