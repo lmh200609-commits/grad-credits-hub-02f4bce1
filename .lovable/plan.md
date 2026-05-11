@@ -1,40 +1,59 @@
-## 你的建议非常合理
+## 目标
 
-每分钟轮询确实是「兜底」方案，不是最优解。提交即触发更及时、更省资源。但两者其实**应该并存**，原因如下：
+学生提交的材料图片被 AIGC 鉴别为 fake/suspect 时，在学生侧界面给出醒目但克制的提示——单一字体、语气适度，不上升到纪律处分。
 
-### 为什么要保留 cron 兜底
-- **失败重试**：阿里云接口偶发超时/限流，失败任务的 `next_run_at` 会被推到 30s/60s/120s 后，需要有人按时唤醒它。
-- **历史积压**：当前队列里就有 3 条卡住的任务，没有 cron 永远跑不掉。
-- **触发器调用 HTTP 失败时的兜底**：如果提交瞬间 edge function 冷启动失败、网络抖动，cron 下一分钟会补上。
+## 设计预览
 
-业界标准做法就是「**实时触发为主 + 低频 cron 兜底**」。
+![预览](src/assets/aigc_warning_preview_v2.png)
 
-## 修复方案
+风格要点：
+- **单一字体**：沿用项目现有 sans 字体，不引入衬线/新字族；只通过 字号/字重/颜色 构建层级
+- 主色统一走 `--destructive` 语义 token（红），背景 `bg-destructive/10`、左侧 4px 实色竖条 `border-l-4 border-destructive`
+- 左侧 `ShieldAlert` 红色图标；标题 `text-base font-semibold text-destructive`；正文 `text-sm text-foreground/80`
+- suspect 走 `--warning`（琥珀色）同款式，标题改为「材料图片存在 AI 生成嫌疑」
+- 暗色模式：`dark:bg-destructive/15`，对比度自适应
 
-### 1. 修 `process-aigc-queue` 鉴权（必须）
-当前 cron 因为鉴权 403 完全没在跑，所以队列堆积。改成与 `process-eval-queue` 一致：接受任意合法 Supabase JWT。**这一步不可省**，否则失败重试和历史积压无人处理。
+## 文案（已调整为温和版）
 
-### 2. 新增「提交即触发」（核心改进）
-在数据库触发器 `enqueue_aigc_detect` 之外，额外用 `pg_net.http_post` **异步**调用 `process-aigc-queue`，让队列在入队后毫秒级被消费，无需等下一分钟。
+- **fake** 标题：材料图片疑似 AI 生成
+  正文：本次提交的图片经系统鉴别为 AI 生成图像，已自动驳回。请使用真实拍摄的材料重新提交，如有疑问可联系所在学院核实。
+- **suspect** 标题：材料图片存在 AI 生成嫌疑
+  正文：本次提交的图片存在 AI 生成迹象，已转人工复核。请确保提交材料真实有效，必要时准备好原件以备核查。
+- 角标行：`AI 生成概率 96.4%` · `检测时间 2026-05-11` · 右侧链接「查看详情 ›」
 
-做法：把现有的 `enqueue_aigc_detect` 触发器函数尾部追加一次 `net.http_post(...)`（fire-and-forget，不阻塞用户提交）。`pg_net` 已经在用，无需新装扩展。
+不出现"学术不端 / 纪律处分 / 学生手册"等措辞。
 
-效果：学生点「提交」→ 数据库触发器入队 + 立即唤醒 worker → 几秒内出鉴别结果。
+## 出现位置（仅学生视角）
 
-### 3. cron 频率降低（可选优化）
-既然实时触发已覆盖 99% 场景，可以把 `process-aigc-queue` 的 cron 从「每 1 分钟」改为「每 5 分钟」，仅作失败重试兜底，进一步减少无意义调用。`process-eval-queue` 同理可调，但本次只动 AIGC 的，避免影响面扩大。
-
-### 4. 立即清空当前积压
-部署完手动调用一次，把 3 条 queued 任务跑掉。
+1. **申请详情页 `/applications/:id`**
+   在 `PageHeader` 下方、现有 `AigcDetectAlert`（仅老师可见）之外，插入 `<StudentAigcWarning />`，仅当当前用户是该申请学生本人且 `aigc_status ∈ {fake, suspect}` 时显示。
+2. **我的申请列表 `/my-applications`**
+   - select 增加 `aigc_status, aigc_score`
+   - 命中行：左侧 2px 红/琥珀竖线 + 状态列后追加小号红色徽章「疑似 AI 生成」
+   - 列表顶部若有任一命中行，显示一条精简横幅"检测到 N 条申请的图片疑似 AI 生成，请尽快处理"
+3. **新申请提交后 `/apply`**
+   提交后的轮询/realtime 中若结果回判为 fake，弹出一次性 `AlertDialog`（同样克制语气，按钮"我知道了"）。
 
 ## 技术细节
 
-改动：
-- `supabase/functions/process-aigc-queue/index.ts`：放宽鉴权（约 10 行）。
-- 新建 migration：重写 `public.enqueue_aigc_detect()` 函数，在 `INSERT INTO aigc_detect_queue ...` 之后追加一段 `PERFORM net.http_post(...)` 异步唤醒 worker；同步把 `process-aigc-queue` cron 改为 `*/5 * * * *`（用 insert 工具执行 `cron.unschedule` + `cron.schedule`，因为含密钥不进迁移）。
-- 不动前端、不动其他 edge function。
+- 新组件 `src/components/StudentAigcWarning.tsx`
+  - props：`status`、`score`、`checkedAt`、`onViewDetail?`、`compact?`
+  - 全部使用语义 token，不写任何 hex；图标用 `lucide-react` 的 `ShieldAlert`
+  - 字体沿用全局，不修改 `tailwind.config.ts`
+- 改动文件：
+  - `src/components/StudentAigcWarning.tsx`（新建）
+  - `src/pages/ApplicationDetail.tsx`（插入）
+  - `src/pages/student/MyApplications.tsx`（select + 行高亮 + 顶部横幅）
+  - `src/pages/student/Apply.tsx`（提交后弹窗）
 
-## 你需要确认的
+## 不改动
 
-1. 是否同意「实时触发 + 5 分钟兜底 cron」这个组合？还是你希望**完全去掉 cron**？（不建议，会丢失重试能力）
-2. 是否同时给 `process-eval-queue` 也加上「提交即触发」？（当前 AI 评估走的也是 cron，存在同样的延迟问题）
+- 后端鉴别逻辑、阈值、自动驳回规则
+- 老师/管理员视角的 `AigcDetectAlert`
+- 全局字体与主题 token
+
+## 验证
+
+- 手动把一条申请的 `aigc_status` 临时改为 `fake` / `suspect` 各看一次
+- 浅色 / 深色模式
+- 889px 视口下文字不溢出
