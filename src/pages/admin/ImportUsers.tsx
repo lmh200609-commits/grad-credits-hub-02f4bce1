@@ -143,6 +143,7 @@ const ImportUsers = () => {
     role: "student",
   });
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [callerCollegeName, setCallerCollegeName] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -150,13 +151,21 @@ const ImportUsers = () => {
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
       if (!uid) return;
-      const { data } = await supabase
+      const { data: roles } = await supabase
         .from("user_roles")
-        .select("role")
+        .select("role, college_id")
         .eq("user_id", uid)
-        .eq("role", "super_admin")
-        .maybeSingle();
-      if (active) setIsSuperAdmin(!!data);
+        .in("role", ["admin", "super_admin"]);
+      const isSuper = (roles ?? []).some((r) => r.role === "super_admin");
+      if (active) setIsSuperAdmin(isSuper);
+      if (!isSuper) {
+        const cid = (roles ?? []).find((r) => r.role === "admin")?.college_id;
+        if (cid) {
+          const { data: c } = await supabase
+            .from("colleges").select("name").eq("id", cid).maybeSingle();
+          if (active) setCallerCollegeName((c as any)?.name ?? null);
+        }
+      }
     })();
     return () => { active = false; };
   }, []);
@@ -425,9 +434,8 @@ const ImportUsers = () => {
           </div>
         </div>
 
-        {/* Prominent upload banner — visible from first paint so the upload affordance is impossible to miss */}
-        {!pendingRows && (
-          <div className="mb-3 flex items-center gap-3 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-3">
+        {/* Prominent upload banner — always visible so the upload affordance is impossible to miss */}
+        <div className="mb-3 flex items-center gap-3 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
               <Upload className="h-5 w-5" />
             </div>
@@ -435,6 +443,7 @@ const ImportUsers = () => {
               <p className="text-sm font-medium">使用统一模板导入账号</p>
               <p className="text-xs text-muted-foreground">
                 先下载模板按列填写，再上传 Excel；系统按固定表头解析，避免列名歧义。
+                {!isSuperAdmin && callerCollegeName ? `本次只能导入「${callerCollegeName}」的账号。` : ""}
               </p>
             </div>
             <Button onClick={downloadRosterTemplate} variant="outline" size="sm">
@@ -449,8 +458,7 @@ const ImportUsers = () => {
               <Upload className="mr-2 h-4 w-4" />
               选择文件
             </Button>
-          </div>
-        )}
+        </div>
 
         <Card className="flex flex-1 flex-col overflow-hidden">
           <CardContent className="flex-1 space-y-4 overflow-y-auto p-4">
