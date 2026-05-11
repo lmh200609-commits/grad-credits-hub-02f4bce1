@@ -1,56 +1,67 @@
-## 问题诊断
+## 目标
 
-**院徽延迟**：每个页面文件都是 `<AppLayout>{...}</AppLayout>` 自包裹，路由切换时 `AppLayout` 整体卸载/重挂载，`useCollegeTheme` 重新走一次 supabase 网络请求才能拿到 `badge_url`。在请求返回前 `college` 是 `null`，所以院徽 `<img>` 短暂消失。
+把审查流程从「先 AIGC 鉴别 → 再 AI 评估」改成「**先 AI 评估 → 仅当 AI 评估未驳回时才跑 AIGC 鉴别**」。同时：
 
-**侧边栏区分弱**：上一轮虽然已经写入 `--sidebar-background`，但侧栏顶部没有任何学院标识色块，菜单项也用普通 `--sidebar-accent`，从远处看仍是"白底+灰高亮"，跟其他学院几乎一样。
+- AIGC 拥有"一票否决"权：判定为 AI 生成图（fake）→ 强制 `rejected_by_ai`。
+- 在 AIGC 仍在排队/进行中时，前端不揭晓 `auto_approved`，统一显示为"复核中"，等 AIGC 完成再公布最终结论。
 
-## 实施方案
+## 新流程
 
-### 1. 全局缓存 College，消除院徽闪烁
+```text
+学生提交材料
+        │
+        ▼
+   [系统 AI 评估]   ← 仅看材料/关键词/姓名/身份/逻辑等，不掺入 AIGC 信号
+        │
+        ├─ 驳回 → status=rejected_by_ai，终止，不跑 AIGC，节省额度
+        │
+        └─ 通过 / 待复核
+                │ 写入 ai_* 字段，但 status 暂存为 pending_review
+                │ （不允许在 AIGC 完成前进入 auto_approved）
+                ▼
+           [AIGC 鉴别]   ← 一票否决
+                │
+                ├─ fake     → 覆盖为 rejected_by_ai
+                ├─ suspect  → 保持 pending_review
+                └─ real / skipped / error → 若 AI 评估本意是 auto_approve 且高置信，
+                                            此时才提升为 auto_approved
+```
 
-**新增 `src/contexts/CollegeContext.tsx`**：
-- 提供 `<CollegeProvider>` 包住整个应用（在 `App.tsx` 的 `AuthProvider` 内层），提供 `useCollege()` Hook。
-- Provider 内部完成原 `useCollegeTheme` 的全部逻辑：拉取 college、写 CSS 变量、订阅 realtime。
-- 初始化时**同步**从 `sessionStorage` 读取上次缓存的 `college`（key: `college-cache:${collegeId}`），立刻提供给消费者；后台再异步刷新。
-- 每次 fetch 成功后写回 sessionStorage。
-- 将所有 CSS 变量也写到 `localStorage`（key: `college-css-vars:${collegeId}`），并在 `index.html` 顶部加一段内联 `<script>`：登录后下次刷新时同步注入到 `:root`，避免冷启动闪烁。
+## 改动点
 
-**改造 `useCollegeTheme.ts`**：内部仅 `return useContext(CollegeContext)`，不再发请求；保持现有调用方签名不变。
+### 1. 数据库触发器（新建迁移）
 
-效果：路由切换时 `AppLayout` 即便重挂载，`useCollege()` 立即从 Provider 拿到已有数据，院徽不再消失。
+- **`enqueue_aigc_detect`**：从 INSERT 触发器中移除（提交时不再立刻入 AIGC 队列）。
+- **`enqueue_ai_eval_after_aigc`**：删除，不再以 AIGC 完成作为 AI 评估的前置。
+- **`enqueue_ai_eval`**：修改为只要 `status='pending_ai'` 就入队，提交时立刻把 AI 评估排队。
+- **新增 `enqueue_aigc_detect_after_eval`**：在 `applications` UPDATE 触发；当 AI 评估写完结果（`ai_last_attempt_at` 由 NULL 变为非 NULL，或 `status` 从 `pending_ai` 变为 `pending_review`）、`status` 不是 `rejected_by_ai`、`aigc_status='pending'`、`file_path` 是图片时，把任务入 `aigc_detect_queue` 并 `pg_net` 唤醒 `process-aigc-queue`。
 
-### 2. 侧边栏明显学院化
+### 2. `evaluate-application` Edge Function
 
-在 `AppLayout.tsx` 的 `AppSidebar` 顶部加一个**品牌头部**（替代/补充现有的"导航"label）：
+- 删除 106–122 行的"AIGC 前置同步触发"逻辑。
+- 删除所有读取 `aigc_status / aigc_score` 影响 prompt 与 `nextStatus` 的代码（`aigcSuspect` 分支、`aigcExtraPrompt`、attachmentNote 中的 AIGC 表述）。AI 评估完全不感知 AIGC。
+- **`nextStatus` 计算调整**：原本写 `auto_approved` 的分支，先把 `_intended_auto_approve` 信号写入临时列（见下），但实际落库 `status='pending_review'`，避免在 AIGC 出结果前出现"已通过"。
+- 仍保留：开始时若 `app.status === 'rejected_by_ai'` 直接返回。
 
-- 紧贴侧栏顶部一条 56px 的"学院 banner"：背景 `linear-gradient(135deg, hsl(var(--brand-strong)) 0%, hsl(var(--primary)) 100%)`，左侧院徽（圆形白底，h-10 w-10），右侧两行小字：学院 short_name（白色加粗）+ "学分认证系统"（白色 70% 透明）。
-- collapsed（图标态）时只显示居中的圆形院徽。
-- banner 下方加一条 1px `--primary/30` 分隔线。
-- 把 `SidebarGroupLabel "导航"` 颜色改为 `text-[hsl(var(--brand-strong))]` 并加大字号到 xs→sm。
-- 当前激活项 `SidebarMenuButton` 用 `data-[active=true]:bg-[hsl(var(--brand-strong)/0.12)] data-[active=true]:text-[hsl(var(--brand-strong))] data-[active=true]:border-l-2 data-[active=true]:border-[hsl(var(--brand-strong))]`，用左侧 2px 主色色条强化"我在哪个学院的哪个页面"。
-- 侧栏底部加一行小字 `code · name`（淡色），便于跨学院切账号时确认。
+### 3. `aigc-detect` Edge Function
 
-由于 `--sidebar-background / --brand-strong / --primary` 都会随院徽变化，整条侧栏从顶部 banner 到激活态色条，会跟着学院变。两个学院并排时一眼可分。
+- **fake**：把 `status` 强制覆盖为 `rejected_by_ai`，`ai_reasoning` 末尾追加「AIGC 一票否决：检测为 AI 生成图（概率 X%）」，`ai_check_authenticity=false`。
+- **suspect**：保持 `pending_review`，`ai_reasoning` 末尾追加「AIGC 鉴别：疑似 AI 生成（概率 X%），已转人工复核」。不再尝试自动通过。
+- **real / skipped / error**：若 `ai_intended_auto_approve=true` 且当前 `status='pending_review'`，提升为 `auto_approved` 并按 evaluate-application 的逻辑落实学分（写 `final_credit = ai_suggested_credit`、`reviewed_at=now()`、`review_source='ai'`）；否则保持 `pending_review`。
+- 都要写 `aigc_*` 字段（不变）。
 
-### 3. 顶部 header 院徽兜底
+### 4. 数据库 schema 微调（同迁移）
 
-`<img src={college.badge_url}>` 加 `key={college.badge_url}` 避免新旧 url 之间的图像缓存撕裂；同时保留 `bg-background` 圆底，img 加载未完成期间也是一个圆形占位，不会"消失再出现"。
+- `applications` 新增字段 `ai_intended_auto_approve boolean default false`，由 evaluate-application 在"本应自动通过但需等 AIGC"时置 true。AIGC 完成后由 aigc-detect 决定是否兑现。
+- 兼容老数据：所有历史申请该字段为 false，不影响。
 
-### 4. 兼容旧学院
+### 5. 前端
 
-旧主题没存 `sidebarBg / headerTint / brandStrong` 的，沿用上一轮已实现的"从 primary 派生"逻辑。无需迁移数据。
+无需改动。前端原本就根据 `status` 显示，AIGC 完成前为 `pending_review`（"待复核"），完成后再变成 `auto_approved` 或 `rejected_by_ai`，体验自然。
 
-## 改动文件
+## 影响
 
-- 新增：`src/contexts/CollegeContext.tsx`
-- 修改：`src/App.tsx`（包入 Provider）
-- 修改：`src/hooks/useCollegeTheme.ts`（瘦身为消费 Context）
-- 修改：`src/components/AppLayout.tsx`（侧栏品牌 banner + 激活态强化 + img key）
-- 修改：`index.html`（启动时从 localStorage 注入 CSS 变量，消除冷启动闪烁）
-
-## 验证
-
-- 在 admin 账户下连续点击多个左侧菜单项，header 院徽全程稳定显示，无闪烁。
-- 用两个学院账户分别登录，侧栏顶部 banner、激活项色条颜色明显不同。
-- 折叠侧栏（icon 模式）时仍能看到院徽圆标。
-- 退出登录或切换学院时 banner/CSS 变量正确重置。
+- **省额度**：AI 评估直接驳回的申请不再调用阿里云 AIGC 接口。
+- **不"先甜后苦"**：用户不会在 AIGC 出结果前看到"已通过"再被翻盘；统一以"复核中 → 通过/驳回"的顺序揭晓。
+- **AIGC 一票否决**：AI 评估通过的图片若被判定 AI 生成，仍会被驳回。
+- **教师视角**：详情页 reasoning 里同时能看到 AI 评估结论 + AIGC 追加说明。
