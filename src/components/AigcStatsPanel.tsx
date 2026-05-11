@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
@@ -26,7 +27,10 @@ type Row = {
   submitted_at: string;
   college_id: string | null;
   description: string | null;
+  student_id?: string | null;
 };
+
+type ProfileLite = { user_id: string; full_name: string | null; student_no: string | null };
 
 const STATUS_LABELS: Record<Row["aigc_status"], string> = {
   fake: "高风险",
@@ -65,11 +69,14 @@ function fmtDay(d: Date) {
 
 export default function AigcStatsPanel() {
   const { collegeId, isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   const [range, setRange] = useState<string>("14");
   const [statuses, setStatuses] = useState<Row["aigc_status"][]>([...ALL_STATUSES]);
   const [collegeFilter, setCollegeFilter] = useState<string>("all"); // 仅超管
   const [colleges, setColleges] = useState<{ id: string; name: string }[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
+  const [profiles, setProfiles] = useState<Map<string, ProfileLite>>(new Map());
+  const [dayFocus, setDayFocus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
@@ -95,7 +102,7 @@ export default function AigcStatsPanel() {
     setLoading(true);
     let q = supabase
       .from("applications")
-      .select("id, aigc_status, aigc_score, submitted_at, college_id, description")
+      .select("id, aigc_status, aigc_score, submitted_at, college_id, description, student_id")
       .order("submitted_at", { ascending: false })
       .limit(2000);
     if (sinceIso) q = q.gte("submitted_at", sinceIso);
@@ -104,7 +111,18 @@ export default function AigcStatsPanel() {
     if (error) {
       toast({ title: "加载 AI 鉴别数据失败", description: error.message, variant: "destructive" });
     } else {
-      setRows((data ?? []) as Row[]);
+      const list = (data ?? []) as Row[];
+      setRows(list);
+      const ids = Array.from(new Set(list.map((r) => r.student_id).filter(Boolean) as string[]));
+      if (ids.length) {
+        const { data: ps } = await supabase
+          .from("profiles").select("user_id, full_name, student_no").in("user_id", ids);
+        const m = new Map<string, ProfileLite>();
+        (ps ?? []).forEach((p: any) => m.set(p.user_id, p));
+        setProfiles(m);
+      } else {
+        setProfiles(new Map());
+      }
     }
     setLoading(false);
   }, [sinceIso, isSuperAdmin, collegeFilter]);
