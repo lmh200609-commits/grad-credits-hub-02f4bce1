@@ -295,13 +295,15 @@ async function execTool(
   if (name === "find_student") {
     const q = String(args?.query || "").trim();
     if (!q) return { candidates: [] };
-    const { data: profiles } = await supabase
+    let pq = supabase
       .from("profiles")
-      .select("user_id, full_name, student_no, department, class_name, major")
+      .select("user_id, full_name, student_no, department, class_name, major, college_id")
       .or(
         `full_name.ilike.%${q}%,student_no.ilike.%${q}%,class_name.ilike.%${q}%,major.ilike.%${q}%`,
       )
       .limit(10);
+    if (!isSuper && collegeId) pq = pq.eq("college_id", collegeId);
+    const { data: profiles } = await pq;
     const ids = (profiles || []).map((p: any) => p.user_id);
     let students: any[] = [];
     if (ids.length) {
@@ -318,11 +320,15 @@ async function execTool(
 
   if (name === "list_failing_students") {
     const threshold = Number(args?.threshold ?? 4);
-    const { data: roles } = await supabase.from("user_roles").select("user_id").eq("role", "student");
+    let rq = supabase.from("user_roles").select("user_id").eq("role", "student");
+    if (!isSuper && collegeId) rq = rq.eq("college_id", collegeId);
+    const { data: roles } = await rq;
     const ids = new Set((roles || []).map((r: any) => r.user_id));
-    const { data: apps } = await supabase
+    let aq = supabase
       .from("applications")
       .select("student_id, status, final_credit, ai_suggested_credit");
+    if (!isSuper && collegeId) aq = aq.eq("college_id", collegeId);
+    const { data: apps } = await aq;
     const credit = new Map<string, number>();
     (apps || []).forEach((a: any) => {
       if (!["approved", "auto_approved"].includes(a.status)) return;
