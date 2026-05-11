@@ -76,6 +76,11 @@ const AIGC_RULE = `\n12. 涉及"AI 生成 / AIGC / 疑似 AI 图片 / 假图 / A
 - 学生姓名（学号） · 状态 · 概率 X% · 提交时间 YYYY-MM-DD HH:mm · 申请编号末 8 位
 提交时间只保留到分钟；申请编号只显示末 8 位（如 a994cfc5）。`;
 
+const CHINESE_ONLY_RULE = `\n13. 全程使用纯简体中文回答。严禁在用户可见文本中出现任何英文字段名、英文枚举值、英文表名、英文变量名（包括但不限于 aigc_status / aigc_score / aigc_score_pct / submitted_at / student_id / student_no / student_name / application_id / college_id / fake / suspect / real / pending / skipped / error / approved / rejected / pending_ai / pending_review / auto_approved / rejected_by_ai / applications / profiles / user_roles）。必须翻译为中文：
+- 状态：fake→高风险，suspect→嫌疑，real→通过，pending→待检测，skipped→跳过，error→检测失败；approved→已通过，auto_approved→系统自动通过，rejected→已驳回，rejected_by_ai→AI 初审驳回，pending_ai→AI 审中，pending_review→待教师复核。
+- 字段：aigc_score / aigc_score_pct→AI 生成概率；submitted_at→提交时间；student_no→学号；student_name→姓名；application_id→申请编号（仅展示末 8 位）；college_id→学院；description→申请描述。
+如必须保留原始申请编号，只展示末 8 位（例如 a994cfc5），不要整段 UUID。`;
+
 const IDENTITY_RULE = `\n10. 当用户问"我是谁/我叫什么/我什么角色/我哪个学院/我哪个部门/我邮箱"等关于自身身份的问题时，必须严格基于下方系统消息中"当前登录用户"段落如实回答（姓名、角色、所属学院等），绝不允许说不知道或编造。`;
 
 const FORMAT_GUIDE = `\n\n【输出格式】使用 markdown：第一行一句结论；之后用 ## 二级标题分段；列表用 -；并列信息 ≥5 行必须用表格。禁止一级标题、emoji、分割线、整篇代码块、寒暄过程语（如"我将为您查询…"）。
@@ -505,11 +510,16 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       const arr = (scored ?? []).map((r: any) => Number(r.aigc_score)).filter((n) => !isNaN(n));
       const avg = arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
       return {
-        metric,
-        ...counts,
-        week_fake: weekFake ?? 0,
-        week_suspect: weekSuspect ?? 0,
-        avg_score_pct: Number((avg * 100).toFixed(1)),
+        指标: "AI 生成材料鉴别概览",
+        累计高风险: counts.fake,
+        累计嫌疑: counts.suspect,
+        累计通过: counts.real,
+        待检测: counts.pending,
+        跳过: counts.skipped,
+        检测失败: counts.error,
+        本周高风险: weekFake ?? 0,
+        本周嫌疑: weekSuspect ?? 0,
+        平均AI生成概率: `${(avg * 100).toFixed(1)}%`,
       };
     }
     return { metric, value: 0 };
@@ -535,16 +545,26 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       : { data: [] as any[] };
     const pmap = new Map<string, any>();
     (profs ?? []).forEach((p: any) => pmap.set(p.user_id, p));
+    const STATUS_CN: Record<string, string> = {
+      fake: "高风险", suspect: "嫌疑", real: "通过",
+      pending: "待检测", skipped: "跳过", error: "检测失败",
+    };
+    const fmtTime = (iso: string) => {
+      const d = new Date(iso);
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
     const items = (apps ?? []).map((a: any) => ({
-      application_id: a.id,
-      student_name: pmap.get(a.student_id)?.full_name ?? "—",
-      student_no: pmap.get(a.student_id)?.student_no ?? "—",
-      aigc_status: a.aigc_status,
-      aigc_score_pct: typeof a.aigc_score === "number" ? Number((a.aigc_score * 100).toFixed(1)) : null,
-      submitted_at: a.submitted_at,
-      description: (a.description || "").slice(0, 60),
+      姓名: pmap.get(a.student_id)?.full_name ?? "—",
+      学号: pmap.get(a.student_id)?.student_no ?? "—",
+      状态: STATUS_CN[a.aigc_status] ?? a.aigc_status,
+      "AI生成概率": typeof a.aigc_score === "number" ? `${(a.aigc_score * 100).toFixed(1)}%` : "—",
+      提交时间: fmtTime(a.submitted_at),
+      申请编号末8位: String(a.id).slice(-8),
+      申请描述: (a.description || "").slice(0, 60),
     }));
-    return { range, status, count: items.length, items };
+    const 范围中文 = range === "month" ? "近 30 天" : "本周";
+    return { 范围: 范围中文, 条数: items.length, 明细: items };
   }
 
   if (name === "student_full_profile") {
@@ -795,7 +815,7 @@ Deno.serve(async (req) => {
     const model = aiCfg.model;
     const provider = aiCfg.vendor;
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
