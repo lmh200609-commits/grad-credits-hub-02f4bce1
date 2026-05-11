@@ -18,6 +18,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import EmptyState from "@/components/EmptyState";
 import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
 import TableSkeleton from "@/components/TableSkeleton";
 import TablePagination from "@/components/TablePagination";
 import { fetchAll } from "@/lib/fetchAll";
@@ -118,11 +119,11 @@ const AuditLogs = () => {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">开始日期</Label>
-              <Input type="date" lang="zh-CN" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full" />
+              <DatePicker value={from} onChange={setFrom} placeholder="开始日期" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">结束日期</Label>
-              <Input type="date" lang="zh-CN" value={to} onChange={(e) => setTo(e.target.value)} className="w-full" />
+              <DatePicker value={to} onChange={setTo} placeholder="结束日期" />
             </div>
             <div className="md:col-span-2 xl:col-span-4 text-sm text-muted-foreground">
               共 {filtered.length} / {logs.length}

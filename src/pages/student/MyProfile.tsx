@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Upload, AlertCircle } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
 
 type Profile = {
   full_name: string | null;
@@ -245,7 +246,16 @@ const MyProfile = () => {
             <EField label="性别" v={p.gender ?? ""} onChange={(v) => setField("gender", v)} placeholder="男 / 女" />
             <EField label="民族" v={p.ethnicity ?? ""} onChange={(v) => setField("ethnicity", v)} />
             <EField label="政治面貌" v={p.political_status ?? ""} onChange={(v) => setField("political_status", v)} />
-            <EField label="出生日期" v={p.birth_date ?? ""} onChange={(v) => setField("birth_date", v)} placeholder="YYYY-MM-DD" />
+            <div>
+              <Label>出生日期</Label>
+              <DatePicker
+                value={p.birth_date ?? ""}
+                onChange={(v) => setField("birth_date", v || null)}
+                disableFuture
+                fromYear={1940}
+                toYear={new Date().getFullYear()}
+              />
+            </div>
             <EField label="辅导员" v={p.advisor ?? ""} onChange={(v) => setField("advisor", v)} />
             <Field label="身份证号" v={p.id_card} />
             <EField label="手机号" v={p.phone ?? ""} onChange={(v) => setField("phone", v)} />
