@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
+import { zhCN } from "date-fns/locale";
 
 type Keyword = {
   id: string;
@@ -271,6 +272,7 @@ const KeywordsPage = () => {
                     onSelect={setDateRange}
                     numberOfMonths={2}
                     initialFocus
+                    locale={zhCN}
                     className={cn("p-3 pointer-events-auto")}
                   />
                   <div className="flex items-center justify-end gap-2 border-t p-2">
