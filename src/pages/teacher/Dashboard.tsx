@@ -16,6 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ClipboardCheck, Sparkles } from "lucide-react";
+import AigcStatsPanel from "@/components/AigcStatsPanel";
 
 const PASS_THRESHOLD = 4;
 
@@ -214,6 +215,8 @@ const TeacherDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        <AigcStatsPanel />
 
         <Card>
           <CardHeader><CardTitle className="text-base">快捷入口</CardTitle></CardHeader>

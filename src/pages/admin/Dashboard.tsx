@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { Link, useNavigate } from "react-router-dom";
 import { Inbox, Sparkles } from "lucide-react";
+import AigcStatsPanel from "@/components/AigcStatsPanel";
 
 // 高对比度多彩配色
 const COLORS = ["#10b981", "#ef4444", "#f59e0b", "#3b82f6", "#a855f7", "#06b6d4"];
@@ -206,6 +207,8 @@ const AdminDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        <AigcStatsPanel />
 
         {isSuperAdmin && (
           <Card>
