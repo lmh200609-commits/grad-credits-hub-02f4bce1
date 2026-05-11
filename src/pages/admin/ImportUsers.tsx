@@ -122,6 +122,9 @@ const validateRow = (r: ParsedRow, requireCollege = false, allowAdminRole = true
   return e;
 };
 
+const normalizeCollegeName = (s: string) =>
+  s.toLowerCase().replace(/[与和&\s院（）()]/g, "");
+
 const ROLE_LABEL: Record<string, string> = { admin: "管理员", teacher: "教师", student: "学生" };
 
 const ImportUsers = () => {
@@ -267,6 +270,20 @@ const ImportUsers = () => {
 
       // Per-row format validation BEFORE allowing import.
       const rowErrors = rows.map((r) => validateRow(r, isSuperAdmin, isSuperAdmin));
+
+      // College-admin: reject any row whose 学院 column points at another college.
+      if (!isSuperAdmin && callerCollegeName) {
+        const callerNorm = normalizeCollegeName(callerCollegeName);
+        rows.forEach((r, i) => {
+          const cname = r.college_name?.trim();
+          if (cname && normalizeCollegeName(cname) !== callerNorm) {
+            rowErrors[i] = {
+              ...rowErrors[i],
+              college_name: `学院「${cname}」与你管理的「${callerCollegeName}」不一致，无法跨学院导入`,
+            };
+          }
+        });
+      }
       const badCount = rowErrors.filter((e) => Object.keys(e).length > 0).length;
 
       setPendingRows(rows);
