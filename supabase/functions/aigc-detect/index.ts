@@ -211,6 +211,11 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (appErr || !app) return json({ error: "application not found" }, 404);
 
+    // 幂等：若 AIGC 已经处理过（非 pending），直接返回，避免 inline 唤起与队列 worker 重复执行。
+    if (app.aigc_status && app.aigc_status !== "pending") {
+      return json({ skipped: true, reason: "already_processed", status: app.aigc_status });
+    }
+
     if (!isService && callerId !== app.student_id) {
       const { data: roles } = await admin.from("user_roles").select("role").eq("user_id", callerId);
       const ok = (roles ?? []).some((r: any) => r.role === "teacher" || r.role === "admin" || r.role === "super_admin");

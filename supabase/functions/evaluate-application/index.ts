@@ -650,6 +650,32 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       })
       .eq("id", application_id);
 
+    // AI 评估通过后，立刻同步唤起 AIGC 检测；不阻塞响应。
+    // DB 触发器 + 队列仍作为兜底，aigc-detect 内部已做幂等。
+    const shouldTriggerAigc =
+      nextStatus !== "rejected_by_ai" &&
+      !!app.file_path &&
+      /\.(png|jpe?g|webp|gif|bmp)$/i.test(app.file_path) &&
+      app.aigc_status === "pending";
+    if (shouldTriggerAigc) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const aigcPromise = fetch(`${supabaseUrl}/functions/v1/aigc-detect`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceKey}`,
+          apikey: serviceKey,
+        },
+        body: JSON.stringify({ application_id }),
+      }).catch((e) => console.error("[evaluate-application] inline aigc-detect failed:", e));
+      // @ts-ignore EdgeRuntime is available in Supabase edge runtime
+      if (typeof EdgeRuntime !== "undefined" && (EdgeRuntime as any)?.waitUntil) {
+        // @ts-ignore
+        (EdgeRuntime as any).waitUntil(aigcPromise);
+      }
+    }
+
     return json({
       success: true,
       status: nextStatus,
