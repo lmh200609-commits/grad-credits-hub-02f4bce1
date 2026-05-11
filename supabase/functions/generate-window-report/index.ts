@@ -48,6 +48,12 @@ Deno.serve(async (req) => {
     if (winErr || !win) return json({ error: "window not found" }, 404);
 
     const collegeId = win.college_id;
+    if (!isSuper) {
+      const callerCollegeIds = new Set((roles ?? []).map((r: any) => r.college_id).filter(Boolean));
+      if (!callerCollegeIds.has(collegeId)) {
+        return json({ error: "forbidden: cross-college" }, 403);
+      }
+    }
     const { data: collegeRow } = await admin
       .from("colleges").select("name").eq("id", collegeId).maybeSingle();
     const collegeName = collegeRow?.name ?? "学院";
