@@ -13,7 +13,6 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { Clock, Lock, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import StudentAigcWarning from "@/components/StudentAigcWarning";
 import { cn } from "@/lib/utils";
 
 type Row = {
