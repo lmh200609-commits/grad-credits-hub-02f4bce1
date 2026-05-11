@@ -87,6 +87,7 @@ const AppSidebar = () => {
   const { hasRole, isSuperAdmin, collegeId } = useAuth();
   const { active: previewActive, roleView } = usePreviewTheme();
   const location = useLocation();
+  const college = useCollegeTheme();
   const effectiveRole: "super_admin" | "admin" | "teacher" | "student" =
     previewActive && roleView
       ? roleView
@@ -130,8 +131,40 @@ const AppSidebar = () => {
   return (
     <Sidebar collapsible="icon">
       <SidebarContent ref={scrollRef}>
+        {/* College brand banner — colored band that visibly differs per college */}
+        <div
+          className={`flex items-center gap-3 border-b px-3 py-3 ${collapsed ? "justify-center px-2" : ""}`}
+          style={{
+            backgroundImage:
+              "linear-gradient(135deg, hsl(var(--brand-strong)) 0%, hsl(var(--primary)) 100%)",
+            borderBottomColor: "hsl(var(--primary) / 0.4)",
+          }}
+        >
+          {college?.badge_url ? (
+            <img
+              key={college.badge_url}
+              src={college.badge_url}
+              alt=""
+              className="h-10 w-10 shrink-0 rounded-full bg-background object-contain p-0.5 ring-2 ring-white/60"
+            />
+          ) : (
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white ring-2 ring-white/40">
+              {(college?.short_name || college?.name || "学").slice(0, 1)}
+            </div>
+          )}
+          {!collapsed && (
+            <div className="min-w-0 flex-1 leading-tight text-white">
+              <div className="truncate text-sm font-semibold">
+                {college?.short_name || college?.name || "学分认证系统"}
+              </div>
+              <div className="truncate text-[11px] text-white/75">学分认证系统</div>
+            </div>
+          )}
+        </div>
         <SidebarGroup>
-          <SidebarGroupLabel>导航</SidebarGroupLabel>
+          <SidebarGroupLabel style={{ color: "hsl(var(--brand-strong))" }}>
+            导航
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
               {items.map((it) => {
@@ -164,13 +197,28 @@ const SidebarNavItem = ({
       className={
         `relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
           active
-            ? "bg-accent text-accent-foreground font-semibold hover:bg-accent before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-foreground"
+            ? "font-semibold before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r"
             : "hover:bg-muted/60"
         }`
       }
+      style={
+        active
+          ? {
+              backgroundColor: "hsl(var(--brand-strong) / 0.12)",
+              color: "hsl(var(--brand-strong))",
+            }
+          : undefined
+      }
     >
+      {active && (
+        <span
+          aria-hidden
+          className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r"
+          style={{ backgroundColor: "hsl(var(--brand-strong))" }}
+        />
+      )}
       <Icon
-        className={`h-4 w-4 shrink-0 ${active ? "text-foreground" : ""}`}
+        className="h-4 w-4 shrink-0"
         strokeWidth={active ? 2.25 : 1.75}
       />
       {!collapsed && <span className="truncate">{title}</span>}
@@ -227,6 +275,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
               <SidebarTrigger />
               {college?.badge_url && (
                 <img
+                  key={college.badge_url}
                   src={college.badge_url}
                   alt=""
                   className="h-9 w-9 rounded-full bg-background object-contain p-0.5 ring-2 ring-primary/40"
