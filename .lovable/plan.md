@@ -1,51 +1,40 @@
-## 修复目标
+## 你的建议非常合理
 
-1. 删除 `学院界面风格` 页面中的"实时预览"卡片。
-2. **侧边栏在「保存后」和「全局预览」中都跟随配色变化**（当前两处都只覆盖了 `--primary / --accent / --background`，没动 `--sidebar-background / --sidebar-accent`，所以侧边栏底色不会变）。
-3. 全局预览横幅新增「管理员 / 教师 / 学生」视角切换，能看到三种角色的侧边栏与页面 UI 布局。
+每分钟轮询确实是「兜底」方案，不是最优解。提交即触发更及时、更省资源。但两者其实**应该并存**，原因如下：
 
-## 实现方案
+### 为什么要保留 cron 兜底
+- **失败重试**：阿里云接口偶发超时/限流，失败任务的 `next_run_at` 会被推到 30s/60s/120s 后，需要有人按时唤醒它。
+- **历史积压**：当前队列里就有 3 条卡住的任务，没有 cron 永远跑不掉。
+- **触发器调用 HTTP 失败时的兜底**：如果提交瞬间 edge function 冷启动失败、网络抖动，cron 下一分钟会补上。
 
-### A. Branding 页面
-- 删除 `src/pages/admin/Branding.tsx` 中的"实时预览" Card（页内的小预览整块移除）。
+业界标准做法就是「**实时触发为主 + 低频 cron 兜底**」。
 
-### B. 侧边栏跟随主题（保存后 + 预览中）
+## 修复方案
 
-需要新写入的 CSS 变量映射（两处保持一致）：
-- `theme.primary` → `--primary`、`--ring`、`--sidebar-primary`、`--sidebar-ring`（已有）
-- `theme.accent` → `--accent`、**`--sidebar-accent`**（新增）
-- `theme.background` → `--background`、`--card`、**`--sidebar-background`**（新增）
-- `theme.radius` → `--radius`（已有）
+### 1. 修 `process-aigc-queue` 鉴权（必须）
+当前 cron 因为鉴权 403 完全没在跑，所以队列堆积。改成与 `process-eval-queue` 一致：接受任意合法 Supabase JWT。**这一步不可省**，否则失败重试和历史积压无人处理。
 
-修改文件：
-- `src/hooks/useCollegeTheme.ts`：在 `applyTheme` 与 `resetThemeVars` 中追加 `--sidebar-background / --sidebar-accent / --card`。
-- `src/hooks/usePreviewTheme.tsx`：在 `VARS` 列表与 `applyVars` 中追加 `--sidebar-background / --sidebar-accent`（`--card` 已有）。
+### 2. 新增「提交即触发」（核心改进）
+在数据库触发器 `enqueue_aigc_detect` 之外，额外用 `pg_net.http_post` **异步**调用 `process-aigc-queue`，让队列在入队后毫秒级被消费，无需等下一分钟。
 
-这样：保存配色后，所有用户的侧边栏底色 / 当前项高亮即时跟随；预览模式下侧边栏也立刻变色。
+做法：把现有的 `enqueue_aigc_detect` 触发器函数尾部追加一次 `net.http_post(...)`（fire-and-forget，不阻塞用户提交）。`pg_net` 已经在用，无需新装扩展。
 
-### C. 预览中的"角色视角切换"
+效果：学生点「提交」→ 数据库触发器入队 + 立即唤醒 worker → 几秒内出鉴别结果。
 
-**Context 扩展**（`src/hooks/usePreviewTheme.tsx`）
-- 新增 `roleView: "admin" | "teacher" | "student" | null` 与 `setRoleView`。
-- `enterPreview` 默认设为 `"admin"`；`exitPreview` 重置为 `null`。
+### 3. cron 频率降低（可选优化）
+既然实时触发已覆盖 99% 场景，可以把 `process-aigc-queue` 的 cron 从「每 1 分钟」改为「每 5 分钟」，仅作失败重试兜底，进一步减少无意义调用。`process-eval-queue` 同理可调，但本次只动 AIGC 的，避免影响面扩大。
 
-**预览横幅**（`src/components/PreviewModeBanner.tsx`）
-- 在按钮区前加一组分段切换：`管理员视角 / 教师视角 / 学生视角`。
-- 点击时 `setRoleView(target)` 并 `navigate` 到对应首页：admin→`/admin/dashboard`，teacher→`/teacher/dashboard`，student→`/`。
+### 4. 立即清空当前积压
+部署完手动调用一次，把 3 条 queued 任务跑掉。
 
-**AppLayout 角色覆盖**（`src/components/AppLayout.tsx`）
-- 当 `previewActive && roleView` 时：
-  - 用 `roleView` 决定侧边栏 items（admin / teacher / student 三套）
-  - 顶栏 `roleLabel` 标注为「预览：xxx 视角」
-  - student 视角挂 `<AiAssistant />`，否则挂 `<StaffAiAssistant />`
-- 真实 `roles / hasRole` 不变，退出预览即恢复。
+## 技术细节
 
-**路由守卫放行**（`src/components/RoleRoute.tsx`）
-- 引入 `usePreviewTheme()`：当 `previewActive && roleView` 命中本路由要求的角色时直接放行，让管理员能进入 `/apply`、`/teacher/dashboard` 等页面看到 UI。
-- `ProtectedRoute` 不改。
+改动：
+- `supabase/functions/process-aigc-queue/index.ts`：放宽鉴权（约 10 行）。
+- 新建 migration：重写 `public.enqueue_aigc_detect()` 函数，在 `INSERT INTO aigc_detect_queue ...` 之后追加一段 `PERFORM net.http_post(...)` 异步唤醒 worker；同步把 `process-aigc-queue` cron 改为 `*/5 * * * *`（用 insert 工具执行 `cron.unschedule` + `cron.schedule`，因为含密钥不进迁移）。
+- 不动前端、不动其他 edge function。
 
-**说明**：切到学生 / 教师视角时，页面里依赖角色专属数据的部分可能为空（管理员账号没有学生申请等），这是预期 —— 预览的目的是查看 **UI 布局与配色**，不是模拟真实数据。退出预览或刷新即恢复严格的角色守卫。
+## 你需要确认的
 
-## 范围之外
-- 不修改后端逻辑、数据库、`useAuth`。
-- 不持久化预览状态（刷新即退出）。
+1. 是否同意「实时触发 + 5 分钟兜底 cron」这个组合？还是你希望**完全去掉 cron**？（不建议，会丢失重试能力）
+2. 是否同时给 `process-eval-queue` 也加上「提交即触发」？（当前 AI 评估走的也是 cron，存在同样的延迟问题）
