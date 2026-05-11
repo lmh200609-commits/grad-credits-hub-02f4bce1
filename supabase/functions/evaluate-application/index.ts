@@ -449,20 +449,8 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (result.logic_ok === false)          failedChecks.push("逻辑性核验");
     if (result.completeness_ok === false)   failedChecks.push("材料完整性");
 
-    // 阿里云 AIGC 鉴别结果说明（fake/suspect 已在更早阶段拦截或转人工，这里只做信息透出）
-    if (app.aigc_status === "real") {
-      overrideNotes.push(
-        `阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%，未发现明显 AI 生成痕迹。`,
-      );
-    } else if (app.aigc_status === "suspect") {
-      overrideNotes.push(
-        `阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%，存在 AI 生成嫌疑，已转人工复核。`,
-      );
-    } else if (app.aigc_status === "skipped") {
-      overrideNotes.push("阿里云 AIGC 鉴别：未对该附件做 AI 生成鉴别（学院已关闭或附件类型不支持）。");
-    } else if (app.aigc_status === "error") {
-      overrideNotes.push("阿里云 AIGC 鉴别：调用失败，本次未能完成 AI 生成鉴别。");
-    }
+    // 注：AIGC 鉴别在本次 AI 评估完成后由数据库 trigger 异步触发；
+    // 本函数不再读取 / 描述 aigc_status。
 
     // 学校兜底：detected_school 非空且不属于默认学校族 → 强制身份不符
     const detSchool = (result.detected_school ?? "").toString().trim().toLowerCase();
