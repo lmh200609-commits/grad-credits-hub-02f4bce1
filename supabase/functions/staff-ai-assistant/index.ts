@@ -28,8 +28,11 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
     · rejected_week         — 近 7 天驳回数
     · total_students        — 学生总人数
     · total_apps_month      — 近 30 天提交申请数
-    · submitted_total       — 累计提交过申请的去重学生人数
-    · submitted_count       — 累计申请总数
+    · submitted_total       — 累计提交过申请的去重学生人数（全时段，不带时间窗口）
+    · submitted_count       — 累计申请总数（全时段）
+    · submitted_students_week — 近 7 天去重提交学生数（凡是问"本周/这一周/近 7 天 多少学生提交"必须用此项）
+    · submitted_count_week   — 近 7 天提交申请总数
+    · submitted_students_month — 近 30 天去重提交学生数
     · passed_students       — 累计学分 ≥ 4 的学生人数（合格）
     · failing_students      — 累计学分 < 4 的学生人数（不合格）
     · auto_approved_total   — 系统初审自动通过的申请数
@@ -64,7 +67,9 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 3. 如果用户请求与学分系统无关，礼貌拒绝并提醒可用功能。
 4. 回答简洁，不超过两句话；执行动作时直接调工具，不要冗长解释。
 5. 教师角色不要给出"管理员后台"建议；管理员角色可访问全部页面。
-6. 【严禁幻觉】凡涉及任何数量、人数、统计的提问（"多少人"、"几个"、"提交了多少"、"合格/不合格人数"、"通过/驳回数"等），必须先调用 query_stats（或对应工具如 list_failing_students）拿到真实数字，绝不允许凭对话上下文、记忆或推测给出数字。
+6. 【严禁幻觉，严禁替换指标】凡涉及任何数量、人数、统计的提问（"多少人"、"几个"、"提交了多少"、"合格/不合格人数"、"通过/驳回数"等），必须先调用 query_stats（或对应工具如 list_failing_students）拿到真实数字，绝不允许凭对话上下文、记忆或推测给出数字。
+   - 时间窗口必须严格匹配：用户问"本周/这一周/近 7 天"必须使用 submitted_students_week / submitted_count_week / approved_week / rejected_week / aigc_fake_week / aigc_suspect_week 等带 _week 的指标；问"近 30 天/本月"用 _month 或 total_apps_month；问"累计/全部/总共"才用 _total。严禁用 _total 指标回答 _week 问题，也不得在拿到 _total 后口头改写为"近 7 天"。
+   - 如果用户问的统计指标不在 metric 列表内，必须直接回复"暂不支持该统计"，禁止用近义指标替代。
 7. 如果用户问的统计指标不在上面 metric 列表中，回复"暂不支持该统计"，不要编造。
 8. 【数据来源严格基于数据库】凡涉及具体学生、申请、证书类型、AI/教师审核内容，必须先调用对应工具读取数据库。工具返回为空时必须明确回复"数据库中暂无相关记录"，绝不编造姓名、学号、学分、审核意见、证书类型、典型学分等任何细节。
 9. 询问"某学生的资料/记录/申请/AI审/教师审"时，优先用 student_full_profile + student_submission_history；询问"某次申请怎么走的"用 submission_timeline；询问"某证书几学分/属于哪类"用 certificate_type_lookup。`;
@@ -164,6 +169,9 @@ const TOOLS = [
               "total_apps_month",
               "submitted_total",
               "submitted_count",
+              "submitted_students_week",
+              "submitted_count_week",
+              "submitted_students_month",
               "passed_students",
               "failing_students",
               "auto_approved_total",
@@ -264,7 +272,30 @@ const TOOLS = [
   },
 ];
 
-async function execTool(name: string, args: any, supabase: ReturnType<typeof createClient>, userRole: string = "admin") {
+type CallerCtx = {
+  userRole: string; // 'super_admin' | 'admin' | 'teacher'
+  collegeId: string | null;
+  isSuper: boolean;
+};
+
+async function execTool(
+  name: string,
+  args: any,
+  supabase: ReturnType<typeof createClient>,
+  ctx: CallerCtx,
+) {
+  const { userRole, collegeId, isSuper } = ctx;
+  // 在调用方为学院管理员/教师时，把所有学院范围内的 student user_id 预取出来，
+  // 用于过滤没有 college_id 列的表（如 user_roles 已有，但 application_reviews 没有）。
+  const fetchScopedStudentIds = async (): Promise<string[] | null> => {
+    if (isSuper || !collegeId) return null;
+    const { data } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", "student")
+      .eq("college_id", collegeId);
+    return Array.from(new Set((data || []).map((r: any) => r.user_id))).filter(Boolean);
+  };
   if (name === "navigate_to") {
     return { ok: true, path: String(args?.path || "") };
   }
@@ -272,13 +303,15 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
   if (name === "find_student") {
     const q = String(args?.query || "").trim();
     if (!q) return { candidates: [] };
-    const { data: profiles } = await supabase
+    let pq = supabase
       .from("profiles")
-      .select("user_id, full_name, student_no, department, class_name, major")
+      .select("user_id, full_name, student_no, department, class_name, major, college_id")
       .or(
         `full_name.ilike.%${q}%,student_no.ilike.%${q}%,class_name.ilike.%${q}%,major.ilike.%${q}%`,
       )
       .limit(10);
+    if (!isSuper && collegeId) pq = pq.eq("college_id", collegeId);
+    const { data: profiles } = await pq;
     const ids = (profiles || []).map((p: any) => p.user_id);
     let students: any[] = [];
     if (ids.length) {
@@ -295,11 +328,15 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
 
   if (name === "list_failing_students") {
     const threshold = Number(args?.threshold ?? 4);
-    const { data: roles } = await supabase.from("user_roles").select("user_id").eq("role", "student");
+    let rq = supabase.from("user_roles").select("user_id").eq("role", "student");
+    if (!isSuper && collegeId) rq = rq.eq("college_id", collegeId);
+    const { data: roles } = await rq;
     const ids = new Set((roles || []).map((r: any) => r.user_id));
-    const { data: apps } = await supabase
+    let aq = supabase
       .from("applications")
       .select("student_id, status, final_credit, ai_suggested_credit");
+    if (!isSuper && collegeId) aq = aq.eq("college_id", collegeId);
+    const { data: apps } = await aq;
     const credit = new Map<string, number>();
     (apps || []).forEach((a: any) => {
       if (!["approved", "auto_approved"].includes(a.status)) return;
@@ -321,56 +358,115 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
     const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
+    // 学院范围过滤助手
+    const scopeApps = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    const scopeProfiles = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    const scopeRoles = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    // 仅当作用域内学生 ID 已知时使用（应对没有 college_id 的表，如 application_reviews）
+    let scopedStudentIds: string[] | null | undefined = undefined;
+    const ensureStudentIds = async () => {
+      if (scopedStudentIds === undefined) scopedStudentIds = await fetchScopedStudentIds();
+      return scopedStudentIds; // null 表示超管（不过滤）
+    };
     if (metric === "pending_review") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_review");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
+      );
       return { metric, value: count ?? 0, navigate_path: "/reviews?status=pending_review" };
     }
     if (metric === "approved_week") {
-      const { data } = await supabase
+      // application_reviews 没有 college_id；先按 application 取本学院 ids 再过滤
+      let appScope: string[] | null = null;
+      if (!isSuper && collegeId) {
+        const { data: aids } = await supabase
+          .from("applications").select("id").eq("college_id", collegeId);
+        appScope = (aids || []).map((r: any) => r.id);
+        if (appScope.length === 0) return { metric, value: 0 };
+      }
+      let q = supabase
         .from("application_reviews")
         .select("application_id")
         .eq("decision", "approved")
         .gte("created_at", weekAgo.toISOString());
+      if (appScope) q = q.in("application_id", appScope);
+      const { data } = await q;
       const set = new Set((data || []).map((r: any) => r.application_id));
       return { metric, value: set.size };
     }
     if (metric === "rejected_week") {
-      const { data } = await supabase
+      let appScope: string[] | null = null;
+      if (!isSuper && collegeId) {
+        const { data: aids } = await supabase
+          .from("applications").select("id").eq("college_id", collegeId);
+        appScope = (aids || []).map((r: any) => r.id);
+        if (appScope.length === 0) return { metric, value: 0 };
+      }
+      let q = supabase
         .from("application_reviews")
         .select("application_id")
         .eq("decision", "rejected")
         .gte("created_at", weekAgo.toISOString());
+      if (appScope) q = q.in("application_id", appScope);
+      const { data } = await q;
       const set = new Set((data || []).map((r: any) => r.application_id));
       return { metric, value: set.size };
     }
     if (metric === "total_students") {
-      const { count } = await supabase.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role", "student");
+      const { count } = await scopeRoles(
+        supabase.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role", "student"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "total_apps_month") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).gte("submitted_at", monthAgo.toISOString());
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).gte("submitted_at", monthAgo.toISOString()),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "pending_ai") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_ai");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_ai"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "submitted_total") {
-      const { data } = await supabase.from("applications").select("student_id");
+      const { data } = await scopeApps(supabase.from("applications").select("student_id"));
       const set = new Set((data || []).map((r: any) => r.student_id));
       return { metric, value: set.size, navigate_path: userRole === "teacher" ? "/teacher/students" : "/admin/users/students" };
     }
     if (metric === "submitted_count") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true });
+      const { count } = await scopeApps(supabase.from("applications").select("id", { count: "exact", head: true }));
       return { metric, value: count ?? 0 };
+    }
+    if (metric === "submitted_students_week") {
+      const { data } = await scopeApps(
+        supabase.from("applications").select("student_id").gte("submitted_at", weekAgo.toISOString()),
+      );
+      const set = new Set((data || []).map((r: any) => r.student_id));
+      return { metric, value: set.size, range: "week", navigate_path: userRole === "teacher" ? "/teacher/students" : "/admin/users/students" };
+    }
+    if (metric === "submitted_count_week") {
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).gte("submitted_at", weekAgo.toISOString()),
+      );
+      return { metric, value: count ?? 0, range: "week" };
+    }
+    if (metric === "submitted_students_month") {
+      const { data } = await scopeApps(
+        supabase.from("applications").select("student_id").gte("submitted_at", monthAgo.toISOString()),
+      );
+      const set = new Set((data || []).map((r: any) => r.student_id));
+      return { metric, value: set.size, range: "month" };
     }
     if (metric === "passed_students" || metric === "failing_students") {
       const threshold = 4;
-      const { data: roles } = await supabase.from("user_roles").select("user_id").eq("role", "student");
+      const { data: roles } = await scopeRoles(
+        supabase.from("user_roles").select("user_id").eq("role", "student"),
+      );
       const ids = new Set((roles || []).map((r: any) => r.user_id));
-      const { data: apps } = await supabase
-        .from("applications")
-        .select("student_id, status, final_credit, ai_suggested_credit");
+      const { data: apps } = await scopeApps(
+        supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit"),
+      );
       const credit = new Map<string, number>();
       (apps || []).forEach((a: any) => {
         if (!["approved", "auto_approved"].includes(a.status)) return;
@@ -389,18 +485,23 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       };
     }
     if (metric === "auto_approved_total") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "auto_approved");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "auto_approved"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "manual_approved_total") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "approved");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "approved"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "rejected_total") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["rejected", "rejected_by_ai"]);
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["rejected", "rejected_by_ai"]),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "rules_overview") {
@@ -484,52 +585,59 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       return { metric, value: total, by_event: byEvent };
     }
     if (metric === "aigc_fake_week") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "fake")
-        .gte("submitted_at", weekAgo.toISOString());
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "fake")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
       return { metric, value: count ?? 0, range: "week" };
     }
     if (metric === "aigc_suspect_week") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "suspect")
-        .gte("submitted_at", weekAgo.toISOString());
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "suspect")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
       return { metric, value: count ?? 0, range: "week" };
     }
     if (metric === "aigc_pending_total") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "pending");
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "pending"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "aigc_overview") {
       const statuses = ["fake", "suspect", "real", "pending", "skipped", "error"] as const;
       const counts: Record<string, number> = {};
       for (const s of statuses) {
-        const { count } = await supabase
-          .from("applications")
-          .select("id", { count: "exact", head: true })
-          .eq("aigc_status", s);
+        const { count } = await scopeApps(
+          supabase.from("applications")
+            .select("id", { count: "exact", head: true })
+            .eq("aigc_status", s),
+        );
         counts[s] = count ?? 0;
       }
-      const { count: weekFake } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "fake")
-        .gte("submitted_at", weekAgo.toISOString());
-      const { count: weekSuspect } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "suspect")
-        .gte("submitted_at", weekAgo.toISOString());
-      const { data: scored } = await supabase
-        .from("applications")
-        .select("aigc_score")
-        .not("aigc_score", "is", null);
+      const { count: weekFake } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "fake")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
+      const { count: weekSuspect } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "suspect")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
+      const { data: scored } = await scopeApps(
+        supabase.from("applications")
+          .select("aigc_score")
+          .not("aigc_score", "is", null),
+      );
       const arr = (scored ?? []).map((r: any) => Number(r.aigc_score)).filter((n) => !isNaN(n));
       const avg = arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
       return {
@@ -555,13 +663,15 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     since.setDate(since.getDate() - (range === "month" ? 30 : 7));
     const statusFilter =
       status === "fake" ? ["fake"] : status === "suspect" ? ["suspect"] : ["fake", "suspect"];
-    const { data: apps } = await supabase
+    let aq = supabase
       .from("applications")
       .select("id, student_id, aigc_status, aigc_score, submitted_at, description")
       .in("aigc_status", statusFilter)
       .gte("submitted_at", since.toISOString())
       .order("aigc_score", { ascending: false })
       .limit(20);
+    if (!isSuper && collegeId) aq = aq.eq("college_id", collegeId);
+    const { data: apps } = await aq;
     const ids = Array.from(new Set((apps ?? []).map((a: any) => a.student_id)));
     const { data: profs } = ids.length
       ? await supabase.from("profiles").select("user_id, full_name, student_no").in("user_id", ids)
@@ -593,11 +703,13 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
   if (name === "student_full_profile") {
     const q = String(args?.query || "").trim();
     if (!q) return { found: false, reason: "查询关键词为空" };
-    const { data: profiles } = await supabase
+    let pq = supabase
       .from("profiles")
-      .select("user_id, full_name, student_no, department, class_name, major, phone, email, id_card, gender, birth_date, enrollment_year, political_status, address, emergency_contact, emergency_phone")
+      .select("user_id, full_name, student_no, department, class_name, major, phone, email, id_card, gender, birth_date, enrollment_year, political_status, address, emergency_contact, emergency_phone, college_id")
       .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
       .limit(5);
+    if (!isSuper && collegeId) pq = pq.eq("college_id", collegeId);
+    const { data: profiles } = await pq;
     if (!profiles || profiles.length === 0) return { found: false, reason: "数据库中未找到该学生" };
     // Prefer exact student_no/full_name match
     const p: any = profiles.find((x: any) => x.student_no === q || x.full_name === q) || profiles[0];
@@ -634,11 +746,13 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     const q = String(args?.query || "").trim();
     const limit = Math.min(Number(args?.limit ?? 10), 30);
     if (!q) return { records: [], reason: "查询关键词为空" };
-    const { data: profiles } = await supabase
+    let pq2 = supabase
       .from("profiles")
-      .select("user_id, student_no, full_name")
+      .select("user_id, student_no, full_name, college_id")
       .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
       .limit(1);
+    if (!isSuper && collegeId) pq2 = pq2.eq("college_id", collegeId);
+    const { data: profiles } = await pq2;
     if (!profiles || profiles.length === 0) return { records: [], reason: "数据库中未找到该学生" };
     const sid = (profiles[0] as any).user_id;
     const { data: rows } = await supabase
@@ -694,11 +808,13 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
     if (!q) return { matches: [], note: "查询关键词为空" };
 
     // 1) 找到候选 profile（精确学号 / 精确姓名 / 模糊姓名）
-    const { data: profs } = await supabase
+    let pq3 = supabase
       .from("profiles")
-      .select("user_id, full_name, student_no, department, class_name, major")
+      .select("user_id, full_name, student_no, department, class_name, major, college_id")
       .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
       .limit(20);
+    if (!isSuper && collegeId) pq3 = pq3.eq("college_id", collegeId);
+    const { data: profs } = await pq3;
     if (!profs || profs.length === 0) {
       return { matches: [], note: "数据库中没有匹配的账号" };
     }
@@ -783,7 +899,8 @@ Deno.serve(async (req) => {
   try {
     const body = (await req.json()) as { messages: Msg[]; role?: string };
     const messages = body.messages || [];
-    const userRole = body.role || "teacher";
+    const clientRoleHint = body.role || "teacher";
+    let userRole = clientRoleHint; // 之后会被服务端解析覆盖
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "messages 不能为空" }), {
@@ -805,6 +922,9 @@ Deno.serve(async (req) => {
     }
     let identityBlock = "";
     let uid: string | undefined;
+    let serverRole: "super_admin" | "admin" | "teacher" = "teacher";
+    let callerCollegeId: string | null = null;
+    let isSuperResolved = false;
     {
       const token = authHeader.slice(7);
       const userClient = createClient(
@@ -820,13 +940,20 @@ Deno.serve(async (req) => {
         });
       }
       const { data: callerRoles } = await supabase
-        .from("user_roles").select("role").eq("user_id", uid)
+        .from("user_roles").select("role,college_id").eq("user_id", uid)
         .in("role", ["teacher", "admin", "super_admin"]);
       if (!callerRoles || callerRoles.length === 0) {
         return new Response(JSON.stringify({ error: "Forbidden: staff only" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      // 服务端权威解析角色与学院范围（不信任客户端 body.role）
+      const allRoles = (callerRoles || []).map((r: any) => r.role);
+      isSuperResolved = allRoles.includes("super_admin");
+      serverRole = isSuperResolved ? "super_admin" : (allRoles.includes("admin") ? "admin" : "teacher");
+      const collegeFromRoles = (callerRoles || [])
+        .map((r: any) => r.college_id)
+        .find((x: any) => !!x) || null;
       try {
         if (uid) {
           const [{ data: prof }, { data: ur }] = await Promise.all([
@@ -836,6 +963,7 @@ Deno.serve(async (req) => {
           const roles = (ur || []).map((r: any) => r.role);
           const collegeIds = Array.from(new Set((ur || []).map((r: any) => r.college_id).filter(Boolean)));
           const cid = (prof as any)?.college_id || collegeIds[0];
+          callerCollegeId = isSuperResolved ? null : (cid || collegeFromRoles || null);
           let collegeName = "（未绑定学院）";
           if (cid) {
             const { data: col } = await supabase.from("colleges").select("name,short_name").eq("id", cid).maybeSingle();
@@ -857,7 +985,10 @@ Deno.serve(async (req) => {
     const model = aiCfg.model;
     const provider = aiCfg.vendor;
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
+    // 服务端权威角色覆盖客户端声明
+    userRole = serverRole;
+    const ctx: CallerCtx = { userRole, collegeId: callerCollegeId, isSuper: isSuperResolved };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
@@ -901,7 +1032,7 @@ Deno.serve(async (req) => {
         for (const tc of toolCalls) {
           let args: any = {};
           try { args = JSON.parse(tc.function?.arguments || "{}"); } catch { args = {}; }
-          const result = await execTool(tc.function?.name, args, supabase, userRole);
+          const result = await execTool(tc.function?.name, args, supabase, ctx);
 
           if (tc.function?.name === "navigate_to" && (result as any).path) {
             action = { type: "navigate", payload: { path: (result as any).path } };
