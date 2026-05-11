@@ -7,6 +7,9 @@ export type CollegeTheme = {
   primary?: string; // "H S% L%"
   accent?: string;
   background?: string;
+  sidebarBg?: string;
+  headerTint?: string;
+  brandStrong?: string;
   radius?: string; // e.g. "0.5rem"
   layout?: "sidebar" | "top-nav" | "compact";
   fontPair?: string;
@@ -38,6 +41,8 @@ export const useCollegeTheme = () => {
     root.style.removeProperty("--sidebar-background");
     root.style.removeProperty("--card");
     root.style.removeProperty("--radius");
+    root.style.removeProperty("--header-tint");
+    root.style.removeProperty("--brand-strong");
   };
 
   // 仅接受形如 "H S% L%" 的 HSL 三元组（H: 0-360，S/L: 0-100%）
@@ -75,7 +80,23 @@ export const useCollegeTheme = () => {
       if (isValidHsl(t.background)) {
         root.style.setProperty("--background", t.background!);
         root.style.setProperty("--card", t.background!);
+      }
+      // Sidebar background prefers its own tinted token, falls back to background
+      if (isValidHsl(t.sidebarBg)) {
+        root.style.setProperty("--sidebar-background", t.sidebarBg!);
+      } else if (isValidHsl(t.background)) {
         root.style.setProperty("--sidebar-background", t.background!);
+      }
+      if (isValidHsl(t.headerTint)) {
+        root.style.setProperty("--header-tint", t.headerTint!);
+      } else if (isValidHsl(t.primary)) {
+        // Derive a soft tint from primary if not provided (legacy themes)
+        root.style.setProperty("--header-tint", t.primary!.replace(/(\d+)%\s*$/, "94%"));
+      }
+      if (isValidHsl(t.brandStrong)) {
+        root.style.setProperty("--brand-strong", t.brandStrong!);
+      } else if (isValidHsl(t.primary)) {
+        root.style.setProperty("--brand-strong", t.primary!);
       }
       if (isValidRadius(t.radius)) root.style.setProperty("--radius", t.radius!);
     };

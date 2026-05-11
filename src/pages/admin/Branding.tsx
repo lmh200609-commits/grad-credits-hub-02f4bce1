@@ -21,6 +21,7 @@ import {
 
 type Theme = {
   primary?: string; accent?: string; background?: string;
+  sidebarBg?: string; headerTint?: string; brandStrong?: string;
   radius?: string; layout?: "sidebar" | "top-nav" | "compact";
 };
 
@@ -123,6 +124,9 @@ const Branding = () => {
         if (isHsl(palette.primary)) valid.primary = palette.primary;
         if (isHsl(palette.background)) valid.background = palette.background;
         if (isHsl(palette.accent)) valid.accent = palette.accent;
+        if (isHsl(palette.sidebarBg)) valid.sidebarBg = palette.sidebarBg;
+        if (isHsl(palette.headerTint)) valid.headerTint = palette.headerTint;
+        if (isHsl(palette.brandStrong)) valid.brandStrong = palette.brandStrong;
       }
       const newTheme: Theme = { ...theme, ...valid };
       const { error } = await supabase.from("colleges").update({ badge_url: url, theme: newTheme }).eq("id", collegeId);
