@@ -382,8 +382,17 @@ const ReviewHub = () => {
           <div className="space-y-3">
             <div>
               <Label>默认学分（仅在申请无建议学分时使用）</Label>
-              <Input type="number" step="0.5" min={0} value={defaultCredit}
-                onChange={(e) => setDefaultCredit(Number(e.target.value) || 0)} />
+              <Input
+                type="number"
+                step="0.5"
+                min={0}
+                value={defaultCredit}
+                onChange={(e) => setDefaultCredit(Number(e.target.value) || 0)}
+                onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+                }}
+              />
             </div>
             <div>
               <Label>备注（可选）</Label>
