@@ -887,8 +887,17 @@ const ApplicationDetail = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <Label>最终学分（通过时必填）</Label>
-                <Input type="number" step="0.5" value={credit} onChange={(e) => setCredit(Number(e.target.value))} />
+                <Label>最终学分（通过时必填，仅支持键盘输入）</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  value={credit}
+                  onChange={(e) => setCredit(Number(e.target.value))}
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+                  }}
+                />
               </div>
               <div>
                 <Label>复核备注</Label>
