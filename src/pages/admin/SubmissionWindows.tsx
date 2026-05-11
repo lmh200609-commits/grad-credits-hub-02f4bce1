@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, FileSpreadsheet, RefreshCw, Trash2, FileText, Pencil } from "lucide-react";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 type Window = {
   id: string;
@@ -304,11 +305,11 @@ const SubmissionWindows = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>开始时间</Label>
-                <Input type="datetime-local" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} />
+                <DateTimePicker value={form.starts_at} onChange={(v) => setForm({ ...form, starts_at: v })} />
               </div>
               <div className="space-y-2">
                 <Label>结束时间</Label>
-                <Input type="datetime-local" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} />
+                <DateTimePicker value={form.ends_at} onChange={(v) => setForm({ ...form, ends_at: v })} />
               </div>
             </div>
             <div className="flex items-center gap-2">
