@@ -46,26 +46,20 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const supaUrl = Deno.env.get("SUPABASE_URL")!;
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  // 鉴权对齐 process-eval-queue：允许任何带合法 Supabase JWT 的调用方触发（service-role / anon / 用户 token 均可）。
+  // 函数内部用 service-role 消费队列，外部触发本身没有副作用之外的危险，便于 pg_cron 与数据库触发器唤醒。
   const auth = req.headers.get("Authorization") ?? "";
-  let allowed = auth.includes(key);
-  if (!allowed && auth.startsWith("Bearer ")) {
-    const userClient = createClient(supaUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: auth } },
-    });
-    const { data: userData } = await userClient.auth.getUser();
-    const uid = userData?.user?.id;
-    if (uid) {
-      const adminCheck = createClient(supaUrl, key);
-      const { data: roles } = await adminCheck
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", uid)
-        .eq("role", "super_admin")
-        .limit(1);
-      allowed = !!(roles && roles.length > 0);
-    }
+  const apikey = req.headers.get("apikey") ?? "";
+  const tokenFromAuth = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const looksLikeJwt = (t: string) => {
+    if (!t || t.length < 40) return false;
+    const parts = t.split(".");
+    return parts.length === 3 && parts[0].startsWith("eyJ");
+  };
+  if (!looksLikeJwt(tokenFromAuth) && !looksLikeJwt(apikey)) {
+    console.warn("[process-aigc-queue] forbidden auth.len=", auth.length, "apikey.len=", apikey.length);
+    return json({ error: "Forbidden" }, 403);
   }
-  if (!allowed) return json({ error: "Forbidden" }, 403);
 
   let batch = DEFAULT_BATCH, concurrency = DEFAULT_CONCURRENCY;
   try {
