@@ -229,14 +229,14 @@ const StaffAiAssistant = () => {
 
                   {m.stats && typeof m.stats.value !== "undefined" && (
                     <div className="rounded-md border bg-card p-3 text-xs">
-                      <div className="text-muted-foreground">{m.stats.metric}</div>
+                      <div className="text-muted-foreground">{METRIC_LABELS[m.stats.metric] ?? "统计结果"}</div>
                       <div className="mt-0.5 text-2xl font-bold">{m.stats.value}</div>
                     </div>
                   )}
 
                   {m.action?.type === "navigate" && m.action.payload?.path && (
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { navigate(m.action!.payload.path); }}>
-                      跳转 {m.action.payload.path} <ArrowRight className="h-3 w-3" />
+                      {labelForPath(m.action.payload.path)} <ArrowRight className="h-3 w-3" />
                     </Button>
                   )}
                 </div>
