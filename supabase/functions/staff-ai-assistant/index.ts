@@ -215,6 +215,20 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "list_aigc_flagged",
+      description: "列出疑似 AI 生成图片材料的申请（aigc_status 为 fake/suspect），按概率倒序，最多 20 条。用于回答『本周/本月有哪些学生疑似提交 AI 图片』。",
+      parameters: {
+        type: "object",
+        properties: {
+          range: { type: "string", enum: ["week", "month"], description: "时间窗，默认 week" },
+          status: { type: "string", enum: ["fake", "suspect", "both"], description: "默认 both" },
+        },
+      },
+    },
+  },
 ];
 
 async function execTool(name: string, args: any, supabase: ReturnType<typeof createClient>, userRole: string = "admin") {
