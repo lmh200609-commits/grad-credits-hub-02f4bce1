@@ -638,12 +638,15 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
         ai_detected_level:       result.detected_level       ?? null,
         ai_detected_identity:    result.detected_identity    ?? null,
         ai_override_note: overrideNotes.length ? overrideNotes.join(" ") : null,
-        review_source: nextStatus === "pending_review" ? "ai_uncertain" : null,
+        review_source: nextStatus === "pending_review"
+          ? (intendedAutoApprove ? "awaiting_aigc" : "ai_uncertain")
+          : null,
         final_credit: isAutoApproved ? suggestedCredit : null,
         reviewed_at: isAutoApproved ? new Date().toISOString() : null,
         ai_last_error: null,
         ai_last_attempt_at: new Date().toISOString(),
         ai_previous_snapshot: hasPreviousResult ? prevSnapshot : null,
+        ai_intended_auto_approve: intendedAutoApprove,
       })
       .eq("id", application_id);
 
@@ -654,7 +657,7 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       aigc: {
         provider: app.aigc_provider ?? "aliyun",
         status: app.aigc_status,
-        score: aigcScore,
+        score: typeof app.aigc_score === "number" ? app.aigc_score : Number(app.aigc_score ?? 0),
       },
       ...result,
       matched_rule_id: matchedRuleId,
