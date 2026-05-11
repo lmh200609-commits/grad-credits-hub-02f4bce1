@@ -257,43 +257,6 @@ const Branding = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
-        <AlertDialog open={extractOpen} onOpenChange={setExtractOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>检测到院徽主色，是否应用为 UI 主题？</AlertDialogTitle>
-              <AlertDialogDescription>
-                应用后将覆盖当前的主色 / 背景 / 强调色；如果想保留现有主题，请选择「保留原主题」。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-2">
-              {[
-                { title: "保留原主题", t: theme },
-                { title: "应用新提取", t: { ...theme, ...(extracted ?? {}) } },
-              ].map((col) => (
-                <div key={col.title} className="rounded-lg border p-3">
-                  <div className="mb-2 text-sm font-medium">{col.title}</div>
-                  <div className="space-y-2 text-xs">
-                    {(["primary", "background", "accent"] as const).map((k) => {
-                      const hex = hslTokensToHex(col.t[k]);
-                      return (
-                        <div key={k} className="flex items-center gap-2">
-                          <span className="inline-block h-5 w-5 rounded border" style={{ backgroundColor: hex || "transparent" }} />
-                          <span className="w-20 text-muted-foreground">{k}</span>
-                          <span className="font-mono">{hex || "—"}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => { setExtracted(null); }}>保留原主题</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { void applyExtracted(); }} className="bg-action text-action-foreground hover:bg-action/90">应用新主题</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
     </AppLayout>
   );
