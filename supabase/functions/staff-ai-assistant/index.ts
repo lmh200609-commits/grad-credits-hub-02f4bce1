@@ -921,7 +921,7 @@ Deno.serve(async (req) => {
         );
         if (r.polished) { answer = r.text; polished = true; }
       }
-      const cleaned = normalizeMarkdown(answer);
+      const cleaned = stripPathsFromAnswer(normalizeMarkdown(answer));
       return new Response(JSON.stringify({
         answer: cleaned,
         sections: toSections(cleaned),
