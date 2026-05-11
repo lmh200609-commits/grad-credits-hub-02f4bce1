@@ -11,7 +11,22 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { email, password, full_name } = await req.json();
+    // Require BOOTSTRAP_SECRET in addition to the existing "no admin yet" guard,
+    // so a freshly provisioned project can't be hijacked by a public caller.
+    const { email, password, full_name, secret } = await req.json();
+    const expected = Deno.env.get("BOOTSTRAP_SECRET");
+    if (!expected) {
+      return new Response(JSON.stringify({ error: "Bootstrap disabled: BOOTSTRAP_SECRET not configured" }), {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!secret || typeof secret !== "string" || secret !== expected) {
+      return new Response(JSON.stringify({ error: "Forbidden: invalid bootstrap secret" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     if (!email || !password) {
       return new Response(JSON.stringify({ error: "email and password required" }), {
         status: 400,
