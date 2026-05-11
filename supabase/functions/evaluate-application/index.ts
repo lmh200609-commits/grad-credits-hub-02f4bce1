@@ -103,34 +103,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ---- AIGC 鉴别前置 ----
-    // 若尚未跑过 AIGC 检测且本次有图片附件 → 同步触发一次，避免乱序。
-    if (app.aigc_status === "pending" && app.file_path) {
-      try {
-        const supaUrl = Deno.env.get("SUPABASE_URL")!;
-        const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        await fetch(`${supaUrl}/functions/v1/aigc-detect`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${svcKey}`, apikey: svcKey },
-          body: JSON.stringify({ application_id }),
-        });
-        const { data: refreshed } = await admin.from("applications").select("*").eq("id", application_id).single();
-        if (refreshed) app = refreshed;
-      } catch (e) {
-        console.error("[evaluate-application] inline aigc-detect failed:", e);
-      }
-    }
-
-    // 若 AIGC 鉴定为 AI 生成图（fake）→ 已被 aigc-detect 置为 rejected_by_ai，直接返回
-    if (app.aigc_status === "fake" || app.status === "rejected_by_ai") {
+    // 新流程：AI 评估优先，AIGC 鉴别在评估通过后由 trigger 唤起。
+    // 若已被 AIGC 一票否决（fake → rejected_by_ai），直接跳过本次评估。
+    if (app.status === "rejected_by_ai" && app.aigc_status === "fake") {
       return json({
         status: app.status,
         skipped: true,
-        reason: app.aigc_status === "fake" ? "aigc_fake" : "already_rejected",
+        reason: "aigc_fake",
       });
     }
-    const aigcSuspect = app.aigc_status === "suspect";
-    const aigcScore = typeof app.aigc_score === "number" ? app.aigc_score : Number(app.aigc_score ?? 0);
 
     const { data: studentProfile } = await admin
       .from("profiles")
@@ -192,18 +173,7 @@ Deno.serve(async (req) => {
           const ext = app.file_path.split(".").pop()!.toLowerCase();
           const mime = ext === "jpg" ? "jpeg" : ext;
           imageDataUrl = `data:image/${mime};base64,${b64}`;
-          // 阿里云鉴别结果由独立队列预先写入 applications.aigc_*，这里直接复用其结论
-          if (app.aigc_status === "real" && aigcScore >= 0) {
-            attachmentNote = `已附图片；阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%（判定为真实拍摄）`;
-          } else if (app.aigc_status === "suspect") {
-            attachmentNote = `已附图片；阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%（疑似 AI 生成，已转人工复核）`;
-          } else if (app.aigc_status === "skipped") {
-            attachmentNote = "已附图片；未做 AI 生成鉴别（学院已关闭或附件不支持）";
-          } else if (app.aigc_status === "error") {
-            attachmentNote = "已附图片；AI 生成鉴别调用失败，本次按真实素材处理";
-          } else {
-            attachmentNote = "已附图片";
-          }
+          attachmentNote = "已附图片";
         } else {
           attachmentNote = "附件下载失败";
         }
@@ -272,14 +242,7 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
 
 【工具使用】可主动调用 web_search 工具（最多 2 次）辅助 D 项判断；完成全部核验后必须调用 submit_evaluation 提交结果。`;
 
-    let aigcExtraPrompt = "";
-    if (aigcSuspect) {
-      const models = (app.aigc_detail as any)?.suspected_models?.slice(0, 3)?.map((m: any) => `${m.name}(${(m.score * 100).toFixed(0)}%)`).join("、") || "未知";
-      aigcExtraPrompt = `\n\n【风险信号】阿里云 AIGC 鉴别旗舰版判定本图疑似 AI 生成（概率 ${(aigcScore * 100).toFixed(1)}%，疑似来源：${models}）。请在 authenticity 维度从严判断，禁止 auto_approved。`;
-    } else if (aigcScore > 0) {
-      aigcExtraPrompt = `\n\n【AIGC 鉴别】阿里云判定本图为真实拍摄概率较高（AI 生成概率 ${(aigcScore * 100).toFixed(1)}%）。`;
-    }
-    const fullSystemPrompt = systemPrompt + extraPrompt + aigcExtraPrompt;
+    const fullSystemPrompt = systemPrompt + extraPrompt;
 
     const userPayload = {
       student: {
@@ -486,20 +449,8 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (result.logic_ok === false)          failedChecks.push("逻辑性核验");
     if (result.completeness_ok === false)   failedChecks.push("材料完整性");
 
-    // 阿里云 AIGC 鉴别结果说明（fake/suspect 已在更早阶段拦截或转人工，这里只做信息透出）
-    if (app.aigc_status === "real") {
-      overrideNotes.push(
-        `阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%，未发现明显 AI 生成痕迹。`,
-      );
-    } else if (app.aigc_status === "suspect") {
-      overrideNotes.push(
-        `阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%，存在 AI 生成嫌疑，已转人工复核。`,
-      );
-    } else if (app.aigc_status === "skipped") {
-      overrideNotes.push("阿里云 AIGC 鉴别：未对该附件做 AI 生成鉴别（学院已关闭或附件类型不支持）。");
-    } else if (app.aigc_status === "error") {
-      overrideNotes.push("阿里云 AIGC 鉴别：调用失败，本次未能完成 AI 生成鉴别。");
-    }
+    // 注：AIGC 鉴别在本次 AI 评估完成后由数据库 trigger 异步触发；
+    // 本函数不再读取 / 描述 aigc_status。
 
     // 学校兜底：detected_school 非空且不属于默认学校族 → 强制身份不符
     const detSchool = (result.detected_school ?? "").toString().trim().toLowerCase();
@@ -586,18 +537,23 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     }
 
     let nextStatus: string;
+    let intendedAutoApprove = false;
     if (detectedMismatch) {
       // 学生选的关键词与图片识别结果对应不同案例 → 不能自动通过
       nextStatus = result.recommendation === "reject" ? "rejected_by_ai" : "pending_review";
     } else if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
-      nextStatus = aigcSuspect ? "pending_review" : "auto_approved";
+      // 新流程：本应自动通过的图片申请，先暂存为 pending_review，等 AIGC 鉴别后再揭晓。
+      // 无图片附件的申请不需要 AIGC，可以直接自动通过。
+      const needsAigc = !!app.file_path && IMAGE_EXT.test(app.file_path);
+      if (needsAigc) {
+        nextStatus = "pending_review";
+        intendedAutoApprove = true;
+      } else {
+        nextStatus = "auto_approved";
+      }
     } else if (result.recommendation === "reject" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "rejected_by_ai";
     } else {
-      nextStatus = "pending_review";
-    }
-
-    if (aigcSuspect && nextStatus === "auto_approved") {
       nextStatus = "pending_review";
     }
 
@@ -682,12 +638,15 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
         ai_detected_level:       result.detected_level       ?? null,
         ai_detected_identity:    result.detected_identity    ?? null,
         ai_override_note: overrideNotes.length ? overrideNotes.join(" ") : null,
-        review_source: nextStatus === "pending_review" ? "ai_uncertain" : null,
+        review_source: nextStatus === "pending_review"
+          ? (intendedAutoApprove ? "awaiting_aigc" : "ai_uncertain")
+          : null,
         final_credit: isAutoApproved ? suggestedCredit : null,
         reviewed_at: isAutoApproved ? new Date().toISOString() : null,
         ai_last_error: null,
         ai_last_attempt_at: new Date().toISOString(),
         ai_previous_snapshot: hasPreviousResult ? prevSnapshot : null,
+        ai_intended_auto_approve: intendedAutoApprove,
       })
       .eq("id", application_id);
 
@@ -698,7 +657,7 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       aigc: {
         provider: app.aigc_provider ?? "aliyun",
         status: app.aigc_status,
-        score: aigcScore,
+        score: typeof app.aigc_score === "number" ? app.aigc_score : Number(app.aigc_score ?? 0),
       },
       ...result,
       matched_rule_id: matchedRuleId,

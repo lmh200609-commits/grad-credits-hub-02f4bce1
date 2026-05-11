@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
 
     const { data: app, error: appErr } = await admin
       .from("applications")
-      .select("id, student_id, file_path, college_id, aigc_status")
+      .select("id, student_id, file_path, college_id, aigc_status, status, ai_intended_auto_approve, ai_suggested_credit, ai_reasoning, final_credit")
       .eq("id", application_id)
       .maybeSingle();
     if (appErr || !app) return json({ error: "application not found" }, 404);
@@ -236,13 +236,28 @@ Deno.serve(async (req) => {
         aigc_provider: `aliyun:${service}`,
       }).eq("id", application_id);
 
+    // 当 AIGC 跳过 / 出错时，若 AI 评估本意是自动通过，则就此兑现。
+    const promoteIfIntended = async () => {
+      if (app.ai_intended_auto_approve && app.status === "pending_review") {
+        await admin.from("applications").update({
+          status: "auto_approved",
+          final_credit: app.ai_suggested_credit,
+          reviewed_at: new Date().toISOString(),
+          review_source: "ai",
+          ai_intended_auto_approve: false,
+        }).eq("id", application_id);
+      }
+    };
+
     if (!enabled) {
       await writeResult({ aigc_status: "skipped", aigc_score: null, aigc_detail: { reason: "disabled by college config" } });
+      await promoteIfIntended();
       return json({ status: "skipped", note: "AIGC 检测已被学院关闭" });
     }
 
     if (!app.file_path || !IMAGE_EXT.test(app.file_path)) {
       await writeResult({ aigc_status: "skipped", aigc_score: null, aigc_detail: { reason: "not an image" } });
+      await promoteIfIntended();
       return json({ status: "skipped", note: "非图片附件，无需 AIGC 检测" });
     }
 
@@ -250,6 +265,7 @@ Deno.serve(async (req) => {
     const imageUrl = signed?.signedUrl;
     if (!imageUrl) {
       await writeResult({ aigc_status: "error", aigc_detail: { reason: "no signed url" } });
+      await promoteIfIntended();
       return json({ status: "error", note: "无法生成图片访问链接" });
     }
 
@@ -257,6 +273,7 @@ Deno.serve(async (req) => {
     if (!aly.ok || (aly.raw?.Code && aly.raw.Code !== 200)) {
       const msg = `阿里云 [${aly.status}] ${JSON.stringify(aly.raw).slice(0, 300)}`;
       await writeResult({ aigc_status: "error", aigc_detail: { error: msg, request_id: aly.requestId } });
+      await promoteIfIntended();
       return json({ status: "error", note: msg }, 500);
     }
 
@@ -283,14 +300,51 @@ Deno.serve(async (req) => {
       aigc_detail: detail,
     });
 
-    // fake → 直接拒；不再交给学分评估
+    // 新流程：AI 评估先跑；本函数在评估完成后被触发，依据 AIGC 结论"揭晓最终结论"。
+    const fakeNote = `阿里云 AIGC 鉴别一票否决：检测到该图片为 AI 生成（概率 ${(parsed.score * 100).toFixed(1)}%）。请提交真实证书原件照片。`;
+    const suspectNote = `阿里云 AIGC 鉴别：疑似 AI 生成（概率 ${(parsed.score * 100).toFixed(1)}%），已转人工复核。`;
+    const realNote = `阿里云 AIGC 鉴别：AI 生成概率 ${(parsed.score * 100).toFixed(1)}%，未发现明显 AI 生成痕迹。`;
+
+    const appendReasoning = (note: string) =>
+      `${app.ai_reasoning ?? ""}${app.ai_reasoning ? "\n\n" : ""}【AIGC 鉴别】${note}`;
+
     if (aigc_status === "fake") {
+      // 一票否决：覆盖 AI 评估结论
       await admin.from("applications").update({
         status: "rejected_by_ai",
-        ai_reasoning: `材料未通过初审：检测到该图片为 AI 生成（概率 ${(parsed.score * 100).toFixed(1)}%）。请提交真实证书原件照片。`,
+        ai_reasoning: appendReasoning(fakeNote),
         ai_reasoning_short: "AI 生成图，已拒",
         ai_check_authenticity: false,
+        ai_intended_auto_approve: false,
+        final_credit: null,
+        reviewed_at: null,
       }).eq("id", application_id);
+    } else if (aigc_status === "suspect") {
+      // 疑似 → 保持 / 降级到人工复核
+      const patch: Record<string, unknown> = {
+        ai_reasoning: appendReasoning(suspectNote),
+        ai_intended_auto_approve: false,
+      };
+      if (app.status === "auto_approved" || app.ai_intended_auto_approve) {
+        patch.status = "pending_review";
+        patch.final_credit = null;
+        patch.reviewed_at = null;
+      }
+      await admin.from("applications").update(patch).eq("id", application_id);
+    } else {
+      // real / skipped / error 这里能到的只是 real（前面 skipped/enabled/error 已 return）；
+      // 若 AI 评估本意是自动通过，此时兑现。
+      const patch: Record<string, unknown> = {
+        ai_reasoning: appendReasoning(realNote),
+      };
+      if (app.ai_intended_auto_approve && app.status === "pending_review") {
+        patch.status = "auto_approved";
+        patch.final_credit = app.ai_suggested_credit;
+        patch.reviewed_at = new Date().toISOString();
+        patch.review_source = "ai";
+        patch.ai_intended_auto_approve = false;
+      }
+      await admin.from("applications").update(patch).eq("id", application_id);
     }
 
     return json({ status: aigc_status, score: parsed.score, suspected_models: parsed.suspectedModels });
