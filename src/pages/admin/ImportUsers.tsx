@@ -323,6 +323,15 @@ const ImportUsers = () => {
     if (!pendingRows) return;
     // Block import if any pending row failed format validation.
     const errs = pendingRows.map((r) => validateRow(r, isSuperAdmin, isSuperAdmin));
+    if (!isSuperAdmin && callerCollegeName) {
+      const callerNorm = normalizeCollegeName(callerCollegeName);
+      pendingRows.forEach((r, i) => {
+        const cname = r.college_name?.trim();
+        if (cname && normalizeCollegeName(cname) !== callerNorm) {
+          errs[i] = { ...errs[i], college_name: `学院「${cname}」与你管理的「${callerCollegeName}」不一致` };
+        }
+      });
+    }
     const badCount = errs.filter((e) => Object.keys(e).length > 0).length;
     if (badCount > 0) {
       toast({
