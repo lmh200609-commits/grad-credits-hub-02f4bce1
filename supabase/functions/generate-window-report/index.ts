@@ -27,20 +27,21 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+    // Always require a valid bearer token. Even internal callers must pass a JWT.
     const authHeader = req.headers.get("Authorization") ?? "";
+    if (!authHeader.startsWith("Bearer ")) return json({ error: "unauthorized" }, 401);
     let actorId: string | null = null;
     let actorEmail: string | null = null;
-    if (authHeader && !authHeader.includes(SERVICE_ROLE)) {
-      const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: u } = await userClient.auth.getUser();
-      if (!u?.user) return json({ error: "unauthorized" }, 401);
-      actorId = u.user.id; actorEmail = u.user.email ?? null;
-      const { data: roles } = await admin.from("user_roles").select("role").eq("user_id", actorId);
-      const ok = (roles ?? []).some((r: any) => r.role === "admin" || r.role === "super_admin");
-      if (!ok) return json({ error: "forbidden" }, 403);
-    }
+    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: u } = await userClient.auth.getUser();
+    if (!u?.user) return json({ error: "unauthorized" }, 401);
+    actorId = u.user.id; actorEmail = u.user.email ?? null;
+    const { data: roles } = await admin.from("user_roles").select("role,college_id").eq("user_id", actorId);
+    const isSuper = (roles ?? []).some((r: any) => r.role === "super_admin");
+    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    if (!isSuper && !isAdmin) return json({ error: "forbidden" }, 403);
 
     const { data: win, error: winErr } = await admin
       .from("submission_windows").select("*").eq("id", window_id).single();
