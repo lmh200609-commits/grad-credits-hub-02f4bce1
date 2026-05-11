@@ -71,7 +71,7 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 
 const PROVENANCE_RULE = `\n11. 询问"某账号是谁导入的/什么时候创建的/什么时候导入的/导入来源/由谁创建"等问题，必须先调用 account_provenance；返回为空时如实回答"审计日志中没有该账号的导入记录"，绝不猜测。同名多人时把所有候选连同学号、院系、导入时间、导入人一并列出，提示用学号区分。`;
 
-const AIGC_RULE = `\n12. 涉及"AI 生成 / AIGC / 疑似 AI 图片 / 假图 / AI 鉴别"等问题：统计性问题（多少条 / 本周多少）必须调 query_stats，metric 选 aigc_fake_week / aigc_suspect_week / aigc_pending_total / aigc_overview；列名单类问题必须调 list_aigc_flagged。返回为空时如实回答"当前范围内无相关记录"，禁止编造。
+const AIGC_RULE = `\n12. 涉及"AI 生成 / AIGC / 疑似 AI 图片 / 假图 / AI 鉴别"等任何统计问题：默认必须调用 query_stats(metric="aigc_overview")，它会一次性返回 fake/suspect/real/pending/skipped/error 全量计数 + 本周 fake / 本周 suspect + 平均概率。禁止只查 suspect 不查 fake；禁止回答"暂未提供该指标"。如果用户只问"本周疑似" 也仍然要返回 aigc_overview 中 week_fake + week_suspect 的合计，并明确分别多少条。需要按学生列名单时再调 list_aigc_flagged。结果为空才回答"当前范围内无相关记录"，禁止编造。
 12.1 输出 list_aigc_flagged 结果时，禁止使用 markdown 表格（容易渲染成一整行乱码）。统一用如下无序列表格式，每条占一行：
 - 学生姓名（学号） · 状态 · 概率 X% · 提交时间 YYYY-MM-DD HH:mm · 申请编号末 8 位
 提交时间只保留到分钟；申请编号只显示末 8 位（如 a994cfc5）。`;
