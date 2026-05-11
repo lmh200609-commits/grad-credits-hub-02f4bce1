@@ -16,6 +16,58 @@ import {
   type Msg,
 } from "@/hooks/useStaffAssistantStore";
 
+const METRIC_LABELS: Record<string, string> = {
+  pending_review: "待人工复核",
+  pending_ai: "AI 审核中",
+  approved_week: "近 7 天人工通过数",
+  rejected_week: "近 7 天驳回数",
+  total_students: "学生总人数",
+  total_apps_month: "近 30 天提交申请数",
+  submitted_total: "累计提交学生数",
+  submitted_count: "累计申请总数",
+  submitted_students_week: "近 7 天提交学生数",
+  submitted_count_week: "近 7 天提交申请数",
+  submitted_students_month: "近 30 天提交学生数",
+  passed_students: "学分合格学生数",
+  failing_students: "学分不合格学生数",
+  auto_approved_total: "系统自动通过数",
+  manual_approved_total: "人工复核通过数",
+  rejected_total: "累计驳回数",
+  rules_overview: "规则库概览",
+  cases_overview: "案例库概览",
+  keywords_overview: "关键词库概览",
+  certificate_types_overview: "证书类型概览",
+  submission_records_overview: "申请流水概览",
+  aigc_fake_week: "近 7 天高风险图片",
+  aigc_suspect_week: "近 7 天嫌疑图片",
+  aigc_pending_total: "待 AI 鉴别图片",
+  aigc_overview: "AI 生成材料概览",
+};
+
+const PATH_LABELS: Array<[RegExp, string]> = [
+  [/^\/admin\/users\/students/, "打开学生管理"],
+  [/^\/admin\/users\/teachers/, "打开教师管理"],
+  [/^\/admin\/credits/, "打开学分排名"],
+  [/^\/teacher\/credits/, "打开学分排名"],
+  [/^\/admin\/review/, "打开复核中心"],
+  [/^\/reviews/, "打开审核列表"],
+  [/^\/admin\/dashboard/, "打开数据看板"],
+  [/^\/teacher\/dashboard/, "打开数据看板"],
+  [/^\/admin\/rules/, "打开规则库"],
+  [/^\/admin\/cases/, "打开案例库"],
+  [/^\/admin\/keywords/, "打开关键词库"],
+  [/^\/admin\/import/, "打开批量导入"],
+  [/^\/admin\/audit-logs/, "打开审计日志"],
+  [/^\/teacher\/students\/[^/]+/, "打开学生档案"],
+  [/^\/teacher\/students/, "打开学生列表"],
+  [/^\/applications\//, "查看申请详情"],
+];
+
+const labelForPath = (path: string): string => {
+  for (const [re, label] of PATH_LABELS) if (re.test(path)) return label;
+  return "打开对应页面";
+};
+
 const StaffAiAssistant = () => {
   const { hasRole, isSuperAdmin } = useAuth();
   const role = isSuperAdmin ? "super_admin" : hasRole("admin") ? "admin" : "teacher";
