@@ -436,7 +436,96 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       });
       return { metric, value: total, by_event: byEvent };
     }
+    if (metric === "aigc_fake_week") {
+      const { count } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "fake")
+        .gte("submitted_at", weekAgo.toISOString());
+      return { metric, value: count ?? 0, range: "week" };
+    }
+    if (metric === "aigc_suspect_week") {
+      const { count } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "suspect")
+        .gte("submitted_at", weekAgo.toISOString());
+      return { metric, value: count ?? 0, range: "week" };
+    }
+    if (metric === "aigc_pending_total") {
+      const { count } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "pending");
+      return { metric, value: count ?? 0 };
+    }
+    if (metric === "aigc_overview") {
+      const statuses = ["fake", "suspect", "real", "pending", "skipped", "error"] as const;
+      const counts: Record<string, number> = {};
+      for (const s of statuses) {
+        const { count } = await supabase
+          .from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", s);
+        counts[s] = count ?? 0;
+      }
+      const { count: weekFake } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "fake")
+        .gte("submitted_at", weekAgo.toISOString());
+      const { count: weekSuspect } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "suspect")
+        .gte("submitted_at", weekAgo.toISOString());
+      const { data: scored } = await supabase
+        .from("applications")
+        .select("aigc_score")
+        .not("aigc_score", "is", null);
+      const arr = (scored ?? []).map((r: any) => Number(r.aigc_score)).filter((n) => !isNaN(n));
+      const avg = arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
+      return {
+        metric,
+        ...counts,
+        week_fake: weekFake ?? 0,
+        week_suspect: weekSuspect ?? 0,
+        avg_score_pct: Number((avg * 100).toFixed(1)),
+      };
+    }
     return { metric, value: 0 };
+  }
+
+  if (name === "list_aigc_flagged") {
+    const range = String(args?.range || "week");
+    const status = String(args?.status || "both");
+    const since = new Date();
+    since.setDate(since.getDate() - (range === "month" ? 30 : 7));
+    const statusFilter =
+      status === "fake" ? ["fake"] : status === "suspect" ? ["suspect"] : ["fake", "suspect"];
+    const { data: apps } = await supabase
+      .from("applications")
+      .select("id, student_id, aigc_status, aigc_score, submitted_at, description")
+      .in("aigc_status", statusFilter)
+      .gte("submitted_at", since.toISOString())
+      .order("aigc_score", { ascending: false })
+      .limit(20);
+    const ids = Array.from(new Set((apps ?? []).map((a: any) => a.student_id)));
+    const { data: profs } = ids.length
+      ? await supabase.from("profiles").select("user_id, full_name, student_no").in("user_id", ids)
+      : { data: [] as any[] };
+    const pmap = new Map<string, any>();
+    (profs ?? []).forEach((p: any) => pmap.set(p.user_id, p));
+    const items = (apps ?? []).map((a: any) => ({
+      application_id: a.id,
+      student_name: pmap.get(a.student_id)?.full_name ?? "—",
+      student_no: pmap.get(a.student_id)?.student_no ?? "—",
+      aigc_status: a.aigc_status,
+      aigc_score_pct: typeof a.aigc_score === "number" ? Number((a.aigc_score * 100).toFixed(1)) : null,
+      submitted_at: a.submitted_at,
+      description: (a.description || "").slice(0, 60),
+    }));
+    return { range, status, count: items.length, items };
   }
 
   if (name === "student_full_profile") {
