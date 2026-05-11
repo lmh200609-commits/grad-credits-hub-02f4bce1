@@ -124,13 +124,23 @@ export const parseRosterWorkbook = async (
 
   const get = (row: Record<string, unknown>, header: string): unknown => {
     const k = keyByHeader[norm(header)];
-    return k ? row[k] : "";
+    return k ? row[k] : undefined;
+  };
+
+  const pickFirst = (...vals: unknown[]): string => {
+    for (const v of vals) {
+      const s = String(v ?? "").trim();
+      if (s.length > 0) return s;
+    }
+    return "";
   };
 
   const parsed: ParsedRow[] = rows.map((row) => {
-    const studentNo = String(
-      get(row, "学号/工号") ?? get(row, "工号") ?? get(row, "学号") ?? "",
-    ).trim();
+    const studentNo = pickFirst(
+      get(row, "学号/工号"),
+      get(row, "工号"),
+      get(row, "学号"),
+    );
     const fullName = String(get(row, "姓名") ?? "").trim();
     const roleRaw = String(get(row, "角色") ?? "").trim();
     const role = ROLE_MAP[roleRaw] ?? defaultRole;
