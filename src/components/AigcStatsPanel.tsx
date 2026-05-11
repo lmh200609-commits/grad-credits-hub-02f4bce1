@@ -338,8 +338,18 @@ export default function AigcStatsPanel() {
         {/* KPI */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Kpi label="已检测" value={kpi.checked} />
-          <Kpi label="高风险" value={kpi.fake} accent="text-destructive" />
-          <Kpi label="嫌疑" value={kpi.suspect} accent="text-warning" />
+          <Kpi
+            label="高风险"
+            value={kpi.fake}
+            accent="text-destructive"
+            onClick={() => setStatuses(["fake"])}
+          />
+          <Kpi
+            label="嫌疑"
+            value={kpi.suspect}
+            accent="text-warning"
+            onClick={() => setStatuses(["suspect"])}
+          />
           <Kpi label="检出率" value={`${kpi.detectRate.toFixed(1)}%`} accent={kpi.detectRate > 5 ? "text-destructive" : "text-foreground"} />
           <Kpi label="平均概率" value={`${kpi.avgScore.toFixed(1)}%`} />
         </div>
@@ -367,7 +377,12 @@ export default function AigcStatsPanel() {
               <EmptyChart />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData}>
+                <BarChart
+                  data={barData}
+                  onClick={(s: any) => {
+                    if (s?.activeLabel) setDayFocus(String(s.activeLabel));
+                  }}
+                >
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="date" className="text-xs" />
                   <YAxis allowDecimals={false} className="text-xs" />
@@ -386,7 +401,18 @@ export default function AigcStatsPanel() {
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={piePartData} dataKey="value" nameKey="name" outerRadius={90} label>
+                  <Pie
+                    data={piePartData}
+                    dataKey="value"
+                    nameKey="name"
+                    outerRadius={90}
+                    label
+                    onClick={(d: any) => {
+                      const s = d?.payload?.status as Row["aigc_status"] | undefined;
+                      if (s) setStatuses([s]);
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
                     {piePartData.map((d, i) => (
                       <Cell key={i} fill={STATUS_COLOR[d.status as Row["aigc_status"]]} />
                     ))}
@@ -398,6 +424,15 @@ export default function AigcStatsPanel() {
             )}
           </div>
         </div>
+
+        {/* 高风险 / 嫌疑 申请清单 —— 可点击跳转 */}
+        <RiskyTable
+          rows={topRisky}
+          profiles={profiles}
+          dayFocus={dayFocus}
+          onClearFocus={() => setDayFocus(null)}
+          onRowClick={(id) => navigate(`/applications/${id}`)}
+        />
 
         {/* 隐藏的 PDF 报告 DOM —— 截屏专用 */}
         <div className="pointer-events-none fixed -left-[10000px] top-0 -z-10" aria-hidden>
