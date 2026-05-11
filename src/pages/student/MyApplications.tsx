@@ -117,16 +117,6 @@ const MyApplications = () => {
           <Button size="sm" onClick={() => navigate("/apply")}>新申请</Button>
         </div>
         {flaggedRows.length > 0 && (
-          <StudentAigcWarning
-            status="fake"
-            compact
-            detailHref={firstFlaggedId ? `/applications/${firstFlaggedId}` : undefined}
-            // 顶部横幅复用组件，但用自定义 children 不便实现；直接用 compact 样式 + 自定义文案需求弱，这里走默认 fake 文案对总数提示稍硬。
-            // 改为下方自渲染一个总览条以承载"N 条"信息：
-            className="hidden"
-          />
-        )}
-        {flaggedRows.length > 0 && (
           <div className="rounded-md border-l-4 border-l-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 shrink-0" />
