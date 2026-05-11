@@ -242,14 +242,7 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
 
 【工具使用】可主动调用 web_search 工具（最多 2 次）辅助 D 项判断；完成全部核验后必须调用 submit_evaluation 提交结果。`;
 
-    let aigcExtraPrompt = "";
-    if (aigcSuspect) {
-      const models = (app.aigc_detail as any)?.suspected_models?.slice(0, 3)?.map((m: any) => `${m.name}(${(m.score * 100).toFixed(0)}%)`).join("、") || "未知";
-      aigcExtraPrompt = `\n\n【风险信号】阿里云 AIGC 鉴别旗舰版判定本图疑似 AI 生成（概率 ${(aigcScore * 100).toFixed(1)}%，疑似来源：${models}）。请在 authenticity 维度从严判断，禁止 auto_approved。`;
-    } else if (aigcScore > 0) {
-      aigcExtraPrompt = `\n\n【AIGC 鉴别】阿里云判定本图为真实拍摄概率较高（AI 生成概率 ${(aigcScore * 100).toFixed(1)}%）。`;
-    }
-    const fullSystemPrompt = systemPrompt + extraPrompt + aigcExtraPrompt;
+    const fullSystemPrompt = systemPrompt + extraPrompt;
 
     const userPayload = {
       student: {
