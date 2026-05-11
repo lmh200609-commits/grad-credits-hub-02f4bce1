@@ -350,56 +350,115 @@ async function execTool(
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
     const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
+    // 学院范围过滤助手
+    const scopeApps = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    const scopeProfiles = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    const scopeRoles = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    // 仅当作用域内学生 ID 已知时使用（应对没有 college_id 的表，如 application_reviews）
+    let scopedStudentIds: string[] | null | undefined = undefined;
+    const ensureStudentIds = async () => {
+      if (scopedStudentIds === undefined) scopedStudentIds = await fetchScopedStudentIds();
+      return scopedStudentIds; // null 表示超管（不过滤）
+    };
     if (metric === "pending_review") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_review");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
+      );
       return { metric, value: count ?? 0, navigate_path: "/reviews?status=pending_review" };
     }
     if (metric === "approved_week") {
-      const { data } = await supabase
+      // application_reviews 没有 college_id；先按 application 取本学院 ids 再过滤
+      let appScope: string[] | null = null;
+      if (!isSuper && collegeId) {
+        const { data: aids } = await supabase
+          .from("applications").select("id").eq("college_id", collegeId);
+        appScope = (aids || []).map((r: any) => r.id);
+        if (appScope.length === 0) return { metric, value: 0 };
+      }
+      let q = supabase
         .from("application_reviews")
         .select("application_id")
         .eq("decision", "approved")
         .gte("created_at", weekAgo.toISOString());
+      if (appScope) q = q.in("application_id", appScope);
+      const { data } = await q;
       const set = new Set((data || []).map((r: any) => r.application_id));
       return { metric, value: set.size };
     }
     if (metric === "rejected_week") {
-      const { data } = await supabase
+      let appScope: string[] | null = null;
+      if (!isSuper && collegeId) {
+        const { data: aids } = await supabase
+          .from("applications").select("id").eq("college_id", collegeId);
+        appScope = (aids || []).map((r: any) => r.id);
+        if (appScope.length === 0) return { metric, value: 0 };
+      }
+      let q = supabase
         .from("application_reviews")
         .select("application_id")
         .eq("decision", "rejected")
         .gte("created_at", weekAgo.toISOString());
+      if (appScope) q = q.in("application_id", appScope);
+      const { data } = await q;
       const set = new Set((data || []).map((r: any) => r.application_id));
       return { metric, value: set.size };
     }
     if (metric === "total_students") {
-      const { count } = await supabase.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role", "student");
+      const { count } = await scopeRoles(
+        supabase.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role", "student"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "total_apps_month") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).gte("submitted_at", monthAgo.toISOString());
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).gte("submitted_at", monthAgo.toISOString()),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "pending_ai") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_ai");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "pending_ai"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "submitted_total") {
-      const { data } = await supabase.from("applications").select("student_id");
+      const { data } = await scopeApps(supabase.from("applications").select("student_id"));
       const set = new Set((data || []).map((r: any) => r.student_id));
       return { metric, value: set.size, navigate_path: userRole === "teacher" ? "/teacher/students" : "/admin/users/students" };
     }
     if (metric === "submitted_count") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true });
+      const { count } = await scopeApps(supabase.from("applications").select("id", { count: "exact", head: true }));
       return { metric, value: count ?? 0 };
+    }
+    if (metric === "submitted_students_week") {
+      const { data } = await scopeApps(
+        supabase.from("applications").select("student_id").gte("submitted_at", weekAgo.toISOString()),
+      );
+      const set = new Set((data || []).map((r: any) => r.student_id));
+      return { metric, value: set.size, range: "week", navigate_path: userRole === "teacher" ? "/teacher/students" : "/admin/users/students" };
+    }
+    if (metric === "submitted_count_week") {
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).gte("submitted_at", weekAgo.toISOString()),
+      );
+      return { metric, value: count ?? 0, range: "week" };
+    }
+    if (metric === "submitted_students_month") {
+      const { data } = await scopeApps(
+        supabase.from("applications").select("student_id").gte("submitted_at", monthAgo.toISOString()),
+      );
+      const set = new Set((data || []).map((r: any) => r.student_id));
+      return { metric, value: set.size, range: "month" };
     }
     if (metric === "passed_students" || metric === "failing_students") {
       const threshold = 4;
-      const { data: roles } = await supabase.from("user_roles").select("user_id").eq("role", "student");
+      const { data: roles } = await scopeRoles(
+        supabase.from("user_roles").select("user_id").eq("role", "student"),
+      );
       const ids = new Set((roles || []).map((r: any) => r.user_id));
-      const { data: apps } = await supabase
-        .from("applications")
-        .select("student_id, status, final_credit, ai_suggested_credit");
+      const { data: apps } = await scopeApps(
+        supabase.from("applications").select("student_id, status, final_credit, ai_suggested_credit"),
+      );
       const credit = new Map<string, number>();
       (apps || []).forEach((a: any) => {
         if (!["approved", "auto_approved"].includes(a.status)) return;
@@ -418,18 +477,23 @@ async function execTool(
       };
     }
     if (metric === "auto_approved_total") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "auto_approved");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "auto_approved"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "manual_approved_total") {
-      const { count } = await supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "approved");
+      const { count } = await scopeApps(
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("status", "approved"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "rejected_total") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["rejected", "rejected_by_ai"]);
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["rejected", "rejected_by_ai"]),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "rules_overview") {
