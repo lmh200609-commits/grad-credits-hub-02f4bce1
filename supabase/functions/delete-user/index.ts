@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
     );
     const { data: callerRoles, error: roleError } = await admin
       .from("user_roles")
-      .select("role")
+      .select("role,college_id")
       .eq("user_id", callerId)
       .in("role", ["admin", "super_admin"]);
     if (roleError) {
@@ -39,12 +39,25 @@ Deno.serve(async (req) => {
     }
     const canDeleteUser = (callerRoles ?? []).some((row) => row.role === "admin" || row.role === "super_admin");
     if (!canDeleteUser) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
+    const isSuper = (callerRoles ?? []).some((r) => r.role === "super_admin");
+    const callerCollegeIds = new Set(
+      (callerRoles ?? []).map((r: any) => r.college_id).filter(Boolean) as string[],
+    );
 
     const { user_id } = await req.json();
     if (!user_id || typeof user_id !== "string") {
       return json({ error: "user_id 必填" }, 400);
     }
     if (user_id === callerId) return json({ error: "不能删除自己的账号" }, 400);
+
+    if (!isSuper) {
+      const { data: targetRoles } = await admin
+        .from("user_roles").select("college_id").eq("user_id", user_id);
+      const targetCollegeIds = (targetRoles ?? []).map((r: any) => r.college_id).filter(Boolean) as string[];
+      if (!targetCollegeIds.some((cid) => callerCollegeIds.has(cid))) {
+        return json({ error: "Forbidden: cross-college" }, 403);
+      }
+    }
 
     // Snapshot profile for audit before delete
     const { data: profile } = await admin
