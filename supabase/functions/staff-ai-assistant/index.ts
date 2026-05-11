@@ -695,11 +695,13 @@ async function execTool(
   if (name === "student_full_profile") {
     const q = String(args?.query || "").trim();
     if (!q) return { found: false, reason: "查询关键词为空" };
-    const { data: profiles } = await supabase
+    let pq = supabase
       .from("profiles")
-      .select("user_id, full_name, student_no, department, class_name, major, phone, email, id_card, gender, birth_date, enrollment_year, political_status, address, emergency_contact, emergency_phone")
+      .select("user_id, full_name, student_no, department, class_name, major, phone, email, id_card, gender, birth_date, enrollment_year, political_status, address, emergency_contact, emergency_phone, college_id")
       .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
       .limit(5);
+    if (!isSuper && collegeId) pq = pq.eq("college_id", collegeId);
+    const { data: profiles } = await pq;
     if (!profiles || profiles.length === 0) return { found: false, reason: "数据库中未找到该学生" };
     // Prefer exact student_no/full_name match
     const p: any = profiles.find((x: any) => x.student_no === q || x.full_name === q) || profiles[0];
@@ -736,11 +738,13 @@ async function execTool(
     const q = String(args?.query || "").trim();
     const limit = Math.min(Number(args?.limit ?? 10), 30);
     if (!q) return { records: [], reason: "查询关键词为空" };
-    const { data: profiles } = await supabase
+    let pq2 = supabase
       .from("profiles")
-      .select("user_id, student_no, full_name")
+      .select("user_id, student_no, full_name, college_id")
       .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
       .limit(1);
+    if (!isSuper && collegeId) pq2 = pq2.eq("college_id", collegeId);
+    const { data: profiles } = await pq2;
     if (!profiles || profiles.length === 0) return { records: [], reason: "数据库中未找到该学生" };
     const sid = (profiles[0] as any).user_id;
     const { data: rows } = await supabase
@@ -796,11 +800,13 @@ async function execTool(
     if (!q) return { matches: [], note: "查询关键词为空" };
 
     // 1) 找到候选 profile（精确学号 / 精确姓名 / 模糊姓名）
-    const { data: profs } = await supabase
+    let pq3 = supabase
       .from("profiles")
-      .select("user_id, full_name, student_no, department, class_name, major")
+      .select("user_id, full_name, student_no, department, class_name, major, college_id")
       .or(`student_no.eq.${q},full_name.eq.${q},student_no.ilike.%${q}%,full_name.ilike.%${q}%`)
       .limit(20);
+    if (!isSuper && collegeId) pq3 = pq3.eq("college_id", collegeId);
+    const { data: profs } = await pq3;
     if (!profs || profs.length === 0) {
       return { matches: [], note: "数据库中没有匹配的账号" };
     }
