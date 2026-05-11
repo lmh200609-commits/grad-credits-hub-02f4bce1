@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { buildPassword, type ParsedRow } from "@/lib/parseRoster";
+import { DatePicker } from "@/components/ui/date-picker";
 
 type Props = {
   open: boolean;
@@ -192,7 +193,16 @@ const SingleUserDialog = ({ open, role, onClose, onDone }: Props) => {
           {role === "student" && (
             <>
               <Field req label="性别" value={f.gender} onChange={(v) => set("gender", v)} placeholder="男 / 女" />
-              <Field req label="出生日期" value={f.birth_date} onChange={(v) => set("birth_date", v)} placeholder="YYYY-MM-DD" />
+              <div>
+                <Label>出生日期 <span className="text-destructive">*</span></Label>
+                <DatePicker
+                  value={f.birth_date}
+                  onChange={(v) => set("birth_date", v)}
+                  disableFuture
+                  fromYear={1940}
+                  toYear={CURRENT_YEAR}
+                />
+              </div>
               <Field req label="辅导员" value={f.advisor} onChange={(v) => set("advisor", v)} />
               <Field req label="班级" value={f.class_name} onChange={(v) => set("class_name", v)} />
               <Field req label="院系" value={f.department} onChange={(v) => set("department", v)} />
@@ -209,7 +219,16 @@ const SingleUserDialog = ({ open, role, onClose, onDone }: Props) => {
             <>
               <Field label="性别" value={f.gender} onChange={(v) => set("gender", v)} placeholder="男 / 女" />
               <Field label="院系" value={f.department} onChange={(v) => set("department", v)} />
-              <Field label="出生日期" value={f.birth_date} onChange={(v) => set("birth_date", v)} placeholder="YYYY-MM-DD" />
+              <div>
+                <Label>出生日期</Label>
+                <DatePicker
+                  value={f.birth_date}
+                  onChange={(v) => set("birth_date", v)}
+                  disableFuture
+                  fromYear={1940}
+                  toYear={CURRENT_YEAR}
+                />
+              </div>
               <Field label="民族" value={f.ethnicity} onChange={(v) => set("ethnicity", v)} />
               <Field label="政治面貌" value={f.political_status} onChange={(v) => set("political_status", v)} />
             </>
