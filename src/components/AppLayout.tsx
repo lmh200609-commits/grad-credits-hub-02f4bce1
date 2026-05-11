@@ -216,13 +216,28 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
       <div className="flex min-h-screen w-full">
         <AppSidebar />
         <div className="flex flex-1 flex-col">
-          <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-3 sm:px-4">
+          <header
+            className="flex h-14 items-center justify-between gap-2 border-b-2 px-3 sm:px-4"
+            style={{
+              backgroundColor: "hsl(var(--header-tint))",
+              borderBottomColor: "hsl(var(--primary) / 0.35)",
+            }}
+          >
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               <SidebarTrigger />
               {college?.badge_url && (
-                <img src={college.badge_url} alt="" className="h-7 w-7 rounded object-contain" />
+                <img
+                  src={college.badge_url}
+                  alt=""
+                  className="h-9 w-9 rounded-full bg-background object-contain p-0.5 ring-2 ring-primary/40"
+                />
               )}
-              <span className="truncate font-semibold">{college?.system_title ?? "学分认证系统"}</span>
+              <span
+                className="truncate font-semibold"
+                style={{ color: "hsl(var(--brand-strong))" }}
+              >
+                {college?.system_title ?? "学分认证系统"}
+              </span>
               {currentTitle && (
                 <>
                   <span className="hidden text-muted-foreground sm:inline">·</span>
@@ -242,7 +257,15 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
               </Button>
             </div>
           </header>
-          <main className="flex-1 overflow-auto bg-muted/30 p-3 sm:p-6">{children}</main>
+          <main
+            className="flex-1 overflow-auto p-3 sm:p-6"
+            style={{
+              backgroundImage:
+                "linear-gradient(180deg, hsl(var(--header-tint) / 0.45) 0%, hsl(var(--background)) 220px)",
+            }}
+          >
+            {children}
+          </main>
         </div>
         {showStudentAssistant && <AiAssistant />}
         {showStaffAssistant && <StaffAiAssistant />}
