@@ -540,16 +540,26 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       : { data: [] as any[] };
     const pmap = new Map<string, any>();
     (profs ?? []).forEach((p: any) => pmap.set(p.user_id, p));
+    const STATUS_CN: Record<string, string> = {
+      fake: "高风险", suspect: "嫌疑", real: "通过",
+      pending: "待检测", skipped: "跳过", error: "检测失败",
+    };
+    const fmtTime = (iso: string) => {
+      const d = new Date(iso);
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
     const items = (apps ?? []).map((a: any) => ({
-      application_id: a.id,
-      student_name: pmap.get(a.student_id)?.full_name ?? "—",
-      student_no: pmap.get(a.student_id)?.student_no ?? "—",
-      aigc_status: a.aigc_status,
-      aigc_score_pct: typeof a.aigc_score === "number" ? Number((a.aigc_score * 100).toFixed(1)) : null,
-      submitted_at: a.submitted_at,
-      description: (a.description || "").slice(0, 60),
+      姓名: pmap.get(a.student_id)?.full_name ?? "—",
+      学号: pmap.get(a.student_id)?.student_no ?? "—",
+      状态: STATUS_CN[a.aigc_status] ?? a.aigc_status,
+      "AI生成概率": typeof a.aigc_score === "number" ? `${(a.aigc_score * 100).toFixed(1)}%` : "—",
+      提交时间: fmtTime(a.submitted_at),
+      申请编号末8位: String(a.id).slice(-8),
+      申请描述: (a.description || "").slice(0, 60),
     }));
-    return { range, status, count: items.length, items };
+    const 范围中文 = range === "month" ? "近 30 天" : "本周";
+    return { 范围: 范围中文, 条数: items.length, 明细: items };
   }
 
   if (name === "student_full_profile") {
