@@ -510,11 +510,16 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       const arr = (scored ?? []).map((r: any) => Number(r.aigc_score)).filter((n) => !isNaN(n));
       const avg = arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
       return {
-        metric,
-        ...counts,
-        week_fake: weekFake ?? 0,
-        week_suspect: weekSuspect ?? 0,
-        avg_score_pct: Number((avg * 100).toFixed(1)),
+        指标: "AI 生成材料鉴别概览",
+        累计高风险: counts.fake,
+        累计嫌疑: counts.suspect,
+        累计通过: counts.real,
+        待检测: counts.pending,
+        跳过: counts.skipped,
+        检测失败: counts.error,
+        本周高风险: weekFake ?? 0,
+        本周嫌疑: weekSuspect ?? 0,
+        平均AI生成概率: `${(avg * 100).toFixed(1)}%`,
       };
     }
     return { metric, value: 0 };
