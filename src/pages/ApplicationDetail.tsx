@@ -223,7 +223,7 @@ const ApplicationDetail = () => {
       credit: decision === "approved" ? credit : null,
       note: note.trim() || null,
     });
-    if (re) return toast({ title: "保存失败", description: re.message, variant: "destructive" });
+    if (re) return toast({ title: "保存失败", description: friendlyError(re), variant: "destructive" });
 
     const { error: ue } = await supabase
       .from("applications")
@@ -235,7 +235,7 @@ const ApplicationDetail = () => {
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", app.id);
-    if (ue) return toast({ title: "更新失败", description: ue.message, variant: "destructive" });
+    if (ue) return toast({ title: "更新失败", description: friendlyError(ue), variant: "destructive" });
 
     // 人工通过时：检查该关键词组合是否已有完全匹配的规则或案例，没有则沉淀到案例库
     if (decision === "approved") {
@@ -356,7 +356,7 @@ const ApplicationDetail = () => {
       .update({ status: "pending_review", review_source: "student_appeal" })
       .eq("id", app.id)
       .select("id, status");
-    if (error) return toast({ title: "申请失败", description: error.message, variant: "destructive" });
+    if (error) return toast({ title: "申请失败", description: friendlyError(error), variant: "destructive" });
     if (!data || data.length === 0) {
       return toast({
         title: "申请未生效",
