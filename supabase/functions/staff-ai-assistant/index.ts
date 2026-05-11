@@ -577,52 +577,59 @@ async function execTool(
       return { metric, value: total, by_event: byEvent };
     }
     if (metric === "aigc_fake_week") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "fake")
-        .gte("submitted_at", weekAgo.toISOString());
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "fake")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
       return { metric, value: count ?? 0, range: "week" };
     }
     if (metric === "aigc_suspect_week") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "suspect")
-        .gte("submitted_at", weekAgo.toISOString());
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "suspect")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
       return { metric, value: count ?? 0, range: "week" };
     }
     if (metric === "aigc_pending_total") {
-      const { count } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "pending");
+      const { count } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "pending"),
+      );
       return { metric, value: count ?? 0 };
     }
     if (metric === "aigc_overview") {
       const statuses = ["fake", "suspect", "real", "pending", "skipped", "error"] as const;
       const counts: Record<string, number> = {};
       for (const s of statuses) {
-        const { count } = await supabase
-          .from("applications")
-          .select("id", { count: "exact", head: true })
-          .eq("aigc_status", s);
+        const { count } = await scopeApps(
+          supabase.from("applications")
+            .select("id", { count: "exact", head: true })
+            .eq("aigc_status", s),
+        );
         counts[s] = count ?? 0;
       }
-      const { count: weekFake } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "fake")
-        .gte("submitted_at", weekAgo.toISOString());
-      const { count: weekSuspect } = await supabase
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("aigc_status", "suspect")
-        .gte("submitted_at", weekAgo.toISOString());
-      const { data: scored } = await supabase
-        .from("applications")
-        .select("aigc_score")
-        .not("aigc_score", "is", null);
+      const { count: weekFake } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "fake")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
+      const { count: weekSuspect } = await scopeApps(
+        supabase.from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", "suspect")
+          .gte("submitted_at", weekAgo.toISOString()),
+      );
+      const { data: scored } = await scopeApps(
+        supabase.from("applications")
+          .select("aigc_score")
+          .not("aigc_score", "is", null),
+      );
       const arr = (scored ?? []).map((r: any) => Number(r.aigc_score)).filter((n) => !isNaN(n));
       const avg = arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
       return {
