@@ -1,7 +1,14 @@
 // Lightweight dominant-color extractor using canvas + simple histogram.
 // No external deps. Returns HSL strings in "H S% L%" format suitable for CSS variables.
 
-export type Palette = { primary: string; accent: string; background: string };
+export type Palette = {
+  primary: string;
+  accent: string;
+  background: string;
+  sidebarBg: string;
+  headerTint: string;
+  brandStrong: string;
+};
 
 const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
   r /= 255; g /= 255; b /= 255;
@@ -22,6 +29,15 @@ const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => 
 };
 
 const hsl = (h: number, s: number, l: number) => `${h} ${s}% ${l}%`;
+
+const fallback: Palette = {
+  primary: hsl(222, 76, 38),
+  accent: hsl(210, 40, 88),
+  background: hsl(222, 30, 98),
+  sidebarBg: hsl(222, 30, 96),
+  headerTint: hsl(222, 50, 94),
+  brandStrong: hsl(222, 80, 32),
+};
 
 export const extractPaletteFromImage = (url: string): Promise<Palette> =>
   new Promise((resolve, reject) => {
@@ -51,22 +67,41 @@ export const extractPaletteFromImage = (url: string): Promise<Palette> =>
           buckets.set(key, cur);
         }
         const sorted = [...buckets.values()]
-          .map((v) => ({ r: v.r / v.count, g: v.g / v.count, b: v.b / v.count, count: v.count }))
-          .sort((a, b) => b.count - a.count);
+          .map((v) => {
+            const r = v.r / v.count, g = v.g / v.count, b = v.b / v.count;
+            const [h, s, l] = rgbToHsl(r, g, b);
+            // Score = popularity * saturation weight; penalize very dark/very light & very low sat
+            const satW = Math.min(1, s / 60);
+            const lightW = l > 12 && l < 88 ? 1 : 0.4;
+            return { r, g, b, h, s, l, count: v.count, score: v.count * (0.3 + satW) * lightW };
+          })
+          .sort((a, b) => b.score - a.score);
         if (sorted.length === 0) {
-          // fallback neutral palette
-          resolve({ primary: hsl(222, 76, 38), accent: hsl(210, 40, 96), background: hsl(220, 20, 98) });
+          resolve(fallback);
           return;
         }
-        const top = sorted[0];
-        const second = sorted[1] ?? sorted[0];
-        const [h1, s1, l1] = rgbToHsl(top.r, top.g, top.b);
-        const [h2, s2] = rgbToHsl(second.r, second.g, second.b);
-        // Ensure good contrast on light bg → clamp lightness
-        const primary = hsl(h1, Math.max(40, Math.min(85, s1)), Math.max(28, Math.min(50, l1)));
-        const accent = hsl(h2, Math.max(20, Math.min(40, s2)), 94);
-        const background = hsl(h1, 20, 98);
-        resolve({ primary, accent, background });
+        // Pick a primary with decent saturation; fall back through the list if needed
+        let chosen = sorted[0];
+        if (chosen.s < 25) {
+          const better = sorted.find((c) => c.s >= 35);
+          if (better) chosen = better;
+        }
+        const h1 = chosen.h;
+        const s1 = Math.max(45, Math.min(85, chosen.s));
+        const l1 = Math.max(30, Math.min(48, chosen.l));
+        const primary = hsl(h1, s1, l1);
+        // Accent: complementary-ish hue offset to maximize differentiation across colleges
+        const accentHue = (h1 + 180) % 360;
+        const accent = hsl(accentHue, Math.max(35, Math.min(55, s1 - 10)), 88);
+        // Background: very faintly tinted with primary hue
+        const background = hsl(h1, 30, 97);
+        // Sidebar: slightly more saturated than background, still light
+        const sidebarBg = hsl(h1, 35, 95);
+        // Header tint: a noticeable but soft band
+        const headerTint = hsl(h1, 55, 93);
+        // Brand strong: deeper version of primary for emphasis
+        const brandStrong = hsl(h1, Math.min(90, s1 + 10), Math.max(22, l1 - 10));
+        resolve({ primary, accent, background, sidebarBg, headerTint, brandStrong });
       } catch (e) { reject(e); }
     };
     img.onerror = () => reject(new Error("无法加载院徽图片"));
