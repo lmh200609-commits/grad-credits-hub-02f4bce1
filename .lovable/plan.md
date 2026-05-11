@@ -1,108 +1,42 @@
-## 目标
+## 背景（已核查）
 
-在教师 / 管理员 / 超管的数据看板新增"AI 生成材料统计"面板，含 KPI、柱状图、饼状图、筛选，并支持**导出 PDF 报告 + 导出明细 CSV**。
+**1. "待检测"是什么**
+`AigcStatsPanel` 中的"待检测" = `applications.aigc_status = 'pending'`，即尚未跑过 AI 生成图像鉴别的申请。
 
-## 现状
+数据库现状：fake = 3, real = 1, **pending = 2**。这 2 条 pending 都已是 `status = rejected_by_ai`、`aigc_checked_at = null` —— AI 文本审材料阶段就被驳回，AIGC 图像检测从未真正跑过，属于"卡住的遗留单"，不是"排队中"。
 
-- 教师看板：`src/pages/teacher/Dashboard.tsx`
-- 管理员 / 超管看板：`src/pages/admin/Dashboard.tsx`（超管用同一页，由 `isSuperAdmin` 决定是否传 `_college`）
-- `applications` 表已有：`aigc_status`(`pending|real|suspect|fake|skipped|error`)、`aigc_score`、`aigc_checked_at`、`submitted_at`、`college_id`、`student_id`、`description`、`file_path`
-- RLS 已分级：教师/管理员限本学院，超管全量
-- 项目已用过 `html2canvas + jsPDF` 导出证书（`src/lib/certificate.ts`），可复用同一栈
+**2. AI 助手回答不了"本周疑似 AI 生成图片"**
+`staff-ai-assistant` 的 `query_stats` 工具枚举里没有任何 AIGC 相关 metric，也没有专用工具 → 助手没有合法工具可调，回退到"权限不足"兜底话术。不是 RLS 问题，是工具能力缺失。
 
-## 新增组件
+---
 
-### `src/components/AigcStatsPanel.tsx`
+## 修复方案
 
-布局（一张 `Card`，跨满栏，紧贴现有"近 14 天提交趋势"下方）：
+### A. "待检测"复检入口（前端）
+文件：`src/components/AigcStatsPanel.tsx`
 
-```text
-┌── AI 生成材料鉴别  [导出 PDF] [导出 CSV] ─────────┐
-│  时间: 7/14/30/90/全部   状态多选   学院(仅超管) │
-│                                                    │
-│  KPI:  已检测 N · 高风险 X(占比%) · 嫌疑 Y(占比%) │
-│        检出率 Z% · 平均概率 P%                     │
-│                                                    │
-│  ┌─ 柱状图(stacked) ─┐  ┌─ 饼状图 ──────────────┐│
-│  │ 每日 fake/suspect/real │  │ 状态占比         ││
-│  │ X=日期 Y=数量          │  │ real/suspect/... ││
-│  └─────────────────────┘  └──────────────────────┘│
-└────────────────────────────────────────────────────┘
-```
+- KPI 卡片下方新增提示行：当筛选窗口内 pending > 0 时，显示「N 条待检测」+「查看清单」按钮，跳转 `/admin/applications?aigc=pending`。
+- 若 `Applications.tsx` 不支持 `?aigc=pending` query 过滤，顺手加上读取该参数并初始化筛选。
 
-### 筛选
+### B. 给 AI 助手补 AIGC 统计能力（边缘函数）
+文件：`supabase/functions/staff-ai-assistant/index.ts`
 
-1. 时间范围：7 / 14 / 30 / 90 天 / 全部（默认 14 天，按 `submitted_at`）
-2. 状态多选：高风险 / 嫌疑 / 通过 / 待检测 / 跳过 / 失败（默认全选）
-3. 学院：仅超管显示，下拉「全部 / 某学院」
+1. `query_stats` 的 `metric` 枚举追加：
+   - `aigc_fake_week` —— 本周 `aigc_status='fake'` 计数
+   - `aigc_suspect_week` —— 本周 `aigc_status='suspect'` 计数
+   - `aigc_pending_total` —— 当前 pending 总数
+   - `aigc_overview` —— `{fake, suspect, real, pending, skipped, error, week_fake, week_suspect, avg_score}`
+2. `execTool` 内实现对应分支，全部走 `applications` 表 `count: "exact", head: true` + `gte("submitted_at", weekAgo)`。RLS 自动按 college 限定，无需改策略。
+3. 新增工具 `list_aigc_flagged`：入参 `{ range: "week"|"month", status: "fake"|"suspect"|"both" }`，返回 application_id + 学生姓名/学号 + aigc_score + submitted_at，按 score desc，最多 20 条。
+4. 系统提示词新增一条：涉及"AI 生成 / AIGC / 疑似 AI 图片"的提问，必须先调 `query_stats(aigc_*)` 或 `list_aigc_flagged`。
 
-### 数据获取
+### C. 不动的部分
+- 不改 RLS、表结构、学生端、AIGC 检测服务本身。
+- 不批量回填那 2 条遗留 pending，由管理员通过新加的「查看清单」自行处理。
 
-`supabase.from("applications").select("id, aigc_status, aigc_score, submitted_at, college_id, student_id, description").gte("submitted_at", since).limit(2000)`
+---
 
-- RLS 自动控权；超管时才 `.eq("college_id", X)`
-- 聚合在前端 JS 完成
-
-### 实时刷新
-
-复用 `useRealtimeTable("applications", reload, { filter: collegeFilter })`。
-
-### 配色
-
-`hsl(var(--destructive))`(fake)、`hsl(var(--warning))`(suspect)、`hsl(var(--success))`(real)、`hsl(var(--muted-foreground))`(其它)。不引入新 hex。
-
-## 导出功能（重点）
-
-### 1. 导出 CSV（明细）
-
-- 字段：申请ID、提交时间、AI状态(中文)、AI概率%、申请描述前40字、学院ID
-- 走当前筛选后的行集合
-- 浏览器端用 `Blob + URL.createObjectURL` 触发下载
-- 文件名：`AIGC统计_{college名或全校}_{since}_{now}.csv`
-- 加 UTF-8 BOM (`\uFEFF`) 兼容 Excel 中文
-
-### 2. 导出 PDF（汇总报告）
-
-- 复用 `src/lib/certificate.ts` 里的 `exportElementToPdf()` 模式：`html2canvas` 截一个隐藏的 A4 报告 DOM，再 `jsPDF` 输出
-- 报告内容（按打印友好的纵版 A4 排版）：
-  - 顶部：学院徽章（`college.badge_url`）+ 标题「AI 生成材料鉴别报告」+ 副标题「{学院名 / 全校} · {时间范围} · 生成于 {now}」
-  - KPI 网格（与面板一致）
-  - 柱状图截图（直接截屏面板里的 recharts SVG/Canvas，用 `html2canvas` 抓取 panel 内对应 div）
-  - 饼状图截图
-  - 明细 Top 20 高风险申请表（按 `aigc_score desc` 取前 20 行）
-  - 页脚：第 X / Y 页，自动分页（jsPDF `addPage`，按图像高度切片）
-- 文件名：`AIGC统计报告_{college或全校}_{since}_{now}.pdf`
-- 实现要点：
-  - 在面板组件内额外渲染一个 `<div ref={reportRef} className="absolute -left-[9999px] w-[794px]">`（A4 宽度 794px @ 96dpi），里面是 PDF 专用的"打印态"布局（白底、深色文字、固定字号）
-  - 不直接截屏屏幕上的图表（响应式宽度可能不稳定），而是在打印态 DOM 里**单独再渲染一份** recharts，固定宽高（图表区 700×260），保证多分辨率下结果稳定
-  - 字体：使用 `system-ui`，避免 html2canvas 字体加载竞态
-  - `html2canvas(reportRef.current, { scale: 2, backgroundColor: "#fff" })` 然后切片到 A4 多页
-
-### 3. 状态指示
-
-- 导出按钮在工作时显示 spinner + 文案"生成中…"，期间禁用
-- 失败 toast 提示
-
-## 改动文件清单
-
-- 新建：`src/components/AigcStatsPanel.tsx`
-- 修改：`src/pages/admin/Dashboard.tsx`（在主图表 grid 之后插入 `<AigcStatsPanel />`）
-- 修改：`src/pages/teacher/Dashboard.tsx`（同上）
-- 复用：`html2canvas`、`jspdf`（项目已安装）、`src/lib/certificate.ts` 中的 A4 切片工具
-- 不动 RLS、不动 RPC、不动 schema
-
-## 不做
-
-- 不在学生侧出现
-- 不做服务端 PDF（保持纯前端，无需新 edge function）
-- 不做定时邮件 / 历史报告归档（按需后续加）
-
-## 验证
-
-- 教师 / 普通管理员：仅本学院；学院筛选不显示
-- 超管：默认全校，可切学院
-- 切时间 / 状态：图表 + KPI + 导出内容同步
-- 导出 CSV：在 Excel 中文不乱码
-- 导出 PDF：A4 纵版、徽章 + 标题、KPI、两图清晰、Top 20 表格不溢出、自动分页页码正确
-- 浅色 / 深色模式（PDF 始终为白底深色）
-- 889px 视口下面板布局不溢出
+## 影响文件
+- `src/components/AigcStatsPanel.tsx`
+- `src/pages/admin/Applications.tsx`（如需支持 `?aigc=pending`，先读后改）
+- `supabase/functions/staff-ai-assistant/index.ts`
