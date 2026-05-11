@@ -173,18 +173,7 @@ Deno.serve(async (req) => {
           const ext = app.file_path.split(".").pop()!.toLowerCase();
           const mime = ext === "jpg" ? "jpeg" : ext;
           imageDataUrl = `data:image/${mime};base64,${b64}`;
-          // 阿里云鉴别结果由独立队列预先写入 applications.aigc_*，这里直接复用其结论
-          if (app.aigc_status === "real" && aigcScore >= 0) {
-            attachmentNote = `已附图片；阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%（判定为真实拍摄）`;
-          } else if (app.aigc_status === "suspect") {
-            attachmentNote = `已附图片；阿里云 AIGC 鉴别：AI 生成概率 ${(aigcScore * 100).toFixed(1)}%（疑似 AI 生成，已转人工复核）`;
-          } else if (app.aigc_status === "skipped") {
-            attachmentNote = "已附图片；未做 AI 生成鉴别（学院已关闭或附件不支持）";
-          } else if (app.aigc_status === "error") {
-            attachmentNote = "已附图片；AI 生成鉴别调用失败，本次按真实素材处理";
-          } else {
-            attachmentNote = "已附图片";
-          }
+          attachmentNote = "已附图片";
         } else {
           attachmentNote = "附件下载失败";
         }
