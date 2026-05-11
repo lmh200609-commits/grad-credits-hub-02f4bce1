@@ -1,61 +1,56 @@
-## 目标
+## 问题诊断
 
-让不同学院的界面"一眼就能区分开"。当前问题是院徽颜色只影响主按钮，整体页面块面仍然是中性灰白。
+**院徽延迟**：每个页面文件都是 `<AppLayout>{...}</AppLayout>` 自包裹，路由切换时 `AppLayout` 整体卸载/重挂载，`useCollegeTheme` 重新走一次 supabase 网络请求才能拿到 `badge_url`。在请求返回前 `college` 是 `null`，所以院徽 `<img>` 短暂消失。
+
+**侧边栏区分弱**：上一轮虽然已经写入 `--sidebar-background`，但侧栏顶部没有任何学院标识色块，菜单项也用普通 `--sidebar-accent`，从远处看仍是"白底+灰高亮"，跟其他学院几乎一样。
 
 ## 实施方案
 
-### 1. 提取算法升级（`src/lib/extractPalette.ts`）
+### 1. 全局缓存 College，消除院徽闪烁
 
-让取出的颜色更具辨识度：
+**新增 `src/contexts/CollegeContext.tsx`**：
+- 提供 `<CollegeProvider>` 包住整个应用（在 `App.tsx` 的 `AuthProvider` 内层），提供 `useCollege()` Hook。
+- Provider 内部完成原 `useCollegeTheme` 的全部逻辑：拉取 college、写 CSS 变量、订阅 realtime。
+- 初始化时**同步**从 `sessionStorage` 读取上次缓存的 `college`（key: `college-cache:${collegeId}`），立刻提供给消费者；后台再异步刷新。
+- 每次 fetch 成功后写回 sessionStorage。
+- 将所有 CSS 变量也写到 `localStorage`（key: `college-css-vars:${collegeId}`），并在 `index.html` 顶部加一段内联 `<script>`：登录后下次刷新时同步注入到 `:root`，避免冷启动闪烁。
 
-- **饱和度优先**：候选色排序时不仅按"出现次数"，还乘上饱和度权重，避免暗灰/暗蓝总是赢。
-- **拒绝低饱和**：若 top1 颜色饱和度 < 25%，自动回退到候选列表里第一个 ≥ 35% 饱和度的颜色；找不到再退回原值。
-- **辅色用互补色**：辅色不再取"第二常见色"，而是基于主色色相 + 偏移（约 30°–180°），保证两个学院主辅色组合差异明显。
-- **辅色亮度**：从原来的 94%（几乎白）改为 ~88%，仍是浅色块但能看出色相。
-- **背景色**：保持很浅，但带主色微染（亮度 97%、饱和度 30% 左右），不再是纯灰白。
-- **新增 `headerTint`/`sidebarTint`**：返回额外的两个 token（主色亮度 30%/45%，用于 header 描边和侧栏强调）。
+**改造 `useCollegeTheme.ts`**：内部仅 `return useContext(CollegeContext)`，不再发请求；保持现有调用方签名不变。
 
-### 2. 主题应用面扩展（`src/hooks/useCollegeTheme.ts`）
+效果：路由切换时 `AppLayout` 即便重挂载，`useCollege()` 立即从 Provider 拿到已有数据，院徽不再消失。
 
-在原有的 `--primary / --accent / --background` 基础上，再写入：
+### 2. 侧边栏明显学院化
 
-- `--sidebar-background`：用主色低饱和深色调（亮度 ~94% 浅版），让侧栏块面有学院色。
-- `--sidebar-foreground / --sidebar-accent-foreground`：保持高对比可读。
-- `--header-tint`：header 的主色描边/底纹色。
-- `--brand-strong`：饱和主色，用于 banner、tab 高亮。
+在 `AppLayout.tsx` 的 `AppSidebar` 顶部加一个**品牌头部**（替代/补充现有的"导航"label）：
 
-并保留原有"非法值校验"和退出预览时清理逻辑。
+- 紧贴侧栏顶部一条 56px 的"学院 banner"：背景 `linear-gradient(135deg, hsl(var(--brand-strong)) 0%, hsl(var(--primary)) 100%)`，左侧院徽（圆形白底，h-10 w-10），右侧两行小字：学院 short_name（白色加粗）+ "学分认证系统"（白色 70% 透明）。
+- collapsed（图标态）时只显示居中的圆形院徽。
+- banner 下方加一条 1px `--primary/30` 分隔线。
+- 把 `SidebarGroupLabel "导航"` 颜色改为 `text-[hsl(var(--brand-strong))]` 并加大字号到 xs→sm。
+- 当前激活项 `SidebarMenuButton` 用 `data-[active=true]:bg-[hsl(var(--brand-strong)/0.12)] data-[active=true]:text-[hsl(var(--brand-strong))] data-[active=true]:border-l-2 data-[active=true]:border-[hsl(var(--brand-strong))]`，用左侧 2px 主色色条强化"我在哪个学院的哪个页面"。
+- 侧栏底部加一行小字 `code · name`（淡色），便于跨学院切账号时确认。
 
-### 3. AppLayout 顶部 Banner（`src/components/AppLayout.tsx`）
+由于 `--sidebar-background / --brand-strong / --primary` 都会随院徽变化，整条侧栏从顶部 banner 到激活态色条，会跟着学院变。两个学院并排时一眼可分。
 
-把 header 从纯灰白改成带学院色的条带：
+### 3. 顶部 header 院徽兜底
 
-- header 背景使用 `bg-[hsl(var(--header-tint))]` 或主色 8% 不透明叠层。
-- 学院名/系统标题字色改用主色 deep 版本，权重提升。
-- 院徽放大到 h-9，加圆形主色描边（`ring-2 ring-primary/40`）。
-- header 底部加一条 2px 的主色细线（`border-b-2 border-primary/30`）。
-- 侧栏顶部（导航 label 区域）加一个学院主色小色块 + 学院 short_name/name 缩写徽标。
+`<img src={college.badge_url}>` 加 `key={college.badge_url}` 避免新旧 url 之间的图像缓存撕裂；同时保留 `bg-background` 圆底，img 加载未完成期间也是一个圆形占位，不会"消失再出现"。
 
-### 4. 主内容区微调
+### 4. 兼容旧学院
 
-- `<main>` 的 `bg-muted/30` 改为带主色微染的渐变背景（极淡），让两个学院的整体页面颜色基调就不一样。
-- 表格表头、Tab 当前项、链接、focus ring 全部沿用 `--primary`，已经默认生效，不用改。
-
-### 5. 兼容与回退
-
-- 学院未上传院徽：所有变量回退到系统默认（现有行为已支持，不动）。
-- 取色失败：回退到原 fallback 调色板。
-- 实时同步：依赖现有的 supabase realtime channel，无需改动，新颜色保存后所有用户立即看到。
+旧主题没存 `sidebarBg / headerTint / brandStrong` 的，沿用上一轮已实现的"从 primary 派生"逻辑。无需迁移数据。
 
 ## 改动文件
 
-- `src/lib/extractPalette.ts`：升级取色算法。
-- `src/hooks/useCollegeTheme.ts`：写入更多 CSS 变量。
-- `src/components/AppLayout.tsx`：header 与侧栏样式增强。
-- `src/index.css`（如需要）：新增 `--header-tint`、`--brand-strong` 默认值。
+- 新增：`src/contexts/CollegeContext.tsx`
+- 修改：`src/App.tsx`（包入 Provider）
+- 修改：`src/hooks/useCollegeTheme.ts`（瘦身为消费 Context）
+- 修改：`src/components/AppLayout.tsx`（侧栏品牌 banner + 激活态强化 + img key）
+- 修改：`index.html`（启动时从 localStorage 注入 CSS 变量，消除冷启动闪烁）
 
 ## 验证
 
-- 给两个不同学院上传不同色调的院徽（例如蓝色 vs 红色），并排打开两个浏览器窗口，确认 header / 侧栏 / 主按钮 / 表头 都能直接区分。
-- 上传一张近似纯灰的图片，确认会回退到次优彩色而不是变成灰主题。
-- 未上传院徽的学院仍是系统默认外观。
+- 在 admin 账户下连续点击多个左侧菜单项，header 院徽全程稳定显示，无闪烁。
+- 用两个学院账户分别登录，侧栏顶部 banner、激活项色条颜色明显不同。
+- 折叠侧栏（icon 模式）时仍能看到院徽圆标。
+- 退出登录或切换学院时 banner/CSS 变量正确重置。
