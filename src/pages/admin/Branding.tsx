@@ -81,8 +81,6 @@ const Branding = () => {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [extracted, setExtracted] = useState<Theme | null>(null);
-  const [extractOpen, setExtractOpen] = useState(false);
 
   const load = async () => {
     if (!collegeId) return;
@@ -107,34 +105,25 @@ const Branding = () => {
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from("college-badges").getPublicUrl(path);
       const url = pub.publicUrl;
-      const { error } = await supabase.from("colleges").update({ badge_url: url }).eq("id", collegeId);
-      if (error) throw error;
-      toast.success("院徽已上传");
-      await load();
+      const isHsl = (v?: string) => !!v && /^\s*\d{1,3}(\.\d+)?\s+\d{1,3}(\.\d+)?%\s+\d{1,3}(\.\d+)?%\s*$/.test(v);
       const palette = await extractPaletteFromImage(url).catch(() => null);
-      if (palette && Object.keys(palette).length > 0) {
-        setExtracted(palette as Theme);
-        setExtractOpen(true);
-      } else {
-        toast.message("未能识别院徽主色，已保留原主题");
+      const valid: Theme = {};
+      if (palette) {
+        if (isHsl(palette.primary)) valid.primary = palette.primary;
+        if (isHsl(palette.background)) valid.background = palette.background;
+        if (isHsl(palette.accent)) valid.accent = palette.accent;
       }
+      const newTheme: Theme = { ...theme, ...valid };
+      const { error } = await supabase.from("colleges").update({ badge_url: url, theme: newTheme }).eq("id", collegeId);
+      if (error) throw error;
+      setTheme(newTheme);
+      toast.success(Object.keys(valid).length > 0 ? "院徽已上传，主题已自动更新" : "院徽已上传（未识别到合适主色，主题未变）");
+      await load();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setUploading(false);
     }
-  };
-
-  const applyExtracted = async () => {
-    if (!collegeId || !extracted) return;
-    const newTheme: Theme = { ...theme, ...extracted };
-    setTheme(newTheme);
-    const { error } = await supabase.from("colleges").update({ theme: newTheme }).eq("id", collegeId);
-    if (error) { toast.error(error.message); return; }
-    toast.success("主题已更新");
-    setExtractOpen(false);
-    setExtracted(null);
-    void load();
   };
 
   const save = async () => {
