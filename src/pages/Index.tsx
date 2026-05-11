@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { usePreviewTheme } from "@/hooks/usePreviewTheme";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSerializedReload } from "@/hooks/useSerializedReload";
 import AppLayout from "@/components/AppLayout";
@@ -375,7 +376,14 @@ const TeacherWorkbench = () => {
 
 const Index = () => {
   const { hasRole, isSuperAdmin, loading } = useAuth();
+  const { active: previewActive, roleView } = usePreviewTheme();
   if (loading) return <AppLayout><div className="h-32 animate-pulse rounded-md bg-muted" /></AppLayout>;
+  // 预览模式下，按预览视角渲染对应工作台，避免真实角色重定向打断侧边栏选中状态
+  if (previewActive && roleView) {
+    if (roleView === "admin") return <Navigate to="/admin/dashboard" replace />;
+    if (roleView === "teacher") return <AppLayout><TeacherWorkbench /></AppLayout>;
+    return <AppLayout><StudentWorkbench /></AppLayout>;
+  }
   if (isSuperAdmin) return <Navigate to="/super/colleges" replace />;
   if (hasRole("admin")) return <Navigate to="/admin/dashboard" replace />;
   return (
