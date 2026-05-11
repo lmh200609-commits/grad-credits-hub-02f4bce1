@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { Download, FileText, Loader2, ShieldAlert } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { handleAuthExpired } from "@/lib/sessionGuard";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
@@ -109,6 +110,10 @@ export default function AigcStatsPanel() {
     if (isSuperAdmin && collegeFilter !== "all") q = q.eq("college_id", collegeFilter);
     const { data, error } = await q;
     if (error) {
+      if (await handleAuthExpired(error)) {
+        setLoading(false);
+        return;
+      }
       toast({ title: "加载 AI 鉴别数据失败", description: error.message, variant: "destructive" });
     } else {
       const list = (data ?? []) as Row[];

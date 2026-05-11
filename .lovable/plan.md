@@ -1,71 +1,54 @@
-## 目标
+# 修复"加载 AI 鉴别数据失败 / JWT expired"反复弹窗
 
-AI 评估通过（即 `nextStatus !== 'rejected_by_ai'` 且文件是图片）后，**同步立刻**触发 AIGC 检测，而不是等数据库触发器经 pg_net 异步推送 `process-aigc-queue`（存在调度延迟）。
+## 问题本质
 
-## 现状
+浏览器里的登录会话过期（`refresh_token` 也已失效），但应用没有感知，仍在用旧 JWT 发请求；`AigcStatsPanel` 因为带 10 秒轮询，所以每 10 秒弹一次 toast。这是一个会影响所有带轮询/Realtime 页面的全局问题，需要在公共层修复，而不是只补 AIGC 面板。
 
-1. `evaluate-application` 写入 AI 评估结果后直接返回。
-2. DB 触发器 `enqueue_aigc_detect_after_eval` 监听 `ai_last_attempt_at` 变化，入队 `aigc_detect_queue` 并通过 `net.http_post` 触发 `process-aigc-queue`。
-3. `pg_net` 是异步队列，可能延迟数秒甚至更久；用户感知"AIGC 拖延"。
+## 方案（共三处改动，均为前端）
 
-## 改动
+### 1. 新建公共会话守卫 `src/lib/sessionGuard.ts`
 
-### `supabase/functions/evaluate-application/index.ts`
+提供两个工具：
 
-在 614 行 `update applications` **成功之后**、`return json(...)` **之前**，追加直连唤起：
+- `isJwtExpiredError(err)` — 判断 Supabase 返回的 error 是否属于"JWT 失效/刷新失败"族（匹配 `JWT expired`、`Invalid Refresh Token`、`refresh_token_not_found`、`PGRST301` 等）。
+- `handleAuthExpired()` — 全局只触发一次：先尝试 `supabase.auth.refreshSession()`，成功就返回 `true`，让调用方安静地重试一次；失败则
+  - `supabase.auth.signOut()`，
+  - 弹一次 toast "登录已过期，请重新登录"（用模块级 `alreadyShown` flag 去重，避免轮询场景重复弹），
+  - `window.location.replace("/login?reason=expired")`。
+
+### 2. `src/hooks/useAuth.tsx`：监听 token 刷新失败 / 登出
+
+在 `onAuthStateChange` 里：
+
+- 收到 `TOKEN_REFRESHED` 且 `newSession` 为空，或收到 `SIGNED_OUT` 而当前路径不在 `/login`，调用 `handleAuthExpired()`，避免应用继续在登录页之外用空会话发请求。
+
+### 3. `src/components/AigcStatsPanel.tsx`：捕获过期错误，停止 toast 风暴
+
+把 `load()` 里报错分支改成：
 
 ```ts
-const shouldTriggerAigc =
-  nextStatus !== "rejected_by_ai" &&
-  app.file_path &&
-  /\.(png|jpe?g|webp|gif|bmp)$/i.test(app.file_path) &&
-  app.aigc_status === "pending";
-
-if (shouldTriggerAigc) {
-  // 直连 aigc-detect，按 application_id 立刻执行；不阻塞响应
-  const url = `${supabaseUrl}/functions/v1/aigc-detect`;
-  const p = fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
-      apikey: serviceKey,
-    },
-    body: JSON.stringify({ application_id }),
-  }).catch((e) => console.error("[evaluate-application] inline aigc-detect failed:", e));
-  // 让后台请求继续运行，但不让 evaluate 响应等它
-  // @ts-ignore Deno EdgeRuntime
-  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
-    // @ts-ignore
-    EdgeRuntime.waitUntil(p);
+if (error) {
+  if (await handleAuthExpired(error)) {
+    // 已尝试续签或跳转登录，无需弹"加载失败"
+    return;
   }
+  toast({ title: "加载 AI 鉴别数据失败", description: error.message, variant: "destructive" });
 }
 ```
 
-`supabaseUrl` / `serviceKey` 在文件顶部已经从 env 读取（与现有 admin client 共用），如未读取则补一行 `Deno.env.get` 即可。
+`handleAuthExpired(error)` 内部判断：若不是 JWT 失效错误，直接返回 `false`，原 toast 照常走；若是，则按上面"先 refresh、否则跳登录"的逻辑处理，并返回 `true` 让调用方静默。
 
-### 数据库触发器
+> 同样的 3 行模式可以后续推广到其它带轮询的列表页（`Reviews.tsx`、`MyApplications.tsx` 等），但本次改动只先把弹窗源 `AigcStatsPanel` 改了，避免一次改动面太大。
 
-保留 `enqueue_aigc_detect_after_eval` 作为兜底（队列入队 + pg_net 调度）。即使 inline fetch 失败，触发器仍会保证最终执行。`aigc-detect` 内部对同一 application_id 是幂等的（先看 `aigc_status`），所以重复触发安全。
+## 不改动 / 不涉及
 
-### `aigc-detect` 幂等性确认
+- **不改后端**、不改 edge functions、不改数据库；这是纯客户端会话管理问题。
+- 不调整 `useRealtimeTable` 的轮询间隔——它本身行为是对的，错的是没人处理鉴权失败。
+- 不动 supabase client 的 `autoRefreshToken` 配置；该配置仍有用，只是在它失败时我们多兜一层。
 
-需要确认 `aigc-detect` 入口在 `aigc_status !== 'pending'` 时直接 no-op 返回，避免 inline fetch 与队列 worker 同时执行重复检测。如当前未做，需要在函数最前面加一段防重入：
+## 验证
 
-```ts
-const { data: row } = await admin
-  .from("applications").select("aigc_status").eq("id", application_id).maybeSingle();
-if (row && row.aigc_status !== "pending") {
-  return json({ skipped: true, reason: "already_processed" });
-}
-```
+实现后：
 
-## 涉及文件
-
-- `supabase/functions/evaluate-application/index.ts`（新增 inline 唤起）
-- `supabase/functions/aigc-detect/index.ts`（确认/补齐幂等保护）
-
-## 不改动
-
-- 触发器 SQL 保持不变（兜底）。
-- 前端无需修改：`pending_review` 阶段已统一显示"复核中"，AIGC 完成后再翻盘 `auto_approved`。
+1. 在浏览器 DevTools → Application → Local Storage 把 `sb-...-auth-token` 的 `expires_at` 改成已过期的时间戳，刷新 `/admin/dashboard`：应在第一次 toast 之后立即被带去 `/login?reason=expired`，而不是每 10 秒重复弹。
+2. 正常使用页面（未过期）行为完全不变，仍能正常加载数据 + Realtime 推送。
