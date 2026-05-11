@@ -796,19 +796,38 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // ---- 解析当前调用者身份，注入"当前登录用户"上下文 ----
-    let identityBlock = "";
+    // ---- 强制校验调用者身份：必须是 teacher/admin/super_admin ----
     const authHeader = req.headers.get("Authorization") || "";
-    if (authHeader.startsWith("Bearer ")) {
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    let identityBlock = "";
+    let uid: string | undefined;
+    {
       const token = authHeader.slice(7);
+      const userClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data: claims, error: claimErr } = await userClient.auth.getClaims(token);
+      uid = claims?.claims?.sub as string | undefined;
+      if (claimErr || !uid) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: callerRoles } = await supabase
+        .from("user_roles").select("role").eq("user_id", uid)
+        .in("role", ["teacher", "admin", "super_admin"]);
+      if (!callerRoles || callerRoles.length === 0) {
+        return new Response(JSON.stringify({ error: "Forbidden: staff only" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       try {
-        const userClient = createClient(
-          Deno.env.get("SUPABASE_URL")!,
-          Deno.env.get("SUPABASE_ANON_KEY")!,
-          { global: { headers: { Authorization: authHeader } } },
-        );
-        const { data: claims } = await userClient.auth.getClaims(token);
-        const uid = claims?.claims?.sub as string | undefined;
         if (uid) {
           const [{ data: prof }, { data: ur }] = await Promise.all([
             supabase.from("profiles").select("full_name,email,department,class_name,major,student_no,college_id").eq("user_id", uid).maybeSingle(),

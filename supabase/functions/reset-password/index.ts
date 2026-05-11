@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
     );
     const { data: callerRoles, error: roleErr } = await admin
       .from("user_roles")
-      .select("role")
+      .select("role,college_id")
       .eq("user_id", callerId)
       .in("role", ["admin", "super_admin", "teacher"]);
     if (roleErr) return json({ error: roleErr.message }, 500);
@@ -38,19 +38,28 @@ Deno.serve(async (req) => {
     const isAdmin = (callerRoles ?? []).some((r) => r.role === "admin");
     const isTeacher = (callerRoles ?? []).some((r) => r.role === "teacher");
     if (!isSuper && !isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
+    const callerCollegeIds = new Set(
+      (callerRoles ?? []).map((r: any) => r.college_id).filter(Boolean) as string[],
+    );
 
     const { user_id } = await req.json();
     if (!user_id || typeof user_id !== "string") {
       return json({ error: "user_id 必填" }, 400);
     }
 
-    if (!isSuper && !isAdmin) {
-      const { data: targetRoles } = await admin
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user_id);
-      const targetIsStudent = (targetRoles ?? []).some((r) => r.role === "student");
-      if (!targetIsStudent) return json({ error: "教师仅可重置学生密码" }, 403);
+    // Load target roles (with college_id) to enforce both role and college scoping
+    const { data: targetRoles } = await admin
+      .from("user_roles")
+      .select("role,college_id")
+      .eq("user_id", user_id);
+    const targetIsStudent = (targetRoles ?? []).some((r: any) => r.role === "student");
+    if (!isSuper && !isAdmin && !targetIsStudent) {
+      return json({ error: "教师仅可重置学生密码" }, 403);
+    }
+    if (!isSuper) {
+      const targetCollegeIds = (targetRoles ?? []).map((r: any) => r.college_id).filter(Boolean) as string[];
+      const sameCollege = targetCollegeIds.some((cid) => callerCollegeIds.has(cid));
+      if (!sameCollege) return json({ error: "Forbidden: cross-college" }, 403);
     }
 
     const { data: profile } = await admin

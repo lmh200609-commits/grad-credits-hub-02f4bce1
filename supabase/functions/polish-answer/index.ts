@@ -1,5 +1,6 @@
 import { getAiConfig } from "../_shared/ai-router.ts";
 import { stripDecorations } from "../_shared/format-answer.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +21,26 @@ const SYSTEM_PROMPT = `你是中文排版编辑。把用户给你的内容改写
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
+    // Require an authenticated caller so the AI quota cannot be consumed anonymously.
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    {
+      const userClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data: claims, error: cErr } = await userClient.auth.getClaims(authHeader.slice(7));
+      if (cErr || !claims?.claims?.sub) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     const { raw } = await req.json() as { raw: string };
     if (!raw || typeof raw !== "string") {
       return new Response(JSON.stringify({ error: "raw is required" }), {
