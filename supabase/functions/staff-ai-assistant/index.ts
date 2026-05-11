@@ -71,6 +71,8 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 
 const PROVENANCE_RULE = `\n11. 询问"某账号是谁导入的/什么时候创建的/什么时候导入的/导入来源/由谁创建"等问题，必须先调用 account_provenance；返回为空时如实回答"审计日志中没有该账号的导入记录"，绝不猜测。同名多人时把所有候选连同学号、院系、导入时间、导入人一并列出，提示用学号区分。`;
 
+const AIGC_RULE = `\n12. 涉及"AI 生成 / AIGC / 疑似 AI 图片 / 假图 / AI 鉴别"等问题：统计性问题（多少条/本周多少）必须调 query_stats，metric 选 aigc_fake_week / aigc_suspect_week / aigc_pending_total / aigc_overview；列名单类问题必须调 list_aigc_flagged。返回为空时如实回答"当前范围内无相关记录"，禁止编造。`;
+
 const IDENTITY_RULE = `\n10. 当用户问"我是谁/我叫什么/我什么角色/我哪个学院/我哪个部门/我邮箱"等关于自身身份的问题时，必须严格基于下方系统消息中"当前登录用户"段落如实回答（姓名、角色、所属学院等），绝不允许说不知道或编造。`;
 
 const FORMAT_GUIDE = `\n\n【输出格式】使用 markdown：第一行一句结论；之后用 ## 二级标题分段；列表用 -；并列信息 ≥5 行必须用表格。禁止一级标题、emoji、分割线、整篇代码块、寒暄过程语（如"我将为您查询…"）。
@@ -141,6 +143,10 @@ const TOOLS = [
               "keywords_overview",
               "certificate_types_overview",
               "submission_records_overview",
+              "aigc_fake_week",
+              "aigc_suspect_week",
+              "aigc_pending_total",
+              "aigc_overview",
             ],
           },
         },
@@ -208,6 +214,20 @@ const TOOLS = [
         type: "object",
         properties: { query: { type: "string", description: "姓名或学号" } },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_aigc_flagged",
+      description: "列出疑似 AI 生成图片材料的申请（aigc_status 为 fake/suspect），按概率倒序，最多 20 条。用于回答『本周/本月有哪些学生疑似提交 AI 图片』。",
+      parameters: {
+        type: "object",
+        properties: {
+          range: { type: "string", enum: ["week", "month"], description: "时间窗，默认 week" },
+          status: { type: "string", enum: ["fake", "suspect", "both"], description: "默认 both" },
+        },
       },
     },
   },
@@ -432,7 +452,96 @@ async function execTool(name: string, args: any, supabase: ReturnType<typeof cre
       });
       return { metric, value: total, by_event: byEvent };
     }
+    if (metric === "aigc_fake_week") {
+      const { count } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "fake")
+        .gte("submitted_at", weekAgo.toISOString());
+      return { metric, value: count ?? 0, range: "week" };
+    }
+    if (metric === "aigc_suspect_week") {
+      const { count } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "suspect")
+        .gte("submitted_at", weekAgo.toISOString());
+      return { metric, value: count ?? 0, range: "week" };
+    }
+    if (metric === "aigc_pending_total") {
+      const { count } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "pending");
+      return { metric, value: count ?? 0 };
+    }
+    if (metric === "aigc_overview") {
+      const statuses = ["fake", "suspect", "real", "pending", "skipped", "error"] as const;
+      const counts: Record<string, number> = {};
+      for (const s of statuses) {
+        const { count } = await supabase
+          .from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("aigc_status", s);
+        counts[s] = count ?? 0;
+      }
+      const { count: weekFake } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "fake")
+        .gte("submitted_at", weekAgo.toISOString());
+      const { count: weekSuspect } = await supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("aigc_status", "suspect")
+        .gte("submitted_at", weekAgo.toISOString());
+      const { data: scored } = await supabase
+        .from("applications")
+        .select("aigc_score")
+        .not("aigc_score", "is", null);
+      const arr = (scored ?? []).map((r: any) => Number(r.aigc_score)).filter((n) => !isNaN(n));
+      const avg = arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
+      return {
+        metric,
+        ...counts,
+        week_fake: weekFake ?? 0,
+        week_suspect: weekSuspect ?? 0,
+        avg_score_pct: Number((avg * 100).toFixed(1)),
+      };
+    }
     return { metric, value: 0 };
+  }
+
+  if (name === "list_aigc_flagged") {
+    const range = String(args?.range || "week");
+    const status = String(args?.status || "both");
+    const since = new Date();
+    since.setDate(since.getDate() - (range === "month" ? 30 : 7));
+    const statusFilter =
+      status === "fake" ? ["fake"] : status === "suspect" ? ["suspect"] : ["fake", "suspect"];
+    const { data: apps } = await supabase
+      .from("applications")
+      .select("id, student_id, aigc_status, aigc_score, submitted_at, description")
+      .in("aigc_status", statusFilter)
+      .gte("submitted_at", since.toISOString())
+      .order("aigc_score", { ascending: false })
+      .limit(20);
+    const ids = Array.from(new Set((apps ?? []).map((a: any) => a.student_id)));
+    const { data: profs } = ids.length
+      ? await supabase.from("profiles").select("user_id, full_name, student_no").in("user_id", ids)
+      : { data: [] as any[] };
+    const pmap = new Map<string, any>();
+    (profs ?? []).forEach((p: any) => pmap.set(p.user_id, p));
+    const items = (apps ?? []).map((a: any) => ({
+      application_id: a.id,
+      student_name: pmap.get(a.student_id)?.full_name ?? "—",
+      student_no: pmap.get(a.student_id)?.student_no ?? "—",
+      aigc_status: a.aigc_status,
+      aigc_score_pct: typeof a.aigc_score === "number" ? Number((a.aigc_score * 100).toFixed(1)) : null,
+      submitted_at: a.submitted_at,
+      description: (a.description || "").slice(0, 60),
+    }));
+    return { range, status, count: items.length, items };
   }
 
   if (name === "student_full_profile") {
@@ -683,7 +792,7 @@ Deno.serve(async (req) => {
     const model = aiCfg.model;
     const provider = aiCfg.vendor;
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
