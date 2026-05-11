@@ -264,7 +264,30 @@ const TOOLS = [
   },
 ];
 
-async function execTool(name: string, args: any, supabase: ReturnType<typeof createClient>, userRole: string = "admin") {
+type CallerCtx = {
+  userRole: string; // 'super_admin' | 'admin' | 'teacher'
+  collegeId: string | null;
+  isSuper: boolean;
+};
+
+async function execTool(
+  name: string,
+  args: any,
+  supabase: ReturnType<typeof createClient>,
+  ctx: CallerCtx,
+) {
+  const { userRole, collegeId, isSuper } = ctx;
+  // 在调用方为学院管理员/教师时，把所有学院范围内的 student user_id 预取出来，
+  // 用于过滤没有 college_id 列的表（如 user_roles 已有，但 application_reviews 没有）。
+  const fetchScopedStudentIds = async (): Promise<string[] | null> => {
+    if (isSuper || !collegeId) return null;
+    const { data } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", "student")
+      .eq("college_id", collegeId);
+    return Array.from(new Set((data || []).map((r: any) => r.user_id))).filter(Boolean);
+  };
   if (name === "navigate_to") {
     return { ok: true, path: String(args?.path || "") };
   }
