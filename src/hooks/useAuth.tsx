@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { handleAuthExpired } from "@/lib/sessionGuard";
 
 type AppRole = "super_admin" | "admin" | "teacher" | "student";
 
@@ -39,7 +40,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     // Set up listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
@@ -48,6 +49,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else {
         setRoles([]);
         setCollegeId(null);
+        // Token refresh failed (newSession === null on TOKEN_REFRESHED) or
+        // server-side sign-out arrived → kick to /login (unless already there).
+        if (
+          (event === "TOKEN_REFRESHED" || event === "SIGNED_OUT") &&
+          typeof window !== "undefined" &&
+          !window.location.pathname.startsWith("/login")
+        ) {
+          setTimeout(() => { void handleAuthExpired(); }, 0);
+        }
       }
     });
 
