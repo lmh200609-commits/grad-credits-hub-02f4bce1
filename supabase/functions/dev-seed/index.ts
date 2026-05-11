@@ -85,12 +85,6 @@ Deno.serve(async (req) => {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    void admin; // keep type
-    // Re-bind admin var (no-op), keep original code path
-    const _adminUnused = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
 
     // Parse mode
     let mode = "default";
