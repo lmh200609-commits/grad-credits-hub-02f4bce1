@@ -236,13 +236,28 @@ Deno.serve(async (req) => {
         aigc_provider: `aliyun:${service}`,
       }).eq("id", application_id);
 
+    // 当 AIGC 跳过 / 出错时，若 AI 评估本意是自动通过，则就此兑现。
+    const promoteIfIntended = async () => {
+      if (app.ai_intended_auto_approve && app.status === "pending_review") {
+        await admin.from("applications").update({
+          status: "auto_approved",
+          final_credit: app.ai_suggested_credit,
+          reviewed_at: new Date().toISOString(),
+          review_source: "ai",
+          ai_intended_auto_approve: false,
+        }).eq("id", application_id);
+      }
+    };
+
     if (!enabled) {
       await writeResult({ aigc_status: "skipped", aigc_score: null, aigc_detail: { reason: "disabled by college config" } });
+      await promoteIfIntended();
       return json({ status: "skipped", note: "AIGC 检测已被学院关闭" });
     }
 
     if (!app.file_path || !IMAGE_EXT.test(app.file_path)) {
       await writeResult({ aigc_status: "skipped", aigc_score: null, aigc_detail: { reason: "not an image" } });
+      await promoteIfIntended();
       return json({ status: "skipped", note: "非图片附件，无需 AIGC 检测" });
     }
 
@@ -250,6 +265,7 @@ Deno.serve(async (req) => {
     const imageUrl = signed?.signedUrl;
     if (!imageUrl) {
       await writeResult({ aigc_status: "error", aigc_detail: { reason: "no signed url" } });
+      await promoteIfIntended();
       return json({ status: "error", note: "无法生成图片访问链接" });
     }
 
@@ -257,6 +273,7 @@ Deno.serve(async (req) => {
     if (!aly.ok || (aly.raw?.Code && aly.raw.Code !== 200)) {
       const msg = `阿里云 [${aly.status}] ${JSON.stringify(aly.raw).slice(0, 300)}`;
       await writeResult({ aigc_status: "error", aigc_detail: { error: msg, request_id: aly.requestId } });
+      await promoteIfIntended();
       return json({ status: "error", note: msg }, 500);
     }
 
