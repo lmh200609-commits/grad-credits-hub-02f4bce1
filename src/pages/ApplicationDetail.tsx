@@ -29,6 +29,24 @@ import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
+// 把后端/Supabase 的英文错误信息翻译成简体中文，避免 RLS / JWT 等英文消息直接弹给用户
+function friendlyError(err: any): string {
+  const msg = (err?.message || String(err || "")).toLowerCase();
+  if (msg.includes("row-level security") || msg.includes("permission denied") || msg.includes("not authorized")) {
+    return "当前申请已结案或你无权发起此操作";
+  }
+  if (msg.includes("jwt") || msg.includes("expired") || msg.includes("invalid token")) {
+    return "登录已过期，请重新登录";
+  }
+  if (msg.includes("duplicate key") || msg.includes("uniq_review_dedup")) {
+    return "请勿重复提交相同的复核结果";
+  }
+  if (msg.includes("network") || msg.includes("failed to fetch")) {
+    return "网络异常，请稍后再试";
+  }
+  return err?.message || "操作失败";
+}
+
 type App = {
   id: string;
   student_id: string;
