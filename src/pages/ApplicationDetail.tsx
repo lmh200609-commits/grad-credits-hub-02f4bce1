@@ -29,6 +29,24 @@ import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
+// 把后端/Supabase 的英文错误信息翻译成简体中文，避免 RLS / JWT 等英文消息直接弹给用户
+function friendlyError(err: any): string {
+  const msg = (err?.message || String(err || "")).toLowerCase();
+  if (msg.includes("row-level security") || msg.includes("permission denied") || msg.includes("not authorized")) {
+    return "当前申请已结案或你无权发起此操作";
+  }
+  if (msg.includes("jwt") || msg.includes("expired") || msg.includes("invalid token")) {
+    return "登录已过期，请重新登录";
+  }
+  if (msg.includes("duplicate key") || msg.includes("uniq_review_dedup")) {
+    return "请勿重复提交相同的复核结果";
+  }
+  if (msg.includes("network") || msg.includes("failed to fetch")) {
+    return "网络异常，请稍后再试";
+  }
+  return err?.message || "操作失败";
+}
+
 type App = {
   id: string;
   student_id: string;
@@ -205,7 +223,7 @@ const ApplicationDetail = () => {
       credit: decision === "approved" ? credit : null,
       note: note.trim() || null,
     });
-    if (re) return toast({ title: "保存失败", description: re.message, variant: "destructive" });
+    if (re) return toast({ title: "保存失败", description: friendlyError(re), variant: "destructive" });
 
     const { error: ue } = await supabase
       .from("applications")
@@ -217,7 +235,7 @@ const ApplicationDetail = () => {
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", app.id);
-    if (ue) return toast({ title: "更新失败", description: ue.message, variant: "destructive" });
+    if (ue) return toast({ title: "更新失败", description: friendlyError(ue), variant: "destructive" });
 
     // 人工通过时：检查该关键词组合是否已有完全匹配的规则或案例，没有则沉淀到案例库
     if (decision === "approved") {
@@ -338,7 +356,7 @@ const ApplicationDetail = () => {
       .update({ status: "pending_review", review_source: "student_appeal" })
       .eq("id", app.id)
       .select("id, status");
-    if (error) return toast({ title: "申请失败", description: error.message, variant: "destructive" });
+    if (error) return toast({ title: "申请失败", description: friendlyError(error), variant: "destructive" });
     if (!data || data.length === 0) {
       return toast({
         title: "申请未生效",
@@ -869,8 +887,17 @@ const ApplicationDetail = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <Label>最终学分（通过时必填）</Label>
-                <Input type="number" step="0.5" value={credit} onChange={(e) => setCredit(Number(e.target.value))} />
+                <Label>最终学分（通过时必填，仅支持键盘输入）</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  value={credit}
+                  onChange={(e) => setCredit(Number(e.target.value))}
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault();
+                  }}
+                />
               </div>
               <div>
                 <Label>复核备注</Label>
