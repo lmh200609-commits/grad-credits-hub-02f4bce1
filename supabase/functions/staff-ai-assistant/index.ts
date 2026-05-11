@@ -83,6 +83,27 @@ const CHINESE_ONLY_RULE = `\n13. 全程使用纯简体中文回答。严禁在�
 
 const NO_PATH_RULE = `\n14. 当工具返回 navigate_path 或你已请求 navigate_to 时，前端会自动渲染"跳转"按钮。回答正文中严禁出现任何 URL、路径片段（包括 /admin/...、/teacher/...、/applications/... 等）和英文查询参数（如 ?passFilter=fail、?status=pending_review、?dept=xxx）。请只用一句简体中文描述用户应该做什么，例如"已为你定位到不合格学生名单，可点击下方按钮进入"或"已找到对应申请，点击下方按钮查看详情"。禁止把路径作为代码块、行内代码或纯文本展示给用户。`;
 
+// 兜底：从模型最终答复中剥离裸 URL / 路径片段 / markdown 链接，避免出现 "/admin/credits?passFilter=fail" 这类英文路径
+function stripPathsFromAnswer(text: string): string {
+  if (!text) return text;
+  let out = text;
+  // markdown 链接 [文本](/path) -> 文本
+  out = out.replace(/\[([^\]]+)\]\((?:https?:\/\/[^\s)]+|\/[^\s)]*)\)/g, "$1");
+  // 行内/裸链接：http(s)://...
+  out = out.replace(/https?:\/\/\S+/g, "");
+  // 行内反引号包裹的路径 `/admin/xxx`
+  out = out.replace(/`\/[A-Za-z0-9_\-/?=&%.]+`/g, "");
+  // 裸路径 /admin/credits?passFilter=fail 等
+  out = out.replace(/(^|[\s（(：:，,。;；])\/[A-Za-z][A-Za-z0-9_\-/]*(?:\?[A-Za-z0-9_\-=&%.]+)?/g, "$1");
+  // 裸 query 串 ?passFilter=fail
+  out = out.replace(/\?[A-Za-z][A-Za-z0-9_\-]*=\S+/g, "");
+  // 清理冒号后空白、双空格、孤立标点
+  out = out.replace(/[：:]\s*(?=$|[\n。；;])/gm, "");
+  out = out.replace(/[ \t]{2,}/g, " ");
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return out.trim();
+}
+
 const IDENTITY_RULE = `\n10. 当用户问"我是谁/我叫什么/我什么角色/我哪个学院/我哪个部门/我邮箱"等关于自身身份的问题时，必须严格基于下方系统消息中"当前登录用户"段落如实回答（姓名、角色、所属学院等），绝不允许说不知道或编造。`;
 
 const FORMAT_GUIDE = `\n\n【输出格式】使用 markdown：第一行一句结论；之后用 ## 二级标题分段；列表用 -；并列信息 ≥5 行必须用表格。禁止一级标题、emoji、分割线、整篇代码块、寒暄过程语（如"我将为您查询…"）。
