@@ -921,6 +921,9 @@ Deno.serve(async (req) => {
     }
     let identityBlock = "";
     let uid: string | undefined;
+    let serverRole: "super_admin" | "admin" | "teacher" = "teacher";
+    let callerCollegeId: string | null = null;
+    let isSuperResolved = false;
     {
       const token = authHeader.slice(7);
       const userClient = createClient(
@@ -936,13 +939,20 @@ Deno.serve(async (req) => {
         });
       }
       const { data: callerRoles } = await supabase
-        .from("user_roles").select("role").eq("user_id", uid)
+        .from("user_roles").select("role,college_id").eq("user_id", uid)
         .in("role", ["teacher", "admin", "super_admin"]);
       if (!callerRoles || callerRoles.length === 0) {
         return new Response(JSON.stringify({ error: "Forbidden: staff only" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      // 服务端权威解析角色与学院范围（不信任客户端 body.role）
+      const allRoles = (callerRoles || []).map((r: any) => r.role);
+      isSuperResolved = allRoles.includes("super_admin");
+      serverRole = isSuperResolved ? "super_admin" : (allRoles.includes("admin") ? "admin" : "teacher");
+      const collegeFromRoles = (callerRoles || [])
+        .map((r: any) => r.college_id)
+        .find((x: any) => !!x) || null;
       try {
         if (uid) {
           const [{ data: prof }, { data: ur }] = await Promise.all([
@@ -952,6 +962,7 @@ Deno.serve(async (req) => {
           const roles = (ur || []).map((r: any) => r.role);
           const collegeIds = Array.from(new Set((ur || []).map((r: any) => r.college_id).filter(Boolean)));
           const cid = (prof as any)?.college_id || collegeIds[0];
+          callerCollegeId = isSuperResolved ? null : (cid || collegeFromRoles || null);
           let collegeName = "（未绑定学院）";
           if (cid) {
             const { data: col } = await supabase.from("colleges").select("name,short_name").eq("id", cid).maybeSingle();
