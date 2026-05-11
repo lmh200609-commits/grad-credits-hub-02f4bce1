@@ -899,7 +899,8 @@ Deno.serve(async (req) => {
   try {
     const body = (await req.json()) as { messages: Msg[]; role?: string };
     const messages = body.messages || [];
-    const userRole = body.role || "teacher";
+    const clientRoleHint = body.role || "teacher";
+    let userRole = clientRoleHint; // 之后会被服务端解析覆盖
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "messages 不能为空" }), {
@@ -984,7 +985,10 @@ Deno.serve(async (req) => {
     const model = aiCfg.model;
     const provider = aiCfg.vendor;
 
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}` };
+    // 服务端权威角色覆盖客户端声明
+    userRole = serverRole;
+    const ctx: CallerCtx = { userRole, collegeId: callerCollegeId, isSuper: isSuperResolved };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
@@ -1028,7 +1032,7 @@ Deno.serve(async (req) => {
         for (const tc of toolCalls) {
           let args: any = {};
           try { args = JSON.parse(tc.function?.arguments || "{}"); } catch { args = {}; }
-          const result = await execTool(tc.function?.name, args, supabase, userRole);
+          const result = await execTool(tc.function?.name, args, supabase, ctx);
 
           if (tc.function?.name === "navigate_to" && (result as any).path) {
             action = { type: "navigate", payload: { path: (result as any).path } };
