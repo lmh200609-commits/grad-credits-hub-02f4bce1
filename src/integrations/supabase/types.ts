@@ -293,6 +293,7 @@ export type Database = {
           ai_detected_school: string | null
           ai_detected_student_no: string | null
           ai_identity_mismatch: string | null
+          ai_intended_auto_approve: boolean
           ai_last_attempt_at: string | null
           ai_last_error: string | null
           ai_logic_issue: string | null
@@ -347,6 +348,7 @@ export type Database = {
           ai_detected_school?: string | null
           ai_detected_student_no?: string | null
           ai_identity_mismatch?: string | null
+          ai_intended_auto_approve?: boolean
           ai_last_attempt_at?: string | null
           ai_last_error?: string | null
           ai_logic_issue?: string | null
@@ -401,6 +403,7 @@ export type Database = {
           ai_detected_school?: string | null
           ai_detected_student_no?: string | null
           ai_identity_mismatch?: string | null
+          ai_intended_auto_approve?: boolean
           ai_last_attempt_at?: string | null
           ai_last_error?: string | null
           ai_logic_issue?: string | null
