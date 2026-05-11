@@ -158,6 +158,27 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // Require an authenticated session for all callers (prevents anonymous use of the AI quota
+    // and unauthenticated reads of rules/cases via the service role key).
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    {
+      const userClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data: claims, error: cErr } = await userClient.auth.getClaims(authHeader.slice(7));
+      if (cErr || !claims?.claims?.sub) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     const body = (await req.json()) as { messages: Msg[] };
     const messages = body.messages;
 
@@ -191,7 +212,6 @@ Deno.serve(async (req) => {
     let myProfile: any = null;
     let mySummary = "";
     let identityBlock = "";
-    const authHeader = req.headers.get("Authorization") || "";
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
       try {
