@@ -106,7 +106,14 @@ const MyApplications = () => {
   };
 
   const flaggedRows = rows.filter((r) => r.aigc_status === "fake" || r.aigc_status === "suspect");
-  const firstFlaggedId = flaggedRows[0]?.id;
+  const fakeCount = flaggedRows.filter((r) => r.aigc_status === "fake").length;
+  const suspectCount = flaggedRows.filter((r) => r.aigc_status === "suspect").length;
+  // 概率最高的一条（按 aigc_score 降序，未知概率视为 0）
+  const topFlagged = flaggedRows
+    .slice()
+    .sort((a, b) => (b.aigc_score ?? 0) - (a.aigc_score ?? 0))[0];
+  const topPct =
+    typeof topFlagged?.aigc_score === "number" ? (topFlagged.aigc_score * 100).toFixed(1) : null;
 
   return (
     <AppLayout>
@@ -116,20 +123,30 @@ const MyApplications = () => {
           <Button size="sm" onClick={() => navigate("/apply")}>新申请</Button>
         </div>
         {flaggedRows.length > 0 && (
-          <div className="rounded-md border-l-4 border-l-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            <div className="flex items-center gap-2">
+          <div className="rounded-md border-l-4 border-l-destructive bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <ShieldAlert className="h-4 w-4 shrink-0" />
               <span className="font-medium">
-                检测到 {flaggedRows.length} 条申请的图片疑似 AI 生成，请尽快处理
+                检测到 {flaggedRows.length} 条申请的图片疑似 AI 生成
               </span>
-              {firstFlaggedId && (
+              <span className="text-xs opacity-80">
+                {fakeCount > 0 && <>高风险 {fakeCount} 条</>}
+                {fakeCount > 0 && suspectCount > 0 && <> · </>}
+                {suspectCount > 0 && <>嫌疑 {suspectCount} 条</>}
+              </span>
+              {topPct && topFlagged && (
+                <span className="text-xs opacity-80">
+                  · 最高概率 <span className="font-semibold">{topPct}%</span>（{getAppTitle(topFlagged)}）
+                </span>
+              )}
+              {topFlagged && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="ml-auto h-7 px-2 text-destructive hover:text-destructive"
-                  onClick={() => navigate(`/applications/${firstFlaggedId}`)}
+                  className="ml-auto h-7 px-2 text-destructive hover:bg-destructive/15 hover:text-destructive"
+                  onClick={() => navigate(`/applications/${topFlagged.id}`)}
                 >
-                  查看首条 ›
+                  查看最高概率申请 ›
                 </Button>
               )}
             </div>
