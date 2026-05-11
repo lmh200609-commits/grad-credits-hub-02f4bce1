@@ -1,40 +1,43 @@
-# 修复：上传院徽自动应用主题 + 解决"看不到变化"
+# 修复：上传院徽 RLS 拒绝（new row violates row-level security policy）
 
 ## 根因
-1. **403 上传失败**：你账号 `user_roles.role=admin`，但 `profiles.college_id` 为 `NULL`。`college-badges` 桶的 INSERT 策略要求 `(storage.foldername(name))[1] = current_user_college_id()::text`，NULL ≠ `'d66aa1e4-...'`，所以上传被拒，`badge_url` 实际没换。
-2. **主题"应用了但没变化"**：`colleges.theme` 被写入了非法值 `primary:"00000" / background:"00000"`，`useCollegeTheme` 的 `isValidHsl` 校验失败，跳过 `setProperty`，UI 回退默认。
-3. **诉求变更**：撤销上一版弹窗，改回上传即自动提取并应用。
+`storage.objects` 上 `college-badges` 桶的 3 条策略（INSERT/UPDATE/DELETE）使用了 `public.current_user_college_id()` 和 `public.has_role()` 这两个 SECURITY DEFINER 函数。Postgres 数据校验显示：
 
-## 修改
+- `authenticator` / `supabase_storage_admin` 角色对这两个函数 **没有 EXECUTE 权限**
+- 因此 storage 在评估 RLS 时函数调用直接失败，`WITH CHECK` 判为 false，返回 403
 
-### 1. `src/pages/admin/Branding.tsx`（撤销弹窗，恢复自动应用 + 健壮化）
-- 删除 `extractOpen` / `extracted` state 和确认弹窗 UI。
-- `onFile` 流程：
-  1. 上传文件到 storage；
-  2. 取 `publicUrl`；
-  3. `extractPaletteFromImage(url)` 提取，加入合法性校验（用同一份 `isValidHsl` 正则；非法字段丢弃）；
-  4. `newTheme = { ...theme, ...validPalette }`；
-  5. 一次 `update({ badge_url, theme: newTheme })` 写库；
-  6. `setTheme(newTheme)` + `load()`，toast「院徽已上传，主题已自动更新」。
-- 由于 `useCollegeTheme` 已订阅 `colleges` 表的 realtime UPDATE，写库后全学院用户都会自动重新拉取并应用，无需手动刷新。
+而 `application-files` 桶的策略只用 `auth.uid()`，所以学生上传 PDF 不受影响。
 
-### 2. 修正历史脏数据（一次性 SQL 迁移）
-- 把 `colleges.theme` 中所有不符合 `^\d{1,3}(\.\d+)?\s+\d{1,3}(\.\d+)?%\s+\d{1,3}(\.\d+)?%$` 格式的 `primary / accent / background` 字段清掉（用 `theme - 'primary'` 之类操作），让前端走默认主题，避免下次提取被错误的旧值挡住可视效果。
-- 范围：所有 `colleges` 行，仅删除非法字段；合法字段保留。
+## 修改（一次 SQL 迁移）
 
-### 3. 解决上传 403：让管理员账号绑定学院
-- 由于你账号 `profiles.college_id IS NULL`，在 SQL 迁移中**不**自动绑定（避免误绑），改为：
-  - 在 `Branding` 页面顶部增加一段提示卡（仅当 `useAuth().collegeId` 为 null 时显示）：「当前账号未绑定学院，无法上传院徽 / 修改主题，请联系超级管理员在「用户管理」中将账号绑定到对应学院」并禁用上传按钮。
-- 这样可以避免静默 403 的困惑；真正的绑定动作走超级管理员现有的用户管理界面（已存在）。
-- 不修改 RLS 策略本身。
+重写 `college-badges` 桶的 3 条策略，**不再调用 SECURITY DEFINER 函数**，改为内联子查询直接读 `user_roles`：
+
+- DROP 现有 3 条策略：`college-badges admin write` / `... admin update` / `... admin delete`
+- 新建 INSERT 策略：
+  ```sql
+  CREATE POLICY "college-badges admin write" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'college-badges'
+    AND EXISTS (
+      SELECT 1 FROM public.user_roles ur
+      WHERE ur.user_id = auth.uid()
+        AND (
+          ur.role = 'super_admin'
+          OR (ur.role = 'admin'
+              AND ur.college_id IS NOT NULL
+              AND ur.college_id::text = (storage.foldername(name))[1])
+        )
+    )
+  );
+  ```
+- UPDATE 与 DELETE 用相同的内联表达式分别作为 USING / WITH CHECK。
+- 桶仍保持 `public: true`，下载走公开 URL，无需新增 SELECT 策略。
 
 ## 不改动
-- `extractPaletteFromImage`（输出已是合法 HSL）；
-- `usePreviewTheme` / `useCollegeTheme` 应用逻辑；
-- 存储桶策略；
-- 数据库结构（仅清洗一行 JSON 字段）。
+- `application-files` 桶的策略；
+- `current_user_college_id` / `has_role` 函数本身（其它表的 RLS 仍正常使用）；
+- 前端代码（上一轮已恢复"上传即应用"逻辑，无需再改）。
 
 ## 验收
-1. 用一个已绑定学院的 admin 账号上传新院徽 → toast 显示已自动提取 → 侧边栏 / 按钮主色立刻变化；其他学院不受影响。
-2. 未绑定学院的 admin 进入 `/admin/branding` 看到提示卡，上传按钮禁用，不再出现 403 toast。
-3. 旧的 `00000` 脏数据被清掉后，原来"看不到变化"的学院首次上传即可正常生效。
+- 国际经济与贸易学院管理员重新上传院徽 → 不再弹出 RLS 报错 → 自动提取主色并刷新 UI 主题。
