@@ -76,6 +76,11 @@ const AIGC_RULE = `\n12. 涉及"AI 生成 / AIGC / 疑似 AI 图片 / 假图 / A
 - 学生姓名（学号） · 状态 · 概率 X% · 提交时间 YYYY-MM-DD HH:mm · 申请编号末 8 位
 提交时间只保留到分钟；申请编号只显示末 8 位（如 a994cfc5）。`;
 
+const CHINESE_ONLY_RULE = `\n13. 全程使用纯简体中文回答。严禁在用户可见文本中出现任何英文字段名、英文枚举值、英文表名、英文变量名（包括但不限于 aigc_status / aigc_score / aigc_score_pct / submitted_at / student_id / student_no / student_name / application_id / college_id / fake / suspect / real / pending / skipped / error / approved / rejected / pending_ai / pending_review / auto_approved / rejected_by_ai / applications / profiles / user_roles）。必须翻译为中文：
+- 状态：fake→高风险，suspect→嫌疑，real→通过，pending→待检测，skipped→跳过，error→检测失败；approved→已通过，auto_approved→系统自动通过，rejected→已驳回，rejected_by_ai→AI 初审驳回，pending_ai→AI 审中，pending_review→待教师复核。
+- 字段：aigc_score / aigc_score_pct→AI 生成概率；submitted_at→提交时间；student_no→学号；student_name→姓名；application_id→申请编号（仅展示末 8 位）；college_id→学院；description→申请描述。
+如必须保留原始申请编号，只展示末 8 位（例如 a994cfc5），不要整段 UUID。`;
+
 const IDENTITY_RULE = `\n10. 当用户问"我是谁/我叫什么/我什么角色/我哪个学院/我哪个部门/我邮箱"等关于自身身份的问题时，必须严格基于下方系统消息中"当前登录用户"段落如实回答（姓名、角色、所属学院等），绝不允许说不知道或编造。`;
 
 const FORMAT_GUIDE = `\n\n【输出格式】使用 markdown：第一行一句结论；之后用 ## 二级标题分段；列表用 -；并列信息 ≥5 行必须用表格。禁止一级标题、emoji、分割线、整篇代码块、寒暄过程语（如"我将为您查询…"）。
