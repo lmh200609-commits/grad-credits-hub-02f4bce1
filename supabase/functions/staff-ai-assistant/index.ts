@@ -655,13 +655,15 @@ async function execTool(
     since.setDate(since.getDate() - (range === "month" ? 30 : 7));
     const statusFilter =
       status === "fake" ? ["fake"] : status === "suspect" ? ["suspect"] : ["fake", "suspect"];
-    const { data: apps } = await supabase
+    let aq = supabase
       .from("applications")
       .select("id, student_id, aigc_status, aigc_score, submitted_at, description")
       .in("aigc_status", statusFilter)
       .gte("submitted_at", since.toISOString())
       .order("aigc_score", { ascending: false })
       .limit(20);
+    if (!isSuper && collegeId) aq = aq.eq("college_id", collegeId);
+    const { data: apps } = await aq;
     const ids = Array.from(new Set((apps ?? []).map((a: any) => a.student_id)));
     const { data: profs } = ids.length
       ? await supabase.from("profiles").select("user_id, full_name, student_no").in("user_id", ids)
