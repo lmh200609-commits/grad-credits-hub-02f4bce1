@@ -101,6 +101,7 @@ const ApplicationDetail = () => {
   const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
   const [preparing, setPreparing] = useState(false);
   const [materialPreviewOpen, setMaterialPreviewOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -172,8 +173,25 @@ const ApplicationDetail = () => {
 
   const decide = async (decision: "approved" | "rejected") => {
     if (!app) return;
+    if (submitting) return;
     if (decision === "approved" && (!credit || credit <= 0)) {
       return toast({ title: "请填写最终学分", variant: "destructive" });
+    }
+    setSubmitting(true);
+    try {
+    // 幂等校验：若该申请已被本人在 30 秒内处理过，禁止重复写入
+    const { data: cur } = await supabase
+      .from("applications")
+      .select("status, final_reviewer_id, reviewed_at")
+      .eq("id", app.id)
+      .single();
+    if (cur && (cur.status === "approved" || cur.status === "rejected")) {
+      const recent =
+        cur.reviewed_at && Date.now() - new Date(cur.reviewed_at).getTime() < 30_000;
+      if (cur.final_reviewer_id === user?.id && recent) {
+        toast({ title: "已处理，无需重复操作" });
+        return;
+      }
     }
     const action = hasRole("admin") ? "admin_review" : "teacher_review";
     const wasRejectedByAi = app.status === "rejected_by_ai";
@@ -305,10 +323,16 @@ const ApplicationDetail = () => {
       toast({ title: "已驳回" });
     }
     load();
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const requestManualReview = async () => {
     if (!app) return;
+    if (submitting) return;
+    setSubmitting(true);
+    try {
     const { data, error } = await supabase
       .from("applications")
       .update({ status: "pending_review", review_source: "student_appeal" })
@@ -324,6 +348,9 @@ const ApplicationDetail = () => {
     }
     toast({ title: "已转人工复核", description: "教师将尽快处理" });
     load();
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const [retrying, setRetrying] = useState(false);
@@ -646,10 +673,10 @@ const ApplicationDetail = () => {
               <Button
                 onClick={requestManualReview}
                 variant="outline"
-                disabled={app.status === "pending_review"}
+                disabled={submitting || app.status === "pending_review"}
                 title={app.status === "pending_review" ? "本轮人工复核已提交，请等待教师处理" : undefined}
               >
-                {app.status === "pending_review" ? "已提交人工复核，等待教师处理" : "申请人工复核"}
+                {submitting ? "处理中…" : (app.status === "pending_review" ? "已提交人工复核，等待教师处理" : "申请人工复核")}
               </Button>
             </CardContent>
           </Card>
@@ -674,12 +701,14 @@ const ApplicationDetail = () => {
               <Button
                 onClick={requestManualReview}
                 variant="outline"
-                disabled={app.status === "pending_review"}
+                disabled={submitting || app.status === "pending_review"}
                 title={app.status === "pending_review" ? "本轮人工复核已提交，请等待教师处理" : undefined}
               >
-                {app.status === "pending_review"
-                  ? "已提交人工复核，等待教师处理"
-                  : "申请二次人工复核"}
+                {submitting
+                  ? "处理中…"
+                  : (app.status === "pending_review"
+                    ? "已提交人工复核，等待教师处理"
+                    : "申请二次人工复核")}
               </Button>
             </CardContent>
           </Card>
@@ -848,8 +877,12 @@ const ApplicationDetail = () => {
                 <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} />
               </div>
               <div className="flex gap-2">
-                <Button onClick={() => decide("approved")}><Check className="mr-1 h-4 w-4" /> 通过</Button>
-                <Button variant="destructive" onClick={() => decide("rejected")}><X className="mr-1 h-4 w-4" /> 驳回</Button>
+                <Button onClick={() => decide("approved")} disabled={submitting}>
+                  <Check className="mr-1 h-4 w-4" /> {submitting ? "处理中…" : "通过"}
+                </Button>
+                <Button variant="destructive" onClick={() => decide("rejected")} disabled={submitting}>
+                  <X className="mr-1 h-4 w-4" /> {submitting ? "处理中…" : "驳回"}
+                </Button>
               </div>
             </CardContent>
           </Card>

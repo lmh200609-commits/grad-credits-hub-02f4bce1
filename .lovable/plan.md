@@ -1,54 +1,45 @@
-# 修复"加载 AI 鉴别数据失败 / JWT expired"反复弹窗
+## 三个问题修复
 
-## 问题本质
+### 1. 教师/管理员重复点击「通过/驳回」会写入多条复核记录
 
-浏览器里的登录会话过期（`refresh_token` 也已失效），但应用没有感知，仍在用旧 JWT 发请求；`AigcStatsPanel` 因为带 10 秒轮询，所以每 10 秒弹一次 toast。这是一个会影响所有带轮询/Realtime 页面的全局问题，需要在公共层修复，而不是只补 AIGC 面板。
+**现象**：在 `src/pages/ApplicationDetail.tsx` 的 `decide()` 中，按钮无 loading 状态、无幂等校验，快速连击会向 `application_reviews` 插入多条相同记录（截图所见 6 条「教师复核 已通过 学分5.5 SB」）。`applications.status/final_credit` 仅以最后一次为准，所以总学分正确，但审核记录列表视觉污染。
 
-## 方案（共三处改动，均为前端）
+**修改**（仅前端，业务逻辑不变）：
 
-### 1. 新建公共会话守卫 `src/lib/sessionGuard.ts`
+- 增加 `submitting` state；进入 `decide()` 时若 `submitting===true` 直接 return；`finally` 中复位。
+- 增加幂等门：进入 `decide()` 先重新查一次 `applications` 当前 `status`，若已是 `approved` / `rejected`（且本人是 `final_reviewer_id`，30 秒内）则提示「已处理，无需重复操作」并 return。
+- 「通过」「驳回」「转人工」按钮加 `disabled={submitting}` 与「处理中…」文案。
+- `requestManualReview()` 同样加 `submitting` 守卫，避免学生端连点。
 
-提供两个工具：
+### 2. 学生「我的档案 → 基本信息」不允许修改（证件照仍可修改）
 
-- `isJwtExpiredError(err)` — 判断 Supabase 返回的 error 是否属于"JWT 失效/刷新失败"族（匹配 `JWT expired`、`Invalid Refresh Token`、`refresh_token_not_found`、`PGRST301` 等）。
-- `handleAuthExpired()` — 全局只触发一次：先尝试 `supabase.auth.refreshSession()`，成功就返回 `true`，让调用方安静地重试一次；失败则
-  - `supabase.auth.signOut()`，
-  - 弹一次 toast "登录已过期，请重新登录"（用模块级 `alreadyShown` flag 去重，避免轮询场景重复弹），
-  - `window.location.replace("/login?reason=expired")`。
+**修改**：`src/pages/student/MyProfile.tsx`
 
-### 2. `src/hooks/useAuth.tsx`：监听 token 刷新失败 / 登出
+- 「基本信息」卡片所有 `<Field>` 改为只读展示（`<Input value=... disabled />`）。
+- 移除「保存」按钮与 `save()` 调用。
+- **证件照卡片保持可上传/更换**（学生可能传错，需自助修正）。
+- 顶部 `CardDescription` 文案调整为「基本信息由学校统一维护，如有错误请联系辅导员；证件照可自行更换」。
 
-在 `onAuthStateChange` 里：
+### 3. 学生「我的档案」缺少修改密码入口
 
-- 收到 `TOKEN_REFRESHED` 且 `newSession` 为空，或收到 `SIGNED_OUT` 而当前路径不在 `/login`，调用 `handleAuthExpired()`，避免应用继续在登录页之外用空会话发请求。
+**修改**：在 `src/pages/student/MyProfile.tsx` 增加「修改密码」卡片：
 
-### 3. `src/components/AigcStatsPanel.tsx`：捕获过期错误，停止 toast 风暴
+- 字段：新密码、确认新密码（最少 6 位，两次一致校验）。
+- 按钮 `提交` → 调用 `supabase.auth.updateUser({ password })`。
+- 成功 toast「密码已更新」并清空字段；失败显示错误。
+- 提交期间按钮 disabled，避免连点。
 
-把 `load()` 里报错分支改成：
+> 注：Supabase 的 `updateUser` 不要求输入旧密码（依赖当前 session）。本次按最简实现。
 
-```ts
-if (error) {
-  if (await handleAuthExpired(error)) {
-    // 已尝试续签或跳转登录，无需弹"加载失败"
-    return;
-  }
-  toast({ title: "加载 AI 鉴别数据失败", description: error.message, variant: "destructive" });
-}
-```
+---
 
-`handleAuthExpired(error)` 内部判断：若不是 JWT 失效错误，直接返回 `false`，原 toast 照常走；若是，则按上面"先 refresh、否则跳登录"的逻辑处理，并返回 `true` 让调用方静默。
+### 技术细节
 
-> 同样的 3 行模式可以后续推广到其它带轮询的列表页（`Reviews.tsx`、`MyApplications.tsx` 等），但本次改动只先把弹窗源 `AigcStatsPanel` 改了，避免一次改动面太大。
+- 全部为前端改动，无需迁移、无需触发器。
+- 复核按钮防抖通过 React state 实现；配合现有 `application_reviews` realtime 订阅会自然刷新去重 UI。
+- 基本信息字段（姓名/学号/院系/专业/班级/身份证/手机号/性别/民族/政治面貌/出生日期/入学年份/辅导员/公寓/宿舍/床号）一律 disabled；证件照仍可上传。
 
-## 不改动 / 不涉及
+### 涉及文件
 
-- **不改后端**、不改 edge functions、不改数据库；这是纯客户端会话管理问题。
-- 不调整 `useRealtimeTable` 的轮询间隔——它本身行为是对的，错的是没人处理鉴权失败。
-- 不动 supabase client 的 `autoRefreshToken` 配置；该配置仍有用，只是在它失败时我们多兜一层。
-
-## 验证
-
-实现后：
-
-1. 在浏览器 DevTools → Application → Local Storage 把 `sb-...-auth-token` 的 `expires_at` 改成已过期的时间戳，刷新 `/admin/dashboard`：应在第一次 toast 之后立即被带去 `/login?reason=expired`，而不是每 10 秒重复弹。
-2. 正常使用页面（未过期）行为完全不变，仍能正常加载数据 + Realtime 推送。
+- `src/pages/ApplicationDetail.tsx`
+- `src/pages/student/MyProfile.tsx`

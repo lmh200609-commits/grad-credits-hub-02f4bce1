@@ -34,9 +34,11 @@ const MyProfile = () => {
   const { user } = useAuth();
   const [p, setP] = useState<Profile | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [pwd, setPwd] = useState("");
+  const [pwd2, setPwd2] = useState("");
+  const [pwdSaving, setPwdSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -63,33 +65,20 @@ const MyProfile = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const save = async () => {
-    if (!user || !p) return;
-    setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        full_name: p.full_name?.trim() || null,
-        student_no: p.student_no?.trim() || null,
-        department: p.department?.trim() || null,
-        major: p.major?.trim() || null,
-        class_name: p.class_name?.trim() || null,
-        id_card: p.id_card?.trim() || null,
-        phone: p.phone?.trim() || null,
-        gender: p.gender?.trim() || null,
-        ethnicity: p.ethnicity?.trim() || null,
-        political_status: p.political_status?.trim() || null,
-        birth_date: p.birth_date?.trim() || null,
-        enrollment_year: p.enrollment_year ?? null,
-        advisor: p.advisor?.trim() || null,
-        apartment_no: p.apartment_no?.trim() || null,
-        dorm_room: p.dorm_room?.trim() || null,
-        bed_no: p.bed_no?.trim() || null,
-      })
-      .eq("user_id", user.id);
-    setSaving(false);
-    if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
-    toast({ title: "已保存" });
+  const changePassword = async () => {
+    if (pwdSaving) return;
+    if (!pwd || pwd.length < 6) {
+      return toast({ title: "新密码至少 6 位", variant: "destructive" });
+    }
+    if (pwd !== pwd2) {
+      return toast({ title: "两次输入的密码不一致", variant: "destructive" });
+    }
+    setPwdSaving(true);
+    const { error } = await supabase.auth.updateUser({ password: pwd });
+    setPwdSaving(false);
+    if (error) return toast({ title: "修改失败", description: error.message, variant: "destructive" });
+    setPwd(""); setPwd2("");
+    toast({ title: "密码已更新" });
   };
 
   const onPick = () => fileRef.current?.click();
@@ -158,34 +147,50 @@ const MyProfile = () => {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">基本信息</CardTitle>
-            <CardDescription>姓名、学号、身份证号等将打印到学分认定证明上</CardDescription>
+            <CardDescription>基本信息由学校统一维护，如有错误请联系辅导员；证件照可自行更换</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
-            <Field label="姓名" v={p.full_name} on={(v) => setP({ ...p, full_name: v })} />
-            <Field label="学号" v={p.student_no} on={(v) => setP({ ...p, student_no: v })} />
-            <Field label="院系" v={p.department} on={(v) => setP({ ...p, department: v })} />
-            <Field label="专业" v={p.major} on={(v) => setP({ ...p, major: v })} />
-            <Field label="班级" v={p.class_name} on={(v) => setP({ ...p, class_name: v })} />
-            <Field label="年级（入学年份）" v={p.enrollment_year != null ? String(p.enrollment_year) : ""} on={(v) => {
-              const n = parseInt(v.replace(/\D+/g, ""), 10);
-              setP({ ...p, enrollment_year: Number.isFinite(n) ? n : null });
-            }} maxLength={4} />
-            <Field label="性别" v={p.gender} on={(v) => setP({ ...p, gender: v })} />
-            <Field label="民族" v={p.ethnicity} on={(v) => setP({ ...p, ethnicity: v })} />
-            <Field label="政治面貌" v={p.political_status} on={(v) => setP({ ...p, political_status: v })} />
-            <Field label="出生日期" v={p.birth_date} on={(v) => setP({ ...p, birth_date: v })} placeholder="YYYY-MM-DD" />
-            <Field label="辅导员" v={p.advisor} on={(v) => setP({ ...p, advisor: v })} />
-            <Field label="身份证号" v={p.id_card} on={(v) => setP({ ...p, id_card: v })} maxLength={18} />
-            <Field label="手机号" v={p.phone} on={(v) => setP({ ...p, phone: v })} />
-            <Field label="公寓号" v={p.apartment_no} on={(v) => setP({ ...p, apartment_no: v })} />
-            <Field label="宿舍号" v={p.dorm_room} on={(v) => setP({ ...p, dorm_room: v })} />
-            <Field label="床号" v={p.bed_no} on={(v) => setP({ ...p, bed_no: v })} />
+            <Field label="姓名" v={p.full_name} />
+            <Field label="学号" v={p.student_no} />
+            <Field label="院系" v={p.department} />
+            <Field label="专业" v={p.major} />
+            <Field label="班级" v={p.class_name} />
+            <Field label="年级（入学年份）" v={p.enrollment_year != null ? String(p.enrollment_year) : ""} />
+            <Field label="性别" v={p.gender} />
+            <Field label="民族" v={p.ethnicity} />
+            <Field label="政治面貌" v={p.political_status} />
+            <Field label="出生日期" v={p.birth_date} />
+            <Field label="辅导员" v={p.advisor} />
+            <Field label="身份证号" v={p.id_card} />
+            <Field label="手机号" v={p.phone} />
+            <Field label="公寓号" v={p.apartment_no} />
+            <Field label="宿舍号" v={p.dorm_room} />
+            <Field label="床号" v={p.bed_no} />
             <div>
               <Label>学校</Label>
               <Input value={p.school ?? ""} disabled />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">修改密码</CardTitle>
+            <CardDescription>设置新的登录密码，至少 6 位</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>新密码</Label>
+              <Input type="password" value={pwd} onChange={(e) => setPwd(e.target.value)} autoComplete="new-password" />
+            </div>
+            <div>
+              <Label>确认新密码</Label>
+              <Input type="password" value={pwd2} onChange={(e) => setPwd2(e.target.value)} autoComplete="new-password" />
+            </div>
             <div className="sm:col-span-2">
-              <Button onClick={save} disabled={saving}>{saving ? "保存中…" : "保存"}</Button>
+              <Button onClick={changePassword} disabled={pwdSaving}>
+                {pwdSaving ? "提交中…" : "提交"}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -195,11 +200,11 @@ const MyProfile = () => {
 };
 
 const Field = ({
-  label, v, on, maxLength, placeholder,
-}: { label: string; v: string | null; on: (s: string) => void; maxLength?: number; placeholder?: string }) => (
+  label, v,
+}: { label: string; v: string | null }) => (
   <div>
     <Label>{label}</Label>
-    <Input value={v ?? ""} maxLength={maxLength} placeholder={placeholder} onChange={(e) => on(e.target.value)} />
+    <Input value={v ?? ""} disabled />
   </div>
 );
 
