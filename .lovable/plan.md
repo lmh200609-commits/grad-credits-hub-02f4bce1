@@ -1,42 +1,69 @@
-## 背景（已核查）
+## 修改目标
 
-**1. "待检测"是什么**
-`AigcStatsPanel` 中的"待检测" = `applications.aigc_status = 'pending'`，即尚未跑过 AI 生成图像鉴别的申请。
-
-数据库现状：fake = 3, real = 1, **pending = 2**。这 2 条 pending 都已是 `status = rejected_by_ai`、`aigc_checked_at = null` —— AI 文本审材料阶段就被驳回，AIGC 图像检测从未真正跑过，属于"卡住的遗留单"，不是"排队中"。
-
-**2. AI 助手回答不了"本周疑似 AI 生成图片"**
-`staff-ai-assistant` 的 `query_stats` 工具枚举里没有任何 AIGC 相关 metric，也没有专用工具 → 助手没有合法工具可调，回退到"权限不足"兜底话术。不是 RLS 问题，是工具能力缺失。
+1. AI 助手回复全程纯简体中文，杜绝英文字段名/状态值/表名残留。
+2. 数据看板「AI 生成材料鉴别」面板支持点击：行 → 跳转到对应申请详情；图表段 → 自动筛选并展示对应清单。
+3. 同步到系统其它 AI 端点（学生端学分助手、批量导入助手）和复用同一组规则。
 
 ---
 
-## 修复方案
+## A. 助手中文化（edge functions）
 
-### A. "待检测"复检入口（前端）
+### A.1 `supabase/functions/staff-ai-assistant/index.ts`
+- 新增 `CHINESE_ONLY_RULE`，挂入 `sysMsg`：
+  - 回复一律简体中文；禁止出现英文字段名（`aigc_status / aigc_score_pct / student_no / application_id` 等）、英文枚举值（`fake / suspect / real / pending / skipped / error`）、英文表名。
+  - 工具返回里的英文键值必须翻译：状态映射 `fake=高风险 / suspect=嫌疑 / real=通过 / pending=待检测 / skipped=跳过 / error=失败`；字段映射 `aigc_score_pct=AI 生成概率 / submitted_at=提交时间 / student_name=姓名 / student_no=学号 / application_id=申请编号`。
+  - 显示申请编号一律取末 8 位；时间精确到分钟。
+- 在 `execTool` 出口对 `list_aigc_flagged` 的返回做一次轻量后处理：把每条 item 加上中文化的 `状态文案`、`概率文案`、`提交时间文案`、`编号末8位`，原英文键也保留以便兼容，但中文键放前面，模型自然优先采用。
+
+### A.2 `supabase/functions/ask-credit-assistant/index.ts`
+- 同样追加一行：仅简体中文、禁止英文字段/枚举/表名。系统提示已是中文，这里只补强约束防漏。
+
+### A.3 `supabase/functions/import-assistant-chat/index.ts`
+- 已有"纯文本简体中文"规则，无需改动；如发现仍有英文残留再补强。
+
+部署：仅重新部署改动的两个函数。
+
+---
+
+## B. 面板可点击跳转（前端）
+
 文件：`src/components/AigcStatsPanel.tsx`
 
-- KPI 卡片下方新增提示行：当筛选窗口内 pending > 0 时，显示「N 条待检测」+「查看清单」按钮，跳转 `/admin/applications?aigc=pending`。
-- 若 `Applications.tsx` 不支持 `?aigc=pending` query 过滤，顺手加上读取该参数并初始化筛选。
+### B.1 新增"高风险 / 嫌疑申请"清单表格（在饼/柱图下方）
+- 数据源：`filtered.filter(r => ["fake","suspect"].includes(r.aigc_status))`，按 `aigc_score` 倒序，最多 20 行。
+- 表头：序号 / 提交时间 / 状态 / AI 生成概率 / 学生 / 申请描述（截断 30 字）/ 操作。
+- 整行 `onClick` → `navigate('/applications/' + r.id)`；操作列也放一个「查看」按钮（同跳转，便于无障碍）。
+- 学生姓名/学号需要补查 `profiles`（按 `student_id` 批量查，与 `ReviewHub` 同款做法），新增 `Map<student_id, {full_name, student_no}>` state；面板原 `load` 加一段 profiles 拉取。
 
-### B. 给 AI 助手补 AIGC 统计能力（边缘函数）
-文件：`supabase/functions/staff-ai-assistant/index.ts`
+### B.2 图表点击交互
+- BarChart：`onClick` 取 `activeLabel`（日期），把状态筛选保持，再把面板下方表格滚动到顶；同时在表格上方显示「已聚焦：MM-DD」徽标 + 「清除」按钮。
+- PieChart：`Pie onClick` → 把 `statuses` 设为该段对应的单一状态（如点"高风险"=`["fake"]`），表格随即变成只显示该状态。
+- 若用户点的段没有可跳转的明细（如「通过」段），仅做筛选，不跳详情页。
 
-1. `query_stats` 的 `metric` 枚举追加：
-   - `aigc_fake_week` —— 本周 `aigc_status='fake'` 计数
-   - `aigc_suspect_week` —— 本周 `aigc_status='suspect'` 计数
-   - `aigc_pending_total` —— 当前 pending 总数
-   - `aigc_overview` —— `{fake, suspect, real, pending, skipped, error, week_fake, week_suspect, avg_score}`
-2. `execTool` 内实现对应分支，全部走 `applications` 表 `count: "exact", head: true` + `gte("submitted_at", weekAgo)`。RLS 自动按 college 限定，无需改策略。
-3. 新增工具 `list_aigc_flagged`：入参 `{ range: "week"|"month", status: "fake"|"suspect"|"both" }`，返回 application_id + 学生姓名/学号 + aigc_score + submitted_at，按 score desc，最多 20 条。
-4. 系统提示词新增一条：涉及"AI 生成 / AIGC / 疑似 AI 图片"的提问，必须先调 `query_stats(aigc_*)` 或 `list_aigc_flagged`。
+### B.3 KPI 卡片可点击
+- "高风险" / "嫌疑" 卡片加 `cursor-pointer` + `onClick` → 把 `statuses` 设为对应单状态。
+- "待检测" 提示行已有「仅看待检测」，保持。
 
-### C. 不动的部分
-- 不改 RLS、表结构、学生端、AIGC 检测服务本身。
-- 不批量回填那 2 条遗留 pending，由管理员通过新加的「查看清单」自行处理。
+### B.4 路由确认
+`/applications/:id` 路由已存在（`ApplicationDetail.tsx`，`ProtectedRoute` 包裹），所有教师/管理员均可访问；无需新建路由。
 
 ---
 
+## C. 同步到系统其它位置
+
+- `src/pages/admin/Dashboard.tsx`、`src/pages/teacher/Dashboard.tsx` 已经引用 `<AigcStatsPanel />`，B 节改动自动生效。
+- `src/pages/student/MyApplications.tsx` 顶部 AIGC 汇总条已有"跳转到对应申请详情"按钮，无需重复改造。
+- 学生端 `StudentAigcWarning` 是纯展示组件，与本次改动无关。
+
+---
+
+## 不做的事
+
+- 不改 RLS / 表结构 / 队列服务。
+- 不改助手对话历史的存储格式。
+- 不在 PDF 报告里加跳转（PDF 是离线产物）。
+
 ## 影响文件
-- `src/components/AigcStatsPanel.tsx`
-- `src/pages/admin/Applications.tsx`（如需支持 `?aigc=pending`，先读后改）
 - `supabase/functions/staff-ai-assistant/index.ts`
+- `supabase/functions/ask-credit-assistant/index.ts`
+- `src/components/AigcStatsPanel.tsx`
