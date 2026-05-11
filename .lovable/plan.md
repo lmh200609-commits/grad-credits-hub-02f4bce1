@@ -1,64 +1,79 @@
-## 三个问题修复
+## 学院归属强校验（澄清后的最终方案）
 
-### 1. 错误弹窗英文化（"new row violates row-level security policy for table applications"）
+你说的"国际经济与贸易学院的管理员只能导入本学院的学生/教师，不能导入其他学院" —— 这点在批量导入和单条新增两条路径上都要保证。
 
-**触发位置**：截图中点击「申请二次人工复核」时报错。已通过/已驳回的申请不在 `apps student update own` 的 `WITH CHECK` 白名单 (`pending_ai/pending_review/rejected_by_ai`) 内 → RLS 拒绝 → Supabase 直接抛英文消息 → 前端 `toast({ description: error.message })` 原样显示。
+### 当前状态
 
-**修改**（前端，`src/pages/ApplicationDetail.tsx`）：
+`supabase/functions/import-users/index.ts` 已经做了**后端硬约束**：
 
-- 新增小工具 `friendlyError(err)`：
-  - 命中 `row-level security` / `permission denied` → 返回「当前申请已结案或你无权发起此操作」
-  - 命中 `JWT` / `expired` → 「登录已过期，请重新登录」
-  - 其余按 `err.message` 原样
-- `requestManualReview()` 与 `decide()` 失败分支统一走 `friendlyError`。
-- 同时在按钮 disabled 条件中加上 `app.status === "approved" || app.status === "rejected"`，从源头不让点（按钮文案改为「该申请已结案，无法再次复核」），减少触发。
-
-### 2. 复核学分输入框鼠标滚动会改值
-
-**位置**：`src/pages/ApplicationDetail.tsx` 第 873 行
-```tsx
-<Input type="number" step="0.5" value={credit} ... />
+```ts
+if (isSuperAdmin) {
+  // 超管必须在每行填"学院"列，否则报错
+} else {
+  collegeIdByRow[i] = callerCollegeId;  // 强制 = 调用者所在学院
+}
 ```
-浏览器原生 `<input type=number>` 默认允许滚轮和上下箭头修改数值。
 
-**修改**：
-- 给该 Input 加：
-  - `onWheel={(e) => (e.target as HTMLInputElement).blur()}` — 滚轮触发时立刻失焦，阻断 step 变化
-  - `onKeyDown={(e) => { if (e.key === "ArrowUp" || e.key === "ArrowDown") e.preventDefault(); }}` — 禁用上下箭头微调
-  - 保留 `step="0.5"` 但只允许键盘数字直接输入
-- 全局排查：`rg 'type="number"'` 找出教师/管理员审核相关数字输入（如批量审核 `decideBatch` 默认学分输入、规则学分输入等），同样处理。
-  - 候选文件：`src/pages/ApplicationDetail.tsx`、`src/pages/admin/ReviewHub.tsx`（若有批量学分输入）、`src/pages/admin/Rules.tsx`（规则学分）
-  - 实施时只对"复核学分输入"加严格守卫，规则编辑这种偏行政场景按需酌情。
+也就是说：非 super_admin 调用者，**无论行里写什么 `college_name`，都会被忽略，强制写入 `callerCollegeId`**。所以国际经济与贸易学院的管理员物理上不可能把账号建到其他学院。✅ 这条已经成立。
 
-### 3. AI 助手回答中夹带英文 URL 路径，被用户视为"乱码"
+但是当前流程对学院管理员有两个体验问题：
 
-**现象**（图3）：
-> 点击进入不合格学生名单页：`/admin/credits?passFilter=fail`
+1. **批量导入时**，如果模板里某行误填了"经济学院"或"信息工程学院"，系统**默默把它改写成本学院**，管理员不会察觉跨学院的笔误。
+2. **新增的单条导入对话框**也需要把这条约束做成"用户能看见的提示"，而不只是后端默默改写。
 
-正文中出现裸路径与英文查询参数，体验上像乱码；下方其实已有"跳转 …"按钮，路径文本是冗余的。
+### 改动
 
-**修改**（`supabase/functions/staff-ai-assistant/index.ts`）：
+**A. 学院管理员批量导入时增加前端校验提示**
 
-1. **强化 system prompt**：在 `CHINESE_ONLY_RULE` 末尾增补一条：
-   > 14. 当工具返回 `navigate_path` 或你已请求 `navigate_to` 时，UI 会自动渲染跳转按钮。**回答正文中严禁出现任何 URL、路径片段（包含 `/admin/...`、`/teacher/...`、`/applications/...`、`?passFilter=...` 等）和英文查询参数**。只用一句中文描述用户应做什么，例如"已为你定位到不合格学生名单，可点击下方按钮进入"。
+`src/pages/admin/ImportUsers.tsx`：上传 Excel 解析完成后、调用 Edge Function 前，做一道前端检查：
 
-2. **服务端兜底过滤**：在 `answer` 写回前增加 `stripPathsFromAnswer(answer)`：
-   - 正则去除 `/[a-z][a-zA-Z0-9_/?=&%-]+`（裸 URL/路径片段）
-   - 去除 markdown 链接 `[xxx](/...)` 中的链接，仅保留可读文本
-   - 同步从 `sections` 输出里清理
-3. 验证：点测"查看不合格学生"、"打开复核中心"，对话气泡不再出现路径文本，跳转按钮仍可用。
+- 如果调用者是学院管理员（非 super_admin），且某些行的 `college_name` 既不为空、又不等于本学院名（按 `normalizeCollege` 比较），**弹出红色错误清单**列出"第 X 行：填写的学院「经济学院」与你管理的学院「国际经济与贸易学院」不一致"，并阻止提交，要求修正模板后重传。
+- `college_name` 留空的行视为"默认本学院"，正常通过。
 
-> 备注：该 edge function 修改后会自动部署。
+这样既防止误导入，也让管理员明确知道"我只能管自己学院"。
 
----
+**B. 后端再加一道防线**
 
-### 涉及文件
+`supabase/functions/import-users/index.ts`：在非 super_admin 分支里，把上面的检查也搬到后端（防止前端被绕过）：
 
-- `src/pages/ApplicationDetail.tsx`（错误友好化 + 数字输入防滚轮）
-- `supabase/functions/staff-ai-assistant/index.ts`（提示词 + 服务端剥离路径）
-- 可能涉及：`src/pages/admin/ReviewHub.tsx` 等其他复核学分输入位（按 grep 结果决定）
+```ts
+} else {
+  const cname = r.college_name?.trim();
+  if (cname) {
+    const cid = collegeByName.get(cname) ?? collegeByNormalized.get(normalizeCollege(cname));
+    if (cid && cid !== callerCollegeId) {
+      errors.push({ line, message: `第 ${line} 行学院「${cname}」不属于你管理的学院，无法跨学院导入` });
+    }
+  }
+  collegeIdByRow[i] = callerCollegeId;
+}
+```
 
-### 不改
+> 注意：collegeByName 现在只在 super_admin 分支构建，要把它移到外面对所有调用者都构建。
 
-- 数据库 / RLS 策略 — 已通过/已驳回不让学生再改属于正确的安全约束，仅改前端体验。
-- AI 助手的工具调用与跳转按钮逻辑保持不变。
+**C. 单条新增对话框（`SingleUserDialog.tsx`）**
+
+- 学院管理员：顶部显示只读"归属学院：国际经济与贸易学院（不可修改，跨学院请联系超级管理员）"。表单**没有**学院选择字段。
+- 超级管理员：显示学院下拉（必选，列出 `colleges` active 项）。
+
+提交时调用 `import-users`，由它的后端校验兜底。
+
+### 其它仍按上一版计划执行
+
+- **问题 1**：`parseRoster.ts` 的 `pickFirst` 修复"工号"识别为空的 bug。
+- **问题 2**：`ImportUsers.tsx` 横幅常驻显示。
+- **问题 3**：新建迁移加 `audit_logs` RLS：`USING (actor_id = auth.uid())`，让操作者看到自己的记录。
+- **学生补全空字段**：扩展 `MyProfile.tsx` 可编辑字段（手机号、班级、专业、院系、年级、辅导员、性别、民族、政治面貌、出生日期、公寓号、宿舍号、床号、紧急联系人/电话、地址）；学号、学院、邮箱只读；顶部加"信息缺失提示"横幅。
+- **单条新增必填**：学生侧学号、姓名、手机号、辅导员、班级、院系、出生日期、性别全部必填；教师侧工号、姓名、手机号必填。
+
+### 文件清单
+
+| 文件 | 改动 |
+|---|---|
+| `src/lib/parseRoster.ts` | `pickFirst` 修复学号识别 |
+| `src/pages/admin/ImportUsers.tsx` | 横幅常驻 + 学院管理员前端拦截跨学院行 |
+| `supabase/functions/import-users/index.ts` | 非超管也校验 `college_name` 是否本学院（不一致即报错） |
+| `supabase/migrations/<新>.sql` | `audit_logs` 自查策略 |
+| `src/components/SingleUserDialog.tsx`（新建） | 单条新增对话框，必填项严格校验 |
+| `src/pages/admin/UsersManage.tsx` | "+ 新建学生账号"/"+ 新建教师账号" 按钮 |
+| `src/pages/student/MyProfile.tsx` | 扩展可编辑字段 + 缺失提示 |
