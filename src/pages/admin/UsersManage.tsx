@@ -21,6 +21,8 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import TablePagination from "@/components/TablePagination";
 import BulkUserDialog from "@/components/BulkUserDialog";
+import SingleUserDialog from "@/components/SingleUserDialog";
+import { UserPlus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 const PAGE_SIZE = 50;
@@ -67,6 +69,7 @@ const UsersManage = () => {
   const [deleting, setDeleting] = useState(false);
   const [page, setPage] = useState(0);
   const [bulkMode, setBulkMode] = useState<"delete" | "reset" | null>(null);
+  const [singleOpen, setSingleOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -203,6 +206,10 @@ const UsersManage = () => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+              <Button onClick={() => setSingleOpen(true)}>
+                <UserPlus className="mr-1 h-4 w-4" />
+                新建{role === "student" ? "学生" : "教师"}账号
+              </Button>
               <Button variant="outline" onClick={() => setBulkMode("reset")}>批量重置密码</Button>
               {role === "student" && (
                 <Button variant="destructive" onClick={() => setBulkMode("delete")}>批量删除账号</Button>
@@ -349,6 +356,13 @@ const UsersManage = () => {
           onDone={() => load()}
         />
       )}
+
+      <SingleUserDialog
+        open={singleOpen}
+        role={role as "student" | "teacher"}
+        onClose={() => setSingleOpen(false)}
+        onDone={() => load()}
+      />
     </AppLayout>
   );
 };
