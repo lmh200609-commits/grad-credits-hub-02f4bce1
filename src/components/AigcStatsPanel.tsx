@@ -193,13 +193,16 @@ export default function AigcStatsPanel() {
       .map((s) => ({ name: STATUS_LABELS[s], value: counts[s], status: s }));
   }, [filtered]);
 
-  // Top 20 高风险
+  // Top 20 高风险（可叠加按日聚焦过滤）
   const topRisky = useMemo(() => {
-    return filtered
-      .filter((r) => r.aigc_status === "fake" || r.aigc_status === "suspect")
+    let list = filtered.filter((r) => r.aigc_status === "fake" || r.aigc_status === "suspect");
+    if (dayFocus) {
+      list = list.filter((r) => fmtDate(new Date(r.submitted_at)) === dayFocus);
+    }
+    return list
       .sort((a, b) => (b.aigc_score ?? 0) - (a.aigc_score ?? 0))
       .slice(0, 20);
-  }, [filtered]);
+  }, [filtered, dayFocus]);
 
   const scopeLabel = isSuperAdmin
     ? (collegeFilter === "all" ? "全校" : (colleges.find((c) => c.id === collegeFilter)?.name ?? "—"))
@@ -547,11 +550,106 @@ const td: React.CSSProperties = {
   border: "1px solid #e2e8f0", padding: "4px 6px", textAlign: "center", color: "#0f172a",
 };
 
-function Kpi({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
+function Kpi({ label, value, accent, onClick }: { label: string; value: string | number; accent?: string; onClick?: () => void }) {
+  const clickable = !!onClick;
   return (
-    <div className="rounded-md border bg-card px-3 py-2">
+    <div
+      className={`rounded-md border bg-card px-3 py-2 ${clickable ? "cursor-pointer transition hover:bg-muted/50" : ""}`}
+      onClick={onClick}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (clickable && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+    >
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={`mt-1 text-xl font-semibold ${accent ?? ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function RiskyTable({
+  rows, profiles, dayFocus, onClearFocus, onRowClick,
+}: {
+  rows: Row[];
+  profiles: Map<string, ProfileLite>;
+  dayFocus: string | null;
+  onClearFocus: () => void;
+  onRowClick: (id: string) => void;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-md border bg-card px-3 py-6 text-center text-sm text-muted-foreground">
+        当前范围内无高风险或嫌疑申请
+        {dayFocus && (
+          <Button variant="link" size="sm" onClick={onClearFocus} className="ml-2">清除聚焦</Button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium">高风险 / 嫌疑申请明细（点击行进入详情）</div>
+        {dayFocus && (
+          <div className="flex items-center gap-2 text-xs">
+            <Badge variant="secondary">已聚焦：{dayFocus}</Badge>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onClearFocus}>清除</Button>
+          </div>
+        )}
+      </div>
+      <div className="overflow-hidden rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs text-muted-foreground">
+            <tr>
+              <th className="px-2 py-2 text-left">#</th>
+              <th className="px-2 py-2 text-left">提交时间</th>
+              <th className="px-2 py-2 text-left">状态</th>
+              <th className="px-2 py-2 text-left">AI 概率</th>
+              <th className="px-2 py-2 text-left">学生</th>
+              <th className="px-2 py-2 text-left">申请描述</th>
+              <th className="px-2 py-2 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const p = r.student_id ? profiles.get(r.student_id) : null;
+              return (
+                <tr
+                  key={r.id}
+                  className="cursor-pointer border-t transition hover:bg-muted/40"
+                  onClick={() => onRowClick(r.id)}
+                >
+                  <td className="px-2 py-2 text-muted-foreground">{i + 1}</td>
+                  <td className="px-2 py-2 whitespace-nowrap">{new Date(r.submitted_at).toLocaleString()}</td>
+                  <td className={`px-2 py-2 font-medium ${r.aigc_status === "fake" ? "text-destructive" : "text-warning"}`}>
+                    {r.aigc_status === "fake" ? "高风险" : "嫌疑"}
+                  </td>
+                  <td className="px-2 py-2">{typeof r.aigc_score === "number" ? `${(r.aigc_score * 100).toFixed(1)}%` : "—"}</td>
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {p ? `${p.full_name ?? "—"}（${p.student_no ?? "—"}）` : "—"}
+                  </td>
+                  <td className="px-2 py-2 max-w-[280px] truncate" title={r.description ?? ""}>
+                    {(r.description ?? "").slice(0, 30)}
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => { e.stopPropagation(); onRowClick(r.id); }}
+                    >
+                      查看
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
