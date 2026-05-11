@@ -27,12 +27,16 @@ Deno.serve(async (req) => {
     );
     const { data: callerRoles, error: roleErr } = await admin
       .from("user_roles")
-      .select("role")
+      .select("role,college_id")
       .eq("user_id", callerId)
       .in("role", ["admin", "super_admin"]);
     if (roleErr) return json({ error: roleErr.message }, 500);
     const canDelete = (callerRoles ?? []).some((r) => r.role === "admin" || r.role === "super_admin");
     if (!canDelete) return json({ error: "Forbidden：仅管理员可删除账号" }, 403);
+    const isSuper = (callerRoles ?? []).some((r) => r.role === "super_admin");
+    const callerCollegeIds = new Set(
+      (callerRoles ?? []).map((r: any) => r.college_id).filter(Boolean) as string[],
+    );
 
     const body = await req.json();
     let ids: string[] = Array.isArray(body?.user_ids) ? body.user_ids.filter((x: unknown) => typeof x === "string") : [];
@@ -40,6 +44,23 @@ Deno.serve(async (req) => {
     if (ids.length > 200) return json({ error: "单次最多 200 条" }, 400);
     if (ids.includes(callerId)) {
       return json({ error: "不能删除当前登录账号，请先取消勾选自己的账号" }, 400);
+    }
+
+    if (!isSuper) {
+      const { data: targetRoles } = await admin
+        .from("user_roles").select("user_id,college_id").in("user_id", ids);
+      const collegesByUser = new Map<string, string[]>();
+      for (const r of (targetRoles ?? [])) {
+        const arr = collegesByUser.get(r.user_id) ?? [];
+        if (r.college_id) arr.push(r.college_id);
+        collegesByUser.set(r.user_id, arr);
+      }
+      for (const id of ids) {
+        const cs = collegesByUser.get(id) ?? [];
+        if (!cs.some((cid) => callerCollegeIds.has(cid))) {
+          return json({ error: "Forbidden: cross-college" }, 403);
+        }
+      }
     }
 
     const { data: profiles } = await admin
