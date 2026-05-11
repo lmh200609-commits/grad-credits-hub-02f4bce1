@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     );
     const { data: callerRoles, error: roleErr } = await admin
       .from("user_roles")
-      .select("role")
+      .select("role,college_id")
       .eq("user_id", callerId)
       .in("role", ["admin", "super_admin", "teacher"]);
     if (roleErr) return json({ error: roleErr.message }, 500);
@@ -44,18 +44,40 @@ Deno.serve(async (req) => {
     const isAdmin = (callerRoles ?? []).some((r) => r.role === "admin");
     const isTeacher = (callerRoles ?? []).some((r) => r.role === "teacher");
     if (!isSuper && !isAdmin && !isTeacher) return json({ error: "Forbidden" }, 403);
+    const callerCollegeIds = new Set(
+      (callerRoles ?? []).map((r: any) => r.college_id).filter(Boolean) as string[],
+    );
 
     const body = await req.json();
     const ids: string[] = Array.isArray(body?.user_ids) ? body.user_ids.filter((x: unknown) => typeof x === "string") : [];
     if (ids.length === 0) return json({ error: "user_ids 必填" }, 400);
     if (ids.length > 200) return json({ error: "单次最多 200 条" }, 400);
 
-    // Teacher 仅可重置 student（super_admin / admin 不受限）
+    // Load all target user_roles (role + college) for both role check and college scoping
+    const { data: targetUserRoles } = await admin
+      .from("user_roles").select("user_id,role,college_id").in("user_id", ids);
+    const targetByUser = new Map<string, { role: string; college_id: string | null }[]>();
+    for (const r of (targetUserRoles ?? [])) {
+      const arr = targetByUser.get(r.user_id) ?? [];
+      arr.push({ role: r.role, college_id: r.college_id });
+      targetByUser.set(r.user_id, arr);
+    }
     if (!isSuper && !isAdmin) {
-      const { data: studentRoles } = await admin
-        .from("user_roles").select("user_id").eq("role", "student").in("user_id", ids);
-      const allowed = new Set((studentRoles ?? []).map((r) => r.user_id));
-      for (const id of ids) if (!allowed.has(id)) return json({ error: "教师仅可重置学生密码" }, 403);
+      for (const id of ids) {
+        const tr = targetByUser.get(id) ?? [];
+        if (!tr.some((r) => r.role === "student")) {
+          return json({ error: "教师仅可重置学生密码" }, 403);
+        }
+      }
+    }
+    if (!isSuper) {
+      for (const id of ids) {
+        const tr = targetByUser.get(id) ?? [];
+        const colleges = tr.map((r) => r.college_id).filter(Boolean) as string[];
+        if (!colleges.some((cid) => callerCollegeIds.has(cid))) {
+          return json({ error: "Forbidden: cross-college" }, 403);
+        }
+      }
     }
 
     const { data: profiles } = await admin
