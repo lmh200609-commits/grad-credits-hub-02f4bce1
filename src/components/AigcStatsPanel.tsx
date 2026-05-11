@@ -128,6 +128,7 @@ export default function AigcStatsPanel() {
     const checked = filtered.filter((r) => ["real", "suspect", "fake"].includes(r.aigc_status));
     const fake = filtered.filter((r) => r.aigc_status === "fake").length;
     const suspect = filtered.filter((r) => r.aigc_status === "suspect").length;
+    const pending = filtered.filter((r) => r.aigc_status === "pending").length;
     const checkedN = checked.length;
     const detected = fake + suspect;
     const detectRate = checkedN ? (detected / checkedN) * 100 : 0;
@@ -135,7 +136,7 @@ export default function AigcStatsPanel() {
     const avgScore = scored.length
       ? (scored.reduce((s, r) => s + (r.aigc_score ?? 0), 0) / scored.length) * 100
       : 0;
-    return { checked: checkedN, fake, suspect, detectRate, avgScore };
+    return { checked: checkedN, fake, suspect, pending, detectRate, avgScore };
   }, [filtered]);
 
   // 柱状图：按天聚合 fake / suspect / real
@@ -324,6 +325,22 @@ export default function AigcStatsPanel() {
           <Kpi label="检出率" value={`${kpi.detectRate.toFixed(1)}%`} accent={kpi.detectRate > 5 ? "text-destructive" : "text-foreground"} />
           <Kpi label="平均概率" value={`${kpi.avgScore.toFixed(1)}%`} />
         </div>
+
+        {kpi.pending > 0 && (
+          <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">
+              当前范围内有 <span className="font-semibold text-foreground">{kpi.pending}</span> 条待检测申请（多为 AI 文本审驳回或无图片，未跑过图像鉴别）
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setStatuses(["pending"])}
+              disabled={statuses.length === 1 && statuses[0] === "pending"}
+            >
+              仅看待检测
+            </Button>
+          </div>
+        )}
 
         {/* 图表 */}
         <div className="grid gap-4 lg:grid-cols-2">
