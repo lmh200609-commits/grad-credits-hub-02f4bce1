@@ -1,43 +1,51 @@
-# 修复：上传院徽 RLS 拒绝（new row violates row-level security policy）
+## 排查结论
 
-## 根因
-`storage.objects` 上 `college-badges` 桶的 3 条策略（INSERT/UPDATE/DELETE）使用了 `public.current_user_college_id()` 和 `public.has_role()` 这两个 SECURITY DEFINER 函数。Postgres 数据校验显示：
+这次失败不是因为“之前已经上传过一个院徽所以不能覆盖”。
 
-- `authenticator` / `supabase_storage_admin` 角色对这两个函数 **没有 EXECUTE 权限**
-- 因此 storage 在评估 RLS 时函数调用直接失败，`WITH CHECK` 判为 false，返回 403
+原因是前端每次上传都会生成新的文件名，例如：
 
-而 `application-files` 桶的策略只用 `auth.uid()`，所以学生上传 PDF 不受影响。
+```text
+college-badges/{collegeId}/badge-{timestamp}.jpg
+```
 
-## 修改（一次 SQL 迁移）
+所以它并没有覆盖旧文件，而是在同一学院目录下新增一个文件。当前浏览器网络记录显示真正失败的是新增对象：
 
-重写 `college-badges` 桶的 3 条策略，**不再调用 SECURITY DEFINER 函数**，改为内联子查询直接读 `user_roles`：
+```text
+POST /storage/v1/object/college-badges/d66aa1e4-.../badge-1778480228556.jpg
+400 / 403
+new row violates row-level security policy
+```
 
-- DROP 现有 3 条策略：`college-badges admin write` / `... admin update` / `... admin delete`
-- 新建 INSERT 策略：
-  ```sql
-  CREATE POLICY "college-badges admin write" ON storage.objects
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    bucket_id = 'college-badges'
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles ur
-      WHERE ur.user_id = auth.uid()
-        AND (
-          ur.role = 'super_admin'
-          OR (ur.role = 'admin'
-              AND ur.college_id IS NOT NULL
-              AND ur.college_id::text = (storage.foldername(name))[1])
-        )
-    )
-  );
-  ```
-- UPDATE 与 DELETE 用相同的内联表达式分别作为 USING / WITH CHECK。
-- 桶仍保持 `public: true`，下载走公开 URL，无需新增 SELECT 策略。
+我查到当前数据库里这个用户确实是该学院的 `admin`，目标路径的学院 ID 也匹配，因此问题更像是 Storage 写入策略在 Supabase Storage 执行上下文里仍然没有稳定通过，而不是文件已存在导致的冲突。
 
-## 不改动
-- `application-files` 桶的策略；
-- `current_user_college_id` / `has_role` 函数本身（其它表的 RLS 仍正常使用）；
-- 前端代码（上一轮已恢复"上传即应用"逻辑，无需再改）。
+## 实施方案
 
-## 验收
-- 国际经济与贸易学院管理员重新上传院徽 → 不再弹出 RLS 报错 → 自动提取主色并刷新 UI 主题。
+1. **修正 Storage RLS 策略**
+   - 改写 `college-badges` 的上传、更新、删除策略。
+   - 不再依赖之前的 `can_manage_college_badge_object()` 函数作为策略判断入口。
+   - 直接在策略里校验：
+     - 当前登录用户是 `super_admin`；或
+     - 当前登录用户是 `admin`，并且上传路径第一段等于该管理员绑定的 `college_id`。
+   - 保留公开读取院徽图片的能力。
+
+2. **增加“删除旧院徽”功能**
+   - 在品牌设置页当前院徽旁增加删除按钮。
+   - 删除时：
+     - 从 `college-badges` bucket 删除当前 `badge_url` 对应文件；
+     - 清空 `colleges.badge_url`；
+     - 保留学院主题配置，不强制重置配色。
+   - 增加确认弹窗，避免误删。
+
+3. **优化“重新上传院徽”流程**
+   - 上传新院徽成功并更新 `badge_url` 后，尝试删除旧院徽文件，避免 bucket 中堆积历史院徽。
+   - 即使旧文件删除失败，也不阻断新院徽生效，只提示上传结果。
+   - 清空文件 input 的值，避免选择同一个文件时浏览器不触发 `change`。
+
+4. **验证**
+   - 用数据库查询确认新的 Storage 策略已生效。
+   - 检查页面逻辑：上传、删除、重新上传三条路径都调用正确的 bucket 路径和学院更新逻辑。
+
+## 需要改动的文件
+
+- 新增 Supabase migration：修复 `college-badges` Storage 写入/删除策略。
+- 修改 `src/pages/admin/Branding.tsx`：加入删除旧院徽和重新上传后的旧文件清理逻辑。
