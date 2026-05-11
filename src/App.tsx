@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { PreviewThemeProvider } from "@/hooks/usePreviewTheme";
+import { CollegeProvider } from "@/contexts/CollegeContext";
 import PreviewModeBanner from "@/components/PreviewModeBanner";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleRoute from "@/components/RoleRoute";
@@ -51,8 +52,9 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <PreviewThemeProvider>
-            <PreviewModeBanner />
-            <Routes>
+            <CollegeProvider>
+              <PreviewModeBanner />
+              <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/verify/:certNo" element={<VerifyCertificate />} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
@@ -86,7 +88,8 @@ const App = () => (
             <Route path="/teacher/credits" element={<RoleRoute role={["teacher", "admin"]}><TeacherCredits /></RoleRoute>} />
             <Route path="/diagnostics/realtime" element={<ProtectedRoute><RealtimeDiagnostics /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
-            </Routes>
+              </Routes>
+            </CollegeProvider>
           </PreviewThemeProvider>
         </AuthProvider>
       </BrowserRouter>

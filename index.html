@@ -21,6 +21,21 @@
   <meta property="og:description" content="面向高校的学分申请、AI 初审与教师复核一体化平台。">
   <meta name="twitter:description" content="面向高校的学分申请、AI 初审与教师复核一体化平台。">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <script>
+    // Pre-apply the last-known college theme variables before React mounts,
+    // to avoid a flash of the default palette on cold loads.
+    try {
+      var lastId = localStorage.getItem('college-css-vars:last');
+      if (lastId) {
+        var raw = localStorage.getItem('college-css-vars:' + lastId);
+        if (raw) {
+          var vars = JSON.parse(raw);
+          var root = document.documentElement;
+          Object.keys(vars).forEach(function (k) { root.style.setProperty(k, vars[k]); });
+        }
+      }
+    } catch (e) { /* noop */ }
+  </script>
 </head>
 
   <body>
