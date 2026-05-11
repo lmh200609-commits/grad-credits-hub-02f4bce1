@@ -81,6 +81,8 @@ const Branding = () => {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [extracted, setExtracted] = useState<Theme | null>(null);
+  const [extractOpen, setExtractOpen] = useState(false);
 
   const load = async () => {
     if (!collegeId) return;
@@ -105,20 +107,34 @@ const Branding = () => {
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from("college-badges").getPublicUrl(path);
       const url = pub.publicUrl;
-      const palette = await extractPaletteFromImage(url).catch(() => null);
-      const newTheme: Theme = { ...theme, ...(palette ?? {}) };
-      setTheme(newTheme);
-      const { error } = await supabase.from("colleges").update({
-        badge_url: url, theme: newTheme,
-      }).eq("id", collegeId);
+      const { error } = await supabase.from("colleges").update({ badge_url: url }).eq("id", collegeId);
       if (error) throw error;
-      toast.success("院徽已上传，主题色已自动提取");
-      void load();
+      toast.success("院徽已上传");
+      await load();
+      const palette = await extractPaletteFromImage(url).catch(() => null);
+      if (palette && Object.keys(palette).length > 0) {
+        setExtracted(palette as Theme);
+        setExtractOpen(true);
+      } else {
+        toast.message("未能识别院徽主色，已保留原主题");
+      }
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setUploading(false);
     }
+  };
+
+  const applyExtracted = async () => {
+    if (!collegeId || !extracted) return;
+    const newTheme: Theme = { ...theme, ...extracted };
+    setTheme(newTheme);
+    const { error } = await supabase.from("colleges").update({ theme: newTheme }).eq("id", collegeId);
+    if (error) { toast.error(error.message); return; }
+    toast.success("主题已更新");
+    setExtractOpen(false);
+    setExtracted(null);
+    void load();
   };
 
   const save = async () => {
