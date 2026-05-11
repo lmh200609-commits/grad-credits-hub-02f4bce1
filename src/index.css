@@ -60,6 +60,9 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 222 76% 38%;
+
+    --header-tint: 222 50% 94%;
+    --brand-strong: 222 80% 32%;
   }
 
   .dark {
