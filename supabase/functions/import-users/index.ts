@@ -166,7 +166,7 @@ Deno.serve(async (req) => {
     const collegeByNormalized = new Map<string, string>();
     const normalizeCollege = (s: string) =>
       s.toLowerCase().replace(/[与和&\s院（）()]/g, "");
-    if (isSuperAdmin) {
+    {
       const { data: cols } = await admin.from("colleges").select("id, name");
       for (const c of cols ?? []) {
         const name = String((c as any).name).trim();
@@ -174,6 +174,13 @@ Deno.serve(async (req) => {
         collegeByName.set(name, id);
         collegeByNormalized.set(normalizeCollege(name), id);
       }
+    }
+    // Resolve caller college name (for cross-college error messages)
+    let callerCollegeName: string | null = null;
+    if (!isSuperAdmin && callerCollegeId) {
+      const { data: cc } = await admin
+        .from("colleges").select("name").eq("id", callerCollegeId).maybeSingle();
+      callerCollegeName = (cc as any)?.name ?? null;
     }
 
     const body = await req.json();
@@ -217,6 +224,16 @@ Deno.serve(async (req) => {
           }
         }
       } else {
+        const cname = r.college_name?.trim();
+        if (cname) {
+          const cid = collegeByName.get(cname) ?? collegeByNormalized.get(normalizeCollege(cname));
+          if (cid && callerCollegeId && cid !== callerCollegeId) {
+            errors.push({
+              line,
+              message: `学院「${cname}」不属于你管理的学院${callerCollegeName ? `「${callerCollegeName}」` : ""}，无法跨学院导入`,
+            });
+          }
+        }
         collegeIdByRow[i] = callerCollegeId;
       }
     });
