@@ -28,8 +28,11 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
     · rejected_week         — 近 7 天驳回数
     · total_students        — 学生总人数
     · total_apps_month      — 近 30 天提交申请数
-    · submitted_total       — 累计提交过申请的去重学生人数
-    · submitted_count       — 累计申请总数
+    · submitted_total       — 累计提交过申请的去重学生人数（全时段，不带时间窗口）
+    · submitted_count       — 累计申请总数（全时段）
+    · submitted_students_week — 近 7 天去重提交学生数（凡是问"本周/这一周/近 7 天 多少学生提交"必须用此项）
+    · submitted_count_week   — 近 7 天提交申请总数
+    · submitted_students_month — 近 30 天去重提交学生数
     · passed_students       — 累计学分 ≥ 4 的学生人数（合格）
     · failing_students      — 累计学分 < 4 的学生人数（不合格）
     · auto_approved_total   — 系统初审自动通过的申请数
