@@ -537,18 +537,23 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     }
 
     let nextStatus: string;
+    let intendedAutoApprove = false;
     if (detectedMismatch) {
       // 学生选的关键词与图片识别结果对应不同案例 → 不能自动通过
       nextStatus = result.recommendation === "reject" ? "rejected_by_ai" : "pending_review";
     } else if (result.recommendation === "approve" && result.confidence >= HIGH_CONFIDENCE) {
-      nextStatus = aigcSuspect ? "pending_review" : "auto_approved";
+      // 新流程：本应自动通过的图片申请，先暂存为 pending_review，等 AIGC 鉴别后再揭晓。
+      // 无图片附件的申请不需要 AIGC，可以直接自动通过。
+      const needsAigc = !!app.file_path && IMAGE_EXT.test(app.file_path);
+      if (needsAigc) {
+        nextStatus = "pending_review";
+        intendedAutoApprove = true;
+      } else {
+        nextStatus = "auto_approved";
+      }
     } else if (result.recommendation === "reject" && result.confidence >= HIGH_CONFIDENCE) {
       nextStatus = "rejected_by_ai";
     } else {
-      nextStatus = "pending_review";
-    }
-
-    if (aigcSuspect && nextStatus === "auto_approved") {
       nextStatus = "pending_review";
     }
 
