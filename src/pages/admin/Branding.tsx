@@ -81,6 +81,16 @@ const Branding = () => {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const extractBadgePath = (url?: string | null): string | null => {
+    if (!url) return null;
+    const marker = "/college-badges/";
+    const i = url.indexOf(marker);
+    if (i < 0) return null;
+    return url.slice(i + marker.length);
+  };
 
   const load = async () => {
     if (!collegeId) return;
@@ -98,6 +108,7 @@ const Branding = () => {
     if (!collegeId) return;
     if (file.size > 2 * 1024 * 1024) { toast.error("院徽最大 2MB"); return; }
     setUploading(true);
+    const oldPath = extractBadgePath(college?.badge_url);
     try {
       const ext = file.name.split(".").pop() || "png";
       const path = `${collegeId}/badge-${Date.now()}.${ext}`;
@@ -117,12 +128,37 @@ const Branding = () => {
       const { error } = await supabase.from("colleges").update({ badge_url: url, theme: newTheme }).eq("id", collegeId);
       if (error) throw error;
       setTheme(newTheme);
+      // Best-effort: clean up the previous badge file so the bucket doesn't accumulate history
+      if (oldPath && oldPath !== path) {
+        await supabase.storage.from("college-badges").remove([oldPath]).catch(() => null);
+      }
       toast.success(Object.keys(valid).length > 0 ? "院徽已上传，主题已自动更新" : "院徽已上传（未识别到合适主色，主题未变）");
       await load();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const onDeleteBadge = async () => {
+    if (!collegeId) return;
+    setDeleting(true);
+    try {
+      const oldPath = extractBadgePath(college?.badge_url);
+      const { error } = await supabase.from("colleges").update({ badge_url: null }).eq("id", collegeId);
+      if (error) throw error;
+      if (oldPath) {
+        await supabase.storage.from("college-badges").remove([oldPath]).catch(() => null);
+      }
+      toast.success("院徽已删除");
+      setDeleteOpen(false);
+      await load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -181,7 +217,21 @@ const Branding = () => {
             <div className="space-y-2">
               <input ref={fileRef} type="file" accept="image/*" className="hidden"
                 onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-              <Button variant="solid" onClick={onPick} disabled={uploading}>{uploading ? "上传中…" : "上传院徽"}</Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="solid" onClick={onPick} disabled={uploading || deleting}>
+                  {uploading ? "上传中…" : (college?.badge_url ? "重新上传院徽" : "上传院徽")}
+                </Button>
+                {college?.badge_url && (
+                  <Button
+                    variant="outline"
+                    className="text-danger"
+                    onClick={() => setDeleteOpen(true)}
+                    disabled={uploading || deleting}
+                  >
+                    删除当前院徽
+                  </Button>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">PNG/JPG/SVG，≤ 2MB。上传后系统将自动提取主色作为 UI 主题。</p>
             </div>
           </CardContent>
@@ -254,6 +304,27 @@ const Branding = () => {
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>
               <AlertDialogAction onClick={() => { void save(); }} className="bg-action text-action-foreground hover:bg-action/90">确认提交</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>删除当前院徽？</AlertDialogTitle>
+              <AlertDialogDescription>
+                删除后本学院顶部将不再显示院徽，主题配色不会被重置。你随时可以重新上传一张新的院徽。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); void onDeleteBadge(); }}
+                className="bg-danger text-danger-foreground hover:bg-danger/90"
+                disabled={deleting}
+              >
+                {deleting ? "删除中…" : "确认删除"}
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
