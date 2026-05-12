@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
         },
       ],
       tools,
-      tool_choice: { type: "function", function: { name: "face_compare" } },
+      tool_choice: "auto",
     };
 
     const resp = await fetch(QWEN_URL, {
