@@ -57,10 +57,9 @@ const UsersManage = () => {
   const [rows, setRows] = useState<Profile[]>([]);
   const [credits, setCredits] = useState<Map<string, { total: number; count: number }>>(new Map());
   const [total, setTotal] = useState(0);
-  const [facets, setFacets] = useState<{ departments: string[]; majors: string[]; classes: string[] }>({ departments: [], majors: [], classes: [] });
+  const [facets, setFacets] = useState<{ majors: string[]; classes: string[] }>({ majors: [], classes: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch);
-  const [dept, setDept] = useState(ALL);
   const [major, setMajor] = useState(ALL);
   const [klass, setKlass] = useState(ALL);
   const [resetTarget, setResetTarget] = useState<Profile | null>(null);
@@ -77,7 +76,7 @@ const UsersManage = () => {
     const { data: roleRows } = await supabase.from("user_roles").select("user_id").eq("role", role);
     const roleIds = (roleRows ?? []).map((r) => r.user_id);
     if (roleIds.length === 0) {
-      setRows([]); setTotal(0); setCredits(new Map()); setFacets({ departments: [], majors: [], classes: [] });
+      setRows([]); setTotal(0); setCredits(new Map()); setFacets({ majors: [], classes: [] });
       setLoading(false);
       return;
     }
@@ -85,16 +84,14 @@ const UsersManage = () => {
     // 2) Facets：只取去重列（distinct via group），低开销
     const { data: facetRows } = await supabase
       .from("profiles")
-      .select("department, major, class_name")
+      .select("major, class_name")
       .in("user_id", roleIds);
-    const facetSetD = new Set<string>(); const facetSetM = new Set<string>(); const facetSetC = new Set<string>();
+    const facetSetM = new Set<string>(); const facetSetC = new Set<string>();
     (facetRows ?? []).forEach((r) => {
-      if (r.department) facetSetD.add(r.department);
       if (r.major) facetSetM.add(r.major);
       if (r.class_name) facetSetC.add(r.class_name);
     });
     setFacets({
-      departments: Array.from(facetSetD).sort(),
       majors: Array.from(facetSetM).sort(),
       classes: Array.from(facetSetC).sort(),
     });
@@ -104,7 +101,6 @@ const UsersManage = () => {
       .from("profiles")
       .select("user_id, full_name, student_no, department, major, class_name, email, phone", { count: "exact" })
       .in("user_id", roleIds);
-    if (dept !== ALL) q = q.eq("department", dept);
     if (role === "student" && major !== ALL) q = q.eq("major", major);
     if (role === "student" && klass !== ALL) q = q.eq("class_name", klass);
     const s = search.trim();
@@ -141,14 +137,13 @@ const UsersManage = () => {
       setCredits(new Map());
     }
     setLoading(false);
-  }, [role, dept, major, klass, search, page]);
+  }, [role, major, klass, search, page]);
 
   // 搜索/筛选变化时回到第一页
-  useEffect(() => { setPage(0); }, [search, role, dept, major, klass]);
+  useEffect(() => { setPage(0); }, [search, role, major, klass]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSearch(sp.get("search") ?? ""); }, [sp]);
 
-  const departments = facets.departments;
   const majors = facets.majors;
   const classes = facets.classes;
   const filtered = rows; // 服务端已筛选
@@ -218,14 +213,7 @@ const UsersManage = () => {
                 <Button variant="destructive" onClick={() => setBulkMode("delete")}>批量删除账号</Button>
               )}
             </div>
-            <div className="grid gap-2 md:grid-cols-4">
-              <Select value={dept} onValueChange={setDept}>
-                <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>全部院系</SelectItem>
-                  {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="grid gap-2 md:grid-cols-3">
               {role === "student" && (
                 <>
                   <Select value={major} onValueChange={setMajor}>
