@@ -1,51 +1,80 @@
 ## 问题
 
-工作助手（超管/学院管理员/教师 共用同一个 `staff-ai-assistant` Edge Function）回答"这一周内有多少名学生提交过申请"时返回"1 名"，与真实数据不符。同时聊天卡片显示英文字段名 `submitted_total`，跳转按钮显示裸路径 `/admin/users/students`，呈现"乱码"。
+工作助手目前只支持固定时间窗口（近 7 天 / 近 30 天 / 累计），无法回答：
 
-根因：
-1. **数据层**：`query_stats` 工具的 metric 列表里**根本没有"近 7 天去重学生数"**，最接近的是 `submitted_total`（全时段去重）。模型只能强行选它，再口头加上"近 7 天"前缀，造成事实错误。
-2. **作用域**：教师/学院管理员调用同一个工具时，`submitted_total` 是全表查询、未按学院过滤；超管返回全局值也未按身份做时间窗口区分，三类角色都会看到错误数字。
-3. **UI 层**：`StaffAiAssistant.tsx` 直接渲染 `m.stats.metric` 原始 key 和 `m.action.payload.path` 原始路径，没有中文化。
+- "昨天/前天提交了几份"
+- "近半个月 / 近半年提交了几份"
+- "这一学期 / 半学期提交了几份"
+- "这一周提交的详细状态"（通过几个、驳回几个、待 AI 几个、待复核几个、AI 疑似几个）
+- "还有多少人没有提交"
+
+模型问到这些就只能回"暂不支持该统计"，体验差。
 
 ## 修复方案
 
-### 1. 后端补齐"时间窗口 + 真实数据"指标
+### 1. 新增"灵活时间窗口"统计工具（后端）
+
 文件：`supabase/functions/staff-ai-assistant/index.ts`
 
-- `query_stats` 的 enum 新增：
-  - `submitted_students_week` — 近 7 天去重提交学生数
-  - `submitted_count_week` — 近 7 天提交申请总数
-  - `submitted_students_month` — 近 30 天去重提交学生数
-- 系统提示 metric 说明同步追加这三项中文释义。
-- 实现分支按 `submitted_at >= now()-N天` 过滤后对 `student_id` 去重计数，全部走 Postgres 真实查询，不做任何兜底估算。
+**新增工具 `query_stats_range`**，参数：
 
-### 2. 三类角色全部按真实身份范围作答
-对超管/学院管理员/教师的所有数据型工具（`query_stats`、`list_failing_students`、`student_full_profile`、`student_submission_history`、`find_student`、`account_provenance` 等）统一加 college 作用域：
+- `metric` — 必填，枚举：
+  - `submitted_count` — 时间窗口内提交申请总数
+  - `submitted_students` — 时间窗口内去重提交学生数
+  - `status_breakdown` — 时间窗口内按状态拆分（auto_approved / approved / rejected / rejected_by_ai / pending_review / pending_ai 各多少条）
+  - `not_submitted_students` — 时间窗口内**未**提交申请的学生人数（= 范围内学生总数 − 提交过学生数）
+  - `aigc_breakdown` — 时间窗口内 AIGC 鉴别拆分（fake / suspect / real / pending）
+- `range` — 必填，枚举（覆盖中文常见说法）：
+  - `yesterday` / `day_before_yesterday` — 自然日（按本地 Asia/Shanghai 0 点切分）
+  - `today`
+  - `last_7_days` / `last_15_days` / `last_30_days` / `last_90_days` / `last_180_days` / `last_365_days`
+  - `this_week` / `this_month` / `this_year`
+  - `this_semester` — 本学期：3-1 ~ 7-15（春）或 9-1 ~ 次年 1-15（秋），按当前日期判断
+  - `half_semester` — 学期前/后半段（按当前日期落在前/后判定）
+  - `all_time`
 
-- 超管：全局，不过滤。
-- 学院管理员 / 教师：在 SQL 层附加 `college_id = <调用方学院>` 过滤，确保返回的人数、学生明细只覆盖本学院。
-- 已经按 college 过滤的指标保持不变，缺失的（如 `submitted_total / submitted_count / total_students / passed_students / failing_students / auto_approved_total / manual_approved_total / rejected_total / pending_review / pending_ai`）逐一补齐。
+实现要点：
+- 全部走 Postgres 真实查询（`submitted_at` 为时间锚点；`status_breakdown` 用 `applications.status` 分组；`not_submitted_students` 用 `user_roles.role='student'` 总数 减去窗口内 `distinct student_id`）。
+- 学院作用域沿用现有 `CallerCtx`：超管全局，学院管理员/教师按 `college_id` 过滤；`not_submitted_students` 的"学生总数"也按相同作用域取。
+- 时区使用 Asia/Shanghai 计算自然日和学期边界，避免 UTC 错位导致"昨天"差一天。
 
-### 3. 强化"严禁虚构"行为约束
-在系统提示里加一条总纲：
+### 2. 系统提示里教模型怎么映射中文到 range
 
-> 凡涉及任何数量、人数、统计、学生明细、审核结论的提问，必须严格基于工具返回的数据库结果回答；如果用户问的指标不在 metric 列表里，必须直接回复"暂不支持该统计"，禁止用近义指标替代后再口头改写时间窗口、范围或单位。返回为空时必须如实回复"数据库中暂无相关记录"。
+在 `index.ts` 的 SYSTEM 中追加：
 
-### 4. 前端去除"乱码"
+> 凡问"昨天/前天/今天/这一周/这一月/这一年/近 X 天/近半月/近半年/这一学期/半个学期"等任何带时间窗口的统计，必须调用 `query_stats_range`，并将中文映射到对应的 `range` 枚举（昨天→yesterday、前天→day_before_yesterday、近半月→last_15_days、近半年→last_180_days、这一学期→this_semester、半个学期→half_semester …）。问"详细状态/审核情况/各种状态多少"必须用 `metric="status_breakdown"`；问"还有多少人没提交/未提交人数"必须用 `metric="not_submitted_students"`。**严禁**用 `query_stats` 的 `_week`/`_total` 指标替代。
+
+保留现有 `query_stats` 不动，向后兼容旧的固定指标（本周通过/驳回、累计提交等）。
+
+### 3. 前端展示（已存在的 `StaffAiAssistant.tsx`）
+
 文件：`src/components/StaffAiAssistant.tsx`
 
-- 增加 `METRIC_LABELS` 字典，把所有 metric key 映射为中文（如 `submitted_total → "累计提交学生数"`、`submitted_students_week → "近 7 天提交学生数"`、`pending_review → "待人工复核"` 等），卡片渲染用中文标签。
-- 跳转按钮文本改为基于路径前缀映射的中文（如 `/admin/users/students → "打开学生管理"`、`/admin/credits → "打开学分排名"`、`/teacher/students/{id} → "打开学生档案"` 等），不再显示原始路径字符串。
+- 在 `METRIC_LABELS` 字典里追加新 key 的中文标签：
+  - `submitted_count` → "提交申请数"
+  - `submitted_students` → "提交学生数"
+  - `status_breakdown` → "状态分布"
+  - `not_submitted_students` → "未提交学生数"
+  - `aigc_breakdown` → "AI 鉴别分布"
+- 卡片渲染逻辑增强：当后端返回的 `stats.value` 是对象（如 status_breakdown 的 `{auto_approved: 3, approved: 5, ...}`）时，改为渲染"标题 + 多行键值"列表，而不是单个大数字。键名同样走中文映射（auto_approved→系统初审通过、approved→人工通过 等）。
+- 卡片副标题展示后端返回的 `range_label`（如"昨天"、"近 15 天"、"本学期 (2026-03-01 ~ 2026-07-15)"），让用户清楚口径。
 
-## 验证（三类角色各跑一遍）
+### 4. 验证（必跑）
 
-1. 超管 / 学院管理员 / 教师 分别提问"这一周内有多少名学生提交过申请"——
-   - 模型必须调用 `submitted_students_week`，卡片标题为中文「近 7 天提交学生数」，数值与对应 SQL（按角色作用域）一致。
-2. 学院管理员 / 教师 提问"累计有多少学生提交过"——返回值必须等于本学院去重学生数，**不能**等于全平台数字。
-3. 提问一个不存在的指标（如"近 3 天通过率"）——必须返回"暂不支持该统计"，不得用近义指标替代。
-4. 卡片与跳转按钮中均不再出现 `submitted_total`、`/admin/...` 等英文字符串。
+1. 超管 / 学院管理员 / 教师 三类账号分别提问，结果都要与对应 SQL 一致：
+   - "昨天提交了几份" → `query_stats_range(metric=submitted_count, range=yesterday)`
+   - "前天提交了几份" → `range=day_before_yesterday`
+   - "近半个月提交了几份" → `range=last_15_days`
+   - "近半年提交了几份" → `range=last_180_days`
+   - "这一学期提交了几份" → `range=this_semester`
+   - "半个学期提交了几份" → `range=half_semester`
+   - "这一周提交的详细状态" → `metric=status_breakdown, range=this_week`，卡片展示六类计数
+   - "还有多少学生没有提交" → `metric=not_submitted_students, range=all_time`
+2. 学院管理员/教师查询的数字必须只覆盖本学院（不能等于全平台数）。
+3. 卡片不出现英文 key、`status_breakdown` 等原始字符串。
 
-## 范围之外（不动）
+## 范围之外
 
-- 不调整 RLS、表结构、其他 Edge Function。
-- 不更换 AI 模型，也不改鉴权流程。
+- 不动 RLS、表结构、其他 Edge Function。
+- 不修改 AI 模型 / 鉴权流程。
+- 旧的 `query_stats` 固定指标继续保留，避免回归。
