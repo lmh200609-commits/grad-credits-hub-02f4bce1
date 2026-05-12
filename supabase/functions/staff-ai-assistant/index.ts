@@ -270,6 +270,49 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "query_stats_range",
+      description: "按灵活时间窗口查询统计。支持昨天/前天/今天/本周/本月/本年/近 7~365 天/本学期/半学期/全部时间。可查询提交申请数、提交学生数、按状态拆分、未提交学生数、AIGC 拆分。所有带具体时间窗口（含『昨天/前天/近半月/近半年/这一学期/半个学期』等）或问『详细状态/还有多少人没提交』时必须使用本工具，不要再用 query_stats。",
+      parameters: {
+        type: "object",
+        properties: {
+          metric: {
+            type: "string",
+            enum: [
+              "submitted_count",
+              "submitted_students",
+              "status_breakdown",
+              "not_submitted_students",
+              "aigc_breakdown",
+            ],
+          },
+          range: {
+            type: "string",
+            enum: [
+              "today",
+              "yesterday",
+              "day_before_yesterday",
+              "last_7_days",
+              "last_15_days",
+              "last_30_days",
+              "last_90_days",
+              "last_180_days",
+              "last_365_days",
+              "this_week",
+              "this_month",
+              "this_year",
+              "this_semester",
+              "half_semester",
+              "all_time",
+            ],
+          },
+        },
+        required: ["metric", "range"],
+      },
+    },
+  },
 ];
 
 // 解析中文时间窗口为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分
