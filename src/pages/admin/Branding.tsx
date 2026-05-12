@@ -139,7 +139,16 @@ const Branding = () => {
       toast.success(Object.keys(valid).length > 0 ? "院徽已上传，主题已自动更新" : "院徽已上传（未识别到合适主色，主题未变）");
       await load();
     } catch (e) {
-      toast.error((e as Error).message);
+      const raw = (e as Error).message || "";
+      let msg = "上传院徽失败，请稍后重试";
+      if (/row-level security|permission|denied|unauthorized|403/i.test(raw)) {
+        msg = "没有权限上传院徽，请确认你已登录本学院的管理员账号";
+      } else if (/payload|too large|413|exceed/i.test(raw)) {
+        msg = "院徽文件过大，最大 2MB";
+      } else if (/network|failed to fetch|timeout/i.test(raw)) {
+        msg = "网络异常，请检查网络后重试";
+      }
+      toast.error(msg);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -160,7 +169,11 @@ const Branding = () => {
       setDeleteOpen(false);
       await load();
     } catch (e) {
-      toast.error((e as Error).message);
+      const raw = (e as Error).message || "";
+      const msg = /row-level security|permission|denied|unauthorized|403/i.test(raw)
+        ? "没有权限删除院徽，请确认你已登录本学院的管理员账号"
+        : "删除院徽失败，请稍后重试";
+      toast.error(msg);
     } finally {
       setDeleting(false);
     }
@@ -173,8 +186,13 @@ const Branding = () => {
       theme, system_title: systemTitle,
     }).eq("id", collegeId);
     setSaving(false);
-    if (error) toast.error(error.message);
-    else { toast.success("已同步到本学院全部用户"); }
+    if (error) {
+      const raw = error.message || "";
+      const msg = /row-level security|permission|denied|unauthorized|403/i.test(raw)
+        ? "没有权限修改本学院的界面风格"
+        : "保存失败，请稍后重试";
+      toast.error(msg);
+    } else { toast.success("已同步到本学院全部用户"); }
   };
 
   const lightnessOf = (tokens?: string) => {
