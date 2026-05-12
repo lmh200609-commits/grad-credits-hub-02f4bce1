@@ -12,6 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -102,16 +103,16 @@ const AuditLogs = () => {
           <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">操作类型</Label>
-              <Select value={actionFilter} onValueChange={setActionFilter}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="操作类型" /></SelectTrigger>
-                <SelectContent>
-                  {ACTION_OPTIONS.map((a) => (
-                    <SelectItem key={a} value={a}>
-                      {a === "all" ? "全部操作" : ACTION_LABEL[a]?.label ?? a}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={actionFilter}
+                onChange={setActionFilter}
+                options={ACTION_OPTIONS.map((a) => ({
+                  value: a,
+                  label: a === "all" ? "全部操作" : ACTION_LABEL[a]?.label ?? a,
+                }))}
+                placeholder="操作类型"
+                searchPlaceholder="搜索操作…"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">操作者账号</Label>
