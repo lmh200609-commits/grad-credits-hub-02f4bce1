@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { handleAuthExpired } from "@/lib/sessionGuard";
+import { setStaffAssistantUser } from "@/hooks/useStaffAssistantStore";
 
 type AppRole = "super_admin" | "admin" | "teacher" | "student";
 
@@ -43,6 +44,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
+      setStaffAssistantUser(newSession?.user?.id ?? null);
       if (newSession?.user) {
         // Defer Supabase calls to avoid deadlock
         setTimeout(() => fetchRoles(newSession.user.id), 0);
@@ -65,6 +67,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     supabase.auth.getSession().then(({ data: { session: existing } }) => {
       setSession(existing);
       setUser(existing?.user ?? null);
+      setStaffAssistantUser(existing?.user?.id ?? null);
       if (existing?.user) {
         fetchRoles(existing.user.id).finally(() => setLoading(false));
       } else {
