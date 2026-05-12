@@ -1353,11 +1353,41 @@ Deno.serve(async (req) => {
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
 
+    // 服务端兜底：若最近一条用户消息既包含具体日期，又包含"谁/哪些/什么学院/什么班级/几份/提交了什么"等问句，
+    // 提前拉一次 list_submissions_range 真实结果，作为权威 system 上下文，防止模型跳过工具自行编造。
+    try {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      const txt = String(lastUser?.content || "");
+      if (txt) {
+        const datePatterns = [
+          /\d{4}\s*[-\/年\.]\s*\d{1,2}\s*[-\/月\.]\s*\d{1,2}/,
+          /\d{1,2}\s*[月\/\-\.]\s*\d{1,2}\s*[日号]?/,
+          /[一二三四五六七八九十百零〇]{1,4}\s*月\s*[一二三四五六七八九十百零〇]{1,4}\s*[日号]?/,
+        ];
+        const askPattern = /(谁|哪些|哪几|哪个|哪四|哪五|哪六|什么学院|什么班级|提交了什么|是什么|是哪|几份|多少份|详细列出|列出|名单)/;
+        let dateStr: string | null = null;
+        for (const re of datePatterns) {
+          const mm = txt.match(re);
+          if (mm) { dateStr = mm[0]; break; }
+        }
+        if (dateStr && askPattern.test(txt)) {
+          const pre = await execTool("list_submissions_range", { range: "specific_date", date: dateStr, limit: 200 }, supabase, ctx);
+          convo.push({
+            role: "system",
+            content: `===== 数据库真实查询结果（请严格基于以下事实回答，禁止改写姓名/学号/学院/班级/条数/日期；如下方 count=0 直接回答"该日无申请提交记录"）=====\n用户提到的日期串："${dateStr}"\n${JSON.stringify(pre, null, 2)}`,
+          });
+          stats = pre;
+          dataToolUsed = true;
+        }
+      }
+    } catch (e) {
+      console.error("preinjection list_submissions_range failed:", e);
+    }
+
     let action: any = null;
     let candidates: any[] | null = null;
-    let stats: any = null;
+    // stats / dataToolUsed 已在上方初始化（兜底注入需要）
     let toolCallCount = 0;
-    let dataToolUsed = false;
 
     // Up to 3 tool-call rounds
     for (let round = 0; round < 3; round++) {
