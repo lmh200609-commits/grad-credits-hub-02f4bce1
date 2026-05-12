@@ -272,6 +272,75 @@ const TOOLS = [
   },
 ];
 
+// 解析中文时间窗口为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分
+function resolveRange(range: string): { since: Date | null; until: Date | null; label: string } {
+  const TZ = 8 * 3600 * 1000;
+  const nowShifted = new Date(Date.now() + TZ);
+  const startOfTodayShifted = new Date(Date.UTC(
+    nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), nowShifted.getUTCDate()
+  ));
+  const startOfTodayUtc = new Date(startOfTodayShifted.getTime() - TZ);
+  const endOfTodayUtc = new Date(startOfTodayUtc.getTime() + 24 * 3600 * 1000);
+  const daysAgo = (n: number) => new Date(startOfTodayUtc.getTime() - n * 24 * 3600 * 1000);
+  const fmt = (dt: Date) => `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+  switch (range) {
+    case "today": return { since: startOfTodayUtc, until: endOfTodayUtc, label: "今天" };
+    case "yesterday": return { since: daysAgo(1), until: startOfTodayUtc, label: "昨天" };
+    case "day_before_yesterday": return { since: daysAgo(2), until: daysAgo(1), label: "前天" };
+    case "last_7_days": return { since: daysAgo(7), until: null, label: "近 7 天" };
+    case "last_15_days": return { since: daysAgo(15), until: null, label: "近 15 天" };
+    case "last_30_days": return { since: daysAgo(30), until: null, label: "近 30 天" };
+    case "last_90_days": return { since: daysAgo(90), until: null, label: "近 90 天" };
+    case "last_180_days": return { since: daysAgo(180), until: null, label: "近半年" };
+    case "last_365_days": return { since: daysAgo(365), until: null, label: "近一年" };
+    case "this_week": {
+      const dow = (nowShifted.getUTCDay() + 6) % 7;
+      return { since: daysAgo(dow), until: null, label: "本周" };
+    }
+    case "this_month": {
+      const m = new Date(Date.UTC(nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), 1));
+      return { since: new Date(m.getTime() - TZ), until: null, label: "本月" };
+    }
+    case "this_year": {
+      const y = new Date(Date.UTC(nowShifted.getUTCFullYear(), 0, 1));
+      return { since: new Date(y.getTime() - TZ), until: null, label: "本年" };
+    }
+    case "this_semester":
+    case "half_semester": {
+      const y = nowShifted.getUTCFullYear();
+      const m = nowShifted.getUTCMonth() + 1;
+      const d = nowShifted.getUTCDate();
+      let startY: number, startM: number, startD: number, endY: number, endM: number, endD: number;
+      if ((m > 3 || (m === 3 && d >= 1)) && (m < 7 || (m === 7 && d <= 15))) {
+        startY = y; startM = 3; startD = 1; endY = y; endM = 7; endD = 16;
+      } else if (m >= 9 || (m === 1 && d <= 15)) {
+        if (m === 1) { startY = y - 1; endY = y; } else { startY = y; endY = y + 1; }
+        startM = 9; startD = 1; endM = 1; endD = 16;
+      } else if (m >= 7) {
+        startY = y; startM = 9; startD = 1; endY = y + 1; endM = 1; endD = 16;
+      } else {
+        startY = y; startM = 3; startD = 1; endY = y; endM = 7; endD = 16;
+      }
+      const startShifted = new Date(Date.UTC(startY, startM - 1, startD));
+      const endShifted = new Date(Date.UTC(endY, endM - 1, endD));
+      const since = new Date(startShifted.getTime() - TZ);
+      const until = new Date(endShifted.getTime() - TZ);
+      if (range === "half_semester") {
+        const midMs = (startShifted.getTime() + endShifted.getTime()) / 2;
+        const midShifted = new Date(midMs);
+        const inFirstHalf = nowShifted.getTime() < midMs;
+        if (inFirstHalf) {
+          return { since, until: new Date(midShifted.getTime() - TZ), label: `本学期前半段 (${fmt(startShifted)} ~ ${fmt(midShifted)})` };
+        }
+        return { since: new Date(midShifted.getTime() - TZ), until, label: `本学期后半段 (${fmt(midShifted)} ~ ${fmt(endShifted)})` };
+      }
+      return { since, until, label: `本学期 (${fmt(startShifted)} ~ ${fmt(endShifted)})` };
+    }
+    case "all_time": return { since: null, until: null, label: "全部时间" };
+  }
+  return { since: null, until: null, label: "全部时间" };
+}
+
 type CallerCtx = {
   userRole: string; // 'super_admin' | 'admin' | 'teacher'
   collegeId: string | null;
