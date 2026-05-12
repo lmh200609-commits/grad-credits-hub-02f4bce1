@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { applySchema } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
+import { sha256Hex } from "@/lib/fileHash";
+import { buildKeywordsFingerprint } from "@/lib/keywordFingerprint";
 
 type Rule = {
   id: string;
@@ -367,6 +369,45 @@ const ApplyPage = () => {
     if (fileTooBig) return toast({ title: "文件不能超过 10MB", variant: "destructive" });
     setSubmitting(true);
     try {
+      // 提交前去重预检：图片全平台唯一 + 学生本人「已通过」关键词集合不可重复
+      const fileHash = await sha256Hex(file);
+      const fingerprint = buildKeywordsFingerprint(
+        parsed.data.selected_keywords,
+        parsed.data.custom_keywords,
+      );
+      {
+        const { count: dupImg } = await supabase
+          .from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("file_hash", fileHash)
+          .limit(1);
+        if ((dupImg ?? 0) > 0) {
+          setSubmitting(false);
+          return toast({
+            title: "该图片已被提交过",
+            description: "请勿重复使用同一张图片，请更换证明材料",
+            variant: "destructive",
+          });
+        }
+      }
+      if (fingerprint) {
+        const { count: dupKw } = await supabase
+          .from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("student_id", user!.id)
+          .eq("keywords_fingerprint", fingerprint)
+          .in("status", ["approved", "auto_approved"])
+          .limit(1);
+        if ((dupKw ?? 0) > 0) {
+          setSubmitting(false);
+          return toast({
+            title: "该关键词组合已审核通过",
+            description: "无需重复提交，可调整关键词后再申请",
+            variant: "destructive",
+          });
+        }
+      }
+
       let filePath: string | null = null;
       if (file) {
         const ext = file.name.split(".").pop();
@@ -384,9 +425,17 @@ const ApplyPage = () => {
           selected_keywords: parsed.data.selected_keywords,
           custom_keywords: parsed.data.custom_keywords,
           file_path: filePath,
+          file_hash: fileHash,
+          keywords_fingerprint: fingerprint || null,
         })
         .select().single();
-      if (error) throw error;
+      if (error) {
+        // trigger 兜底：删除已上传的图片，避免存储残留
+        if (filePath) {
+          await supabase.storage.from("application-files").remove([filePath]).catch(() => {});
+        }
+        throw error;
+      }
       toast({ title: "提交成功", description: "正在等待审核" });
       // AI 评估由数据库 trigger 自动入队（ai_eval_queue），后台 worker 异步处理。
       // 后台静默触发人脸比对（不影响材料有效性，仅作教师端提示）
