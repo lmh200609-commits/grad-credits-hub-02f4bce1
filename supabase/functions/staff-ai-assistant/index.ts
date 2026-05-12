@@ -88,6 +88,15 @@ const CHINESE_ONLY_RULE = `\n13. 全程使用纯简体中文回答。严禁在�
 
 const NO_PATH_RULE = `\n14. 当工具返回 navigate_path 或你已请求 navigate_to 时，前端会自动渲染"跳转"按钮。回答正文中严禁出现任何 URL、路径片段（包括 /admin/...、/teacher/...、/applications/... 等）和英文查询参数（如 ?passFilter=fail、?status=pending_review、?dept=xxx）。请只用一句简体中文描述用户应该做什么，例如"已为你定位到不合格学生名单，可点击下方按钮进入"或"已找到对应申请，点击下方按钮查看详情"。禁止把路径作为代码块、行内代码或纯文本展示给用户。`;
 
+const RANGE_RULE = `\n15. 【灵活时间窗口】凡用户问到带具体时间窗口的统计（昨天/前天/今天/本周/本月/本年/近 X 天/近半月/近半年/近一年/这一学期/半个学期/本学期），必须调用 query_stats_range，并按下表把中文映射成 range：
+- 昨天→yesterday；前天→day_before_yesterday；今天→today
+- 本周/这一周→this_week；本月→this_month；本年→this_year
+- 近 7 天→last_7_days；近 15 天/近半月/近两周→last_15_days；近 30 天→last_30_days；近 90 天→last_90_days；近半年/近 180 天→last_180_days；近一年/近 365 天→last_365_days
+- 这一学期/本学期→this_semester；半个学期/半学期→half_semester
+- 累计/全部/总共/历史→all_time
+metric 选择：问"提交了几份/多少份"用 submitted_count；问"多少学生提交/几个人提交"用 submitted_students；问"详细状态/状态分布/通过几个驳回几个/审核情况"用 status_breakdown；问"多少人没提交/未提交人数/还有多少没交"用 not_submitted_students；问 AIGC/AI 图片状态分布用 aigc_breakdown。
+严禁用 query_stats 的 _week/_month/_total 指标替代 query_stats_range；严禁回答"暂不支持该统计"。`;
+
 // 兜底：从模型最终答复中剥离裸 URL / 路径片段 / markdown 链接，避免出现 "/admin/credits?passFilter=fail" 这类英文路径
 function stripPathsFromAnswer(text: string): string {
   if (!text) return text;
@@ -1161,7 +1170,7 @@ Deno.serve(async (req) => {
     // 服务端权威角色覆盖客户端声明
     userRole = serverRole;
     const ctx: CallerCtx = { userRole, collegeId: callerCollegeId, isSuper: isSuperResolved };
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${RANGE_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
