@@ -310,7 +310,7 @@ const ReviewHub = () => {
                 <TableHead>学生</TableHead>
                 <TableHead>说明</TableHead>
                 <TableHead>建议学分</TableHead>
-                <TableHead>置信度</TableHead>
+                <TableHead>判定确信度</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>提交时间</TableHead>
                 <TableHead className="text-right">操作</TableHead>

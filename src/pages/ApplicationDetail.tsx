@@ -936,7 +936,7 @@ const ApplicationDetail = () => {
                       </span>
                     )}
                     {isReviewer && r.confidence != null && (
-                      <span className="text-muted-foreground">置信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>
+                      <span className="text-muted-foreground">判定确信度 {(Number(r.confidence) * 100).toFixed(0)}%</span>
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
