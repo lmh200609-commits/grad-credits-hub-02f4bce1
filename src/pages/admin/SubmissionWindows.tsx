@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import { Plus, FileSpreadsheet, RefreshCw, Trash2, FileText, Pencil } from "lucide-react";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
@@ -187,12 +188,14 @@ const SubmissionWindows = () => {
             <CardContent className="py-4">
               <div className="flex items-center gap-3">
                 <Label>切换学院</Label>
-                <Select value={activeCollege ?? ""} onValueChange={setActiveCollege}>
-                  <SelectTrigger className="w-[280px]"><SelectValue placeholder="选择学院" /></SelectTrigger>
-                  <SelectContent>
-                    {colleges.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={activeCollege ?? ""}
+                  onChange={setActiveCollege}
+                  options={colleges.map((c) => ({ value: c.id, label: c.name }))}
+                  placeholder="选择学院"
+                  searchPlaceholder="搜索学院…"
+                  className="w-[280px]"
+                />
               </div>
             </CardContent>
           </Card>
