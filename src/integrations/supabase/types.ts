@@ -318,11 +318,13 @@ export type Database = {
           face_match_note: string | null
           face_match_score: number | null
           face_match_status: string | null
+          file_hash: string | null
           file_path: string | null
           final_credit: number | null
           final_review_note: string | null
           final_reviewer_id: string | null
           id: string
+          keywords_fingerprint: string | null
           review_source: string | null
           reviewed_at: string | null
           selected_keywords: string[]
@@ -373,11 +375,13 @@ export type Database = {
           face_match_note?: string | null
           face_match_score?: number | null
           face_match_status?: string | null
+          file_hash?: string | null
           file_path?: string | null
           final_credit?: number | null
           final_review_note?: string | null
           final_reviewer_id?: string | null
           id?: string
+          keywords_fingerprint?: string | null
           review_source?: string | null
           reviewed_at?: string | null
           selected_keywords?: string[]
@@ -428,11 +432,13 @@ export type Database = {
           face_match_note?: string | null
           face_match_score?: number | null
           face_match_status?: string | null
+          file_hash?: string | null
           file_path?: string | null
           final_credit?: number | null
           final_review_note?: string | null
           final_reviewer_id?: string | null
           id?: string
+          keywords_fingerprint?: string | null
           review_source?: string | null
           reviewed_at?: string | null
           selected_keywords?: string[]
