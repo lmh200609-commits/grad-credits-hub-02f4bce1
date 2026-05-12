@@ -1223,6 +1223,9 @@ Deno.serve(async (req) => {
               action = { type: "navigate", payload: { path: (result as any).navigate_path } };
             }
           }
+          if (tc.function?.name === "query_stats_range") {
+            stats = result;
+          }
 
           convo.push({
             role: "tool",
