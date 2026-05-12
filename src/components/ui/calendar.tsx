@@ -39,6 +39,12 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: C
         day_disabled: "text-muted-foreground opacity-50",
         day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
+        caption_dropdowns: "flex justify-center gap-1",
+        vhidden: "hidden",
+        dropdown:
+          "bg-background border border-input rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring",
+        dropdown_month: "relative",
+        dropdown_year: "relative",
         ...classNames,
       }}
       components={{
