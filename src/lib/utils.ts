@@ -22,5 +22,5 @@ export function formatDepositDate(value: string | Date | null | undefined): stri
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return `${y}年${Number(m)}月${Number(day)}日`;
 }
