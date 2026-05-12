@@ -47,7 +47,6 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
   const [rows, setRows] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [dept, setDept] = useState(ALL);
   const [major, setMajor] = useState(ALL);
   const [klass, setKlass] = useState(ALL);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -58,7 +57,7 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
 
   useEffect(() => {
     if (!open) return;
-    setSearch(""); setDept(ALL); setMajor(ALL); setKlass(ALL);
+    setSearch(""); setMajor(ALL); setKlass(ALL);
     setSelected(new Set()); setResults(null); setConfirmText("");
     (async () => {
       setLoading(true);
@@ -72,21 +71,19 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
     })();
   }, [open, role]);
 
-  const departments = useMemo(() => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(), [rows]);
   const majors = useMemo(() => Array.from(new Set(rows.map((r) => r.major).filter(Boolean) as string[])).sort(), [rows]);
   const classes = useMemo(() => Array.from(new Set(rows.map((r) => r.class_name).filter(Boolean) as string[])).sort(), [rows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (dept !== ALL && r.department !== dept) return false;
       if (role === "student" && major !== ALL && r.major !== major) return false;
       if (role === "student" && klass !== ALL && r.class_name !== klass) return false;
       if (!q) return true;
       return [r.full_name, r.student_no, r.phone, r.class_name, r.department, r.major]
         .filter(Boolean).some((v) => v!.toLowerCase().includes(q));
     });
-  }, [rows, search, dept, major, klass, role]);
+  }, [rows, search, major, klass, role]);
 
   const allSelected = filtered.length > 0 && filtered.every((r) => selected.has(r.user_id));
   const toggleAll = () => {
@@ -203,15 +200,8 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
             </div>
           ) : (
             <>
-              <div className="grid gap-2 md:grid-cols-4">
+              <div className="grid gap-2 md:grid-cols-3">
                 <Input placeholder="搜索姓名/学号/工号/手机号/班级/院系" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <Select value={dept} onValueChange={setDept}>
-                  <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>全部院系</SelectItem>
-                    {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                  </SelectContent>
-                </Select>
                 {role === "student" && (
                   <>
                     <Select value={major} onValueChange={setMajor}>
