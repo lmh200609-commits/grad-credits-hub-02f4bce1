@@ -91,8 +91,8 @@ Deno.serve(async (req) => {
       return json({ status: "skipped", note: "学生未上传证件照，已跳过人脸比对" });
     }
     if (!app.file_path || !IMAGE_EXT.test(app.file_path)) {
-      await note("申请材料不是图片或缺失，无需比对", null, "unknown");
-      return json({ status: "unknown", note: "申请材料不是图片" });
+      // 材料不是图片，无需比对，也不写库噪音
+      return json({ status: "skipped", note: "申请材料不是图片，已跳过人脸比对" });
     }
 
     const [idPhotoUrl, materialUrl] = await Promise.all([
@@ -178,11 +178,12 @@ Deno.serve(async (req) => {
     }
 
     const score = Math.max(0, Math.min(1, Number(parsed.similarity) || 0));
-    let status: "no_face" | "match" | "mismatch";
-    if (!parsed.has_face_in_material) status = "no_face";
-    else if (parsed.same_person && score >= 0.6) status = "match";
-    else status = "mismatch";
-
+    // 材料中没有人脸：视为不需要比对，不写入数据库，避免在教师端产生噪音
+    if (!parsed.has_face_in_material) {
+      return json({ status: "skipped", note: "申请材料中未检测到人脸，已跳过人脸比对" });
+    }
+    const status: "match" | "mismatch" =
+      parsed.same_person && score >= 0.6 ? "match" : "mismatch";
     await note(String(parsed.reason ?? ""), score, status);
     return json({ status, score, note: parsed.reason });
   } catch (e) {
