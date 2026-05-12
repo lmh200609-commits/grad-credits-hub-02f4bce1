@@ -1,42 +1,40 @@
-# 修复表单聚焦边框被裁切 & 日期选择器重复"五月/2026"
+# 简化日期选择器顶部为「‹ 月份文字 ›」
 
-## 问题与根因
+## 目标
 
-### 1. 输入框聚焦时边框被裁切
-`src/components/SingleUserDialog.tsx` 第 178 行：
-```
-<div className="grid max-h-[60vh] gap-3 overflow-y-auto sm:grid-cols-2">
-```
-该容器为滚动容器（`overflow-y-auto`）但无内边距。`Input` 聚焦环 `focus-visible:ring-2 ring-offset-2` 共 4px，会被容器左/右/下边缘裁掉，造成截图中"床号"边框缺一块。
-
-### 2. 日期选择器重复显示"五月/2026"
-react-day-picker dropdown 模式下，每个 `rdp-dropdown_month / rdp-dropdown_year` 内部同时含有 `<select>` 与一个用于视觉显示的 `caption_label`。上一次修改把 `dropdown` 类设为可见 select 样式，但未隐藏其下方的 `caption_label`，于是出现两套"五月 ▾ / 2026 ▾"。
+去掉日历顶部臃肿的"月 / 年"双下拉，改为 react-day-picker 默认的 buttons 布局：左右箭头翻月 + 中间显示"2026年6月"。
 
 ## 改动
 
-### A. `src/components/SingleUserDialog.tsx`（仅改一行）
-将第 178 行容器加内边距，给焦点环留空间：
+### 1. `src/components/ui/date-picker.tsx`
+移除 dropdown 模式：
 ```diff
-- <div className="grid max-h-[60vh] gap-3 overflow-y-auto sm:grid-cols-2">
-+ <div className="grid max-h-[60vh] gap-3 overflow-y-auto px-1 py-1 sm:grid-cols-2">
+- captionLayout="dropdown-buttons"
+- fromYear={_fromYear}
+- toYear={_toYear}
 ```
+`fromYear / toYear` 在 buttons 模式下不再需要（仅 dropdown 模式起范围限制作用）。`disableFuture` 仍保留，确保出生日期不能选未来。
 
-### B. `src/components/ui/calendar.tsx`
-隐藏 dropdown 内部重复的 caption_label，仅保留可见的 `<select>`：
+### 2. `src/components/ui/calendar.tsx`
+回滚上一次为 dropdown 模式添加的样式（已不再使用）：
 ```diff
-- dropdown_month: "relative",
-- dropdown_year: "relative",
-+ dropdown_month: "relative [&>.rdp-caption_label]:hidden",
-+ dropdown_year: "relative [&>.rdp-caption_label]:hidden",
+- caption_dropdowns: "flex justify-center gap-1",
+- vhidden: "hidden",
+- dropdown: "bg-background border border-input rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring",
+- dropdown_month: "relative [&>.rdp-caption_label]:hidden",
+- dropdown_year: "relative [&>.rdp-caption_label]:hidden",
 ```
-（不影响普通 buttons 模式 —— 那种模式下 caption_label 是 caption 的直接子级，不在 dropdown_* 内部。）
+保留原始 `caption_label / nav_button` 样式。
+
+## 取舍说明
+
+用户选择"仅左右箭头 + 月份文字"。该方案最简洁；缺点是选择出生年份等跨年场景需多次点击翻月。如果之后觉得翻年太慢，可再加一对"« »"年度翻页按钮 —— 本次不做。
 
 ## 不改动
 
-- 不动业务逻辑、表单字段、提交流程。
-- 不动后端、数据库。
+- `DatePicker` 的 props 接口、调用方（`SingleUserDialog.tsx` 等）保持不变。
+- 不动业务逻辑、后端、数据库。
 
 ## 验证
 
-1. 打开"新建学生账号"/"新建教师账号"，依次点击各输入框（含最右列、最底部的"床号"）：聚焦环完整可见，不再被裁切。
-2. 点击"出生日期 → 选择日期"：顶部仅有一行"月份 ▾ 年份 ▾"下拉 + 左右翻页箭头，不再重复出现"五月/2026"。
+打开"新建学生 / 教师账号 → 选择日期"：日历顶部仅有 `‹  2026年6月  ›`，无重复文字、无下拉框，整体清爽。
