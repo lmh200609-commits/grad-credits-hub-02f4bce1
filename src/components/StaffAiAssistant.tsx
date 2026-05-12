@@ -42,6 +42,25 @@ const METRIC_LABELS: Record<string, string> = {
   aigc_suspect_week: "近 7 天嫌疑图片",
   aigc_pending_total: "待 AI 鉴别图片",
   aigc_overview: "AI 生成材料概览",
+  submitted_students: "提交学生数",
+  status_breakdown: "状态分布",
+  not_submitted_students: "未提交学生数",
+  aigc_breakdown: "AI 鉴别分布",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  auto_approved: "系统自动通过",
+  approved: "人工通过",
+  rejected: "人工驳回",
+  rejected_by_ai: "AI 初审驳回",
+  pending_review: "待人工复核",
+  pending_ai: "AI 审核中",
+  fake: "高风险",
+  suspect: "嫌疑",
+  real: "通过",
+  pending: "待检测",
+  skipped: "跳过",
+  error: "检测失败",
 };
 
 const PATH_LABELS: Array<[RegExp, string]> = [
@@ -229,8 +248,28 @@ const StaffAiAssistant = () => {
 
                   {m.stats && typeof m.stats.value !== "undefined" && (
                     <div className="rounded-md border bg-card p-3 text-xs">
-                      <div className="text-muted-foreground">{METRIC_LABELS[m.stats.metric] ?? "统计结果"}</div>
-                      <div className="mt-0.5 text-2xl font-bold">{m.stats.value}</div>
+                      <div className="text-muted-foreground">
+                        {METRIC_LABELS[m.stats.metric] ?? "统计结果"}
+                        {m.stats.range_label ? <span className="ml-1">· {m.stats.range_label}</span> : null}
+                      </div>
+                      {typeof m.stats.value === "object" && m.stats.value !== null ? (
+                        <div className="mt-1 flex flex-col gap-0.5">
+                          {Object.entries(m.stats.value as Record<string, number>).map(([k, v]) => (
+                            <div key={k} className="flex items-center justify-between">
+                              <span className="text-muted-foreground">{STATUS_LABELS[k] ?? k}</span>
+                              <span className="font-semibold">{v}</span>
+                            </div>
+                          ))}
+                          {typeof m.stats.total === "number" && (
+                            <div className="mt-1 flex items-center justify-between border-t pt-1">
+                              <span className="text-muted-foreground">合计</span>
+                              <span className="font-semibold">{m.stats.total}</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-2xl font-bold">{String(m.stats.value)}</div>
+                      )}
                     </div>
                   )}
 

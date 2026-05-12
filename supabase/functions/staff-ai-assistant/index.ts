@@ -88,6 +88,15 @@ const CHINESE_ONLY_RULE = `\n13. 全程使用纯简体中文回答。严禁在�
 
 const NO_PATH_RULE = `\n14. 当工具返回 navigate_path 或你已请求 navigate_to 时，前端会自动渲染"跳转"按钮。回答正文中严禁出现任何 URL、路径片段（包括 /admin/...、/teacher/...、/applications/... 等）和英文查询参数（如 ?passFilter=fail、?status=pending_review、?dept=xxx）。请只用一句简体中文描述用户应该做什么，例如"已为你定位到不合格学生名单，可点击下方按钮进入"或"已找到对应申请，点击下方按钮查看详情"。禁止把路径作为代码块、行内代码或纯文本展示给用户。`;
 
+const RANGE_RULE = `\n15. 【灵活时间窗口】凡用户问到带具体时间窗口的统计（昨天/前天/今天/本周/本月/本年/近 X 天/近半月/近半年/近一年/这一学期/半个学期/本学期），必须调用 query_stats_range，并按下表把中文映射成 range：
+- 昨天→yesterday；前天→day_before_yesterday；今天→today
+- 本周/这一周→this_week；本月→this_month；本年→this_year
+- 近 7 天→last_7_days；近 15 天/近半月/近两周→last_15_days；近 30 天→last_30_days；近 90 天→last_90_days；近半年/近 180 天→last_180_days；近一年/近 365 天→last_365_days
+- 这一学期/本学期→this_semester；半个学期/半学期→half_semester
+- 累计/全部/总共/历史→all_time
+metric 选择：问"提交了几份/多少份"用 submitted_count；问"多少学生提交/几个人提交"用 submitted_students；问"详细状态/状态分布/通过几个驳回几个/审核情况"用 status_breakdown；问"多少人没提交/未提交人数/还有多少没交"用 not_submitted_students；问 AIGC/AI 图片状态分布用 aigc_breakdown。
+严禁用 query_stats 的 _week/_month/_total 指标替代 query_stats_range；严禁回答"暂不支持该统计"。`;
+
 // 兜底：从模型最终答复中剥离裸 URL / 路径片段 / markdown 链接，避免出现 "/admin/credits?passFilter=fail" 这类英文路径
 function stripPathsFromAnswer(text: string): string {
   if (!text) return text;
@@ -270,7 +279,119 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "query_stats_range",
+      description: "按灵活时间窗口查询统计。支持昨天/前天/今天/本周/本月/本年/近 7~365 天/本学期/半学期/全部时间。可查询提交申请数、提交学生数、按状态拆分、未提交学生数、AIGC 拆分。所有带具体时间窗口（含『昨天/前天/近半月/近半年/这一学期/半个学期』等）或问『详细状态/还有多少人没提交』时必须使用本工具，不要再用 query_stats。",
+      parameters: {
+        type: "object",
+        properties: {
+          metric: {
+            type: "string",
+            enum: [
+              "submitted_count",
+              "submitted_students",
+              "status_breakdown",
+              "not_submitted_students",
+              "aigc_breakdown",
+            ],
+          },
+          range: {
+            type: "string",
+            enum: [
+              "today",
+              "yesterday",
+              "day_before_yesterday",
+              "last_7_days",
+              "last_15_days",
+              "last_30_days",
+              "last_90_days",
+              "last_180_days",
+              "last_365_days",
+              "this_week",
+              "this_month",
+              "this_year",
+              "this_semester",
+              "half_semester",
+              "all_time",
+            ],
+          },
+        },
+        required: ["metric", "range"],
+      },
+    },
+  },
 ];
+
+// 解析中文时间窗口为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分
+function resolveRange(range: string): { since: Date | null; until: Date | null; label: string } {
+  const TZ = 8 * 3600 * 1000;
+  const nowShifted = new Date(Date.now() + TZ);
+  const startOfTodayShifted = new Date(Date.UTC(
+    nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), nowShifted.getUTCDate()
+  ));
+  const startOfTodayUtc = new Date(startOfTodayShifted.getTime() - TZ);
+  const endOfTodayUtc = new Date(startOfTodayUtc.getTime() + 24 * 3600 * 1000);
+  const daysAgo = (n: number) => new Date(startOfTodayUtc.getTime() - n * 24 * 3600 * 1000);
+  const fmt = (dt: Date) => `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+  switch (range) {
+    case "today": return { since: startOfTodayUtc, until: endOfTodayUtc, label: "今天" };
+    case "yesterday": return { since: daysAgo(1), until: startOfTodayUtc, label: "昨天" };
+    case "day_before_yesterday": return { since: daysAgo(2), until: daysAgo(1), label: "前天" };
+    case "last_7_days": return { since: daysAgo(7), until: null, label: "近 7 天" };
+    case "last_15_days": return { since: daysAgo(15), until: null, label: "近 15 天" };
+    case "last_30_days": return { since: daysAgo(30), until: null, label: "近 30 天" };
+    case "last_90_days": return { since: daysAgo(90), until: null, label: "近 90 天" };
+    case "last_180_days": return { since: daysAgo(180), until: null, label: "近半年" };
+    case "last_365_days": return { since: daysAgo(365), until: null, label: "近一年" };
+    case "this_week": {
+      const dow = (nowShifted.getUTCDay() + 6) % 7;
+      return { since: daysAgo(dow), until: null, label: "本周" };
+    }
+    case "this_month": {
+      const m = new Date(Date.UTC(nowShifted.getUTCFullYear(), nowShifted.getUTCMonth(), 1));
+      return { since: new Date(m.getTime() - TZ), until: null, label: "本月" };
+    }
+    case "this_year": {
+      const y = new Date(Date.UTC(nowShifted.getUTCFullYear(), 0, 1));
+      return { since: new Date(y.getTime() - TZ), until: null, label: "本年" };
+    }
+    case "this_semester":
+    case "half_semester": {
+      const y = nowShifted.getUTCFullYear();
+      const m = nowShifted.getUTCMonth() + 1;
+      const d = nowShifted.getUTCDate();
+      let startY: number, startM: number, startD: number, endY: number, endM: number, endD: number;
+      if ((m > 3 || (m === 3 && d >= 1)) && (m < 7 || (m === 7 && d <= 15))) {
+        startY = y; startM = 3; startD = 1; endY = y; endM = 7; endD = 16;
+      } else if (m >= 9 || (m === 1 && d <= 15)) {
+        if (m === 1) { startY = y - 1; endY = y; } else { startY = y; endY = y + 1; }
+        startM = 9; startD = 1; endM = 1; endD = 16;
+      } else if (m >= 7) {
+        startY = y; startM = 9; startD = 1; endY = y + 1; endM = 1; endD = 16;
+      } else {
+        startY = y; startM = 3; startD = 1; endY = y; endM = 7; endD = 16;
+      }
+      const startShifted = new Date(Date.UTC(startY, startM - 1, startD));
+      const endShifted = new Date(Date.UTC(endY, endM - 1, endD));
+      const since = new Date(startShifted.getTime() - TZ);
+      const until = new Date(endShifted.getTime() - TZ);
+      if (range === "half_semester") {
+        const midMs = (startShifted.getTime() + endShifted.getTime()) / 2;
+        const midShifted = new Date(midMs);
+        const inFirstHalf = nowShifted.getTime() < midMs;
+        if (inFirstHalf) {
+          return { since, until: new Date(midShifted.getTime() - TZ), label: `本学期前半段 (${fmt(startShifted)} ~ ${fmt(midShifted)})` };
+        }
+        return { since: new Date(midShifted.getTime() - TZ), until, label: `本学期后半段 (${fmt(midShifted)} ~ ${fmt(endShifted)})` };
+      }
+      return { since, until, label: `本学期 (${fmt(startShifted)} ~ ${fmt(endShifted)})` };
+    }
+    case "all_time": return { since: null, until: null, label: "全部时间" };
+  }
+  return { since: null, until: null, label: "全部时间" };
+}
 
 type CallerCtx = {
   userRole: string; // 'super_admin' | 'admin' | 'teacher'
@@ -656,6 +777,67 @@ async function execTool(
     return { metric, value: 0 };
   }
 
+  if (name === "query_stats_range") {
+    const metric = String(args?.metric || "");
+    const range = String(args?.range || "all_time");
+    const { since, until, label } = resolveRange(range);
+    const scopeApps = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    const applyTime = (q: any) => {
+      if (since) q = q.gte("submitted_at", since.toISOString());
+      if (until) q = q.lt("submitted_at", until.toISOString());
+      return q;
+    };
+    if (metric === "submitted_count") {
+      const { count } = await applyTime(
+        scopeApps(supabase.from("applications").select("id", { count: "exact", head: true })),
+      );
+      return { metric, range, range_label: label, value: count ?? 0 };
+    }
+    if (metric === "submitted_students") {
+      const { data } = await applyTime(scopeApps(supabase.from("applications").select("student_id")));
+      const set = new Set((data || []).map((r: any) => r.student_id));
+      return { metric, range, range_label: label, value: set.size };
+    }
+    if (metric === "status_breakdown") {
+      const { data } = await applyTime(scopeApps(supabase.from("applications").select("status")));
+      const counts: Record<string, number> = {
+        auto_approved: 0, approved: 0, rejected: 0, rejected_by_ai: 0,
+        pending_review: 0, pending_ai: 0,
+      };
+      (data || []).forEach((r: any) => {
+        const s = String(r.status || "");
+        counts[s] = (counts[s] ?? 0) + 1;
+      });
+      return { metric, range, range_label: label, value: counts, total: (data || []).length };
+    }
+    if (metric === "not_submitted_students") {
+      let rq = supabase.from("user_roles").select("user_id").eq("role", "student");
+      if (!isSuper && collegeId) rq = rq.eq("college_id", collegeId);
+      const { data: roles } = await rq;
+      const allIds = new Set((roles || []).map((r: any) => r.user_id));
+      const { data: apps } = await applyTime(scopeApps(supabase.from("applications").select("student_id")));
+      const submitted = new Set((apps || []).map((r: any) => r.student_id));
+      let notCount = 0;
+      allIds.forEach((id) => { if (!submitted.has(id)) notCount++; });
+      return {
+        metric, range, range_label: label,
+        value: notCount,
+        total_students: allIds.size,
+        submitted_students: submitted.size,
+      };
+    }
+    if (metric === "aigc_breakdown") {
+      const { data } = await applyTime(scopeApps(supabase.from("applications").select("aigc_status")));
+      const counts: Record<string, number> = { fake: 0, suspect: 0, real: 0, pending: 0, skipped: 0, error: 0 };
+      (data || []).forEach((r: any) => {
+        const s = String(r.aigc_status || "pending");
+        counts[s] = (counts[s] ?? 0) + 1;
+      });
+      return { metric, range, range_label: label, value: counts, total: (data || []).length };
+    }
+    return { metric, range, range_label: label, value: 0 };
+  }
+
   if (name === "list_aigc_flagged") {
     const range = String(args?.range || "week");
     const status = String(args?.status || "both");
@@ -988,7 +1170,7 @@ Deno.serve(async (req) => {
     // 服务端权威角色覆盖客户端声明
     userRole = serverRole;
     const ctx: CallerCtx = { userRole, collegeId: callerCollegeId, isSuper: isSuperResolved };
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${RANGE_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
@@ -1049,6 +1231,9 @@ Deno.serve(async (req) => {
             if ((result as any).navigate_path) {
               action = { type: "navigate", payload: { path: (result as any).navigate_path } };
             }
+          }
+          if (tc.function?.name === "query_stats_range") {
+            stats = result;
           }
 
           convo.push({
