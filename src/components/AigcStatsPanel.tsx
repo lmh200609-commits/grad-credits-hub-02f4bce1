@@ -31,7 +31,19 @@ type Row = {
   student_id?: string | null;
 };
 
-type ProfileLite = { user_id: string; full_name: string | null; student_no: string | null };
+type ProfileLite = {
+  user_id: string;
+  full_name: string | null;
+  student_no: string | null;
+  department: string | null;
+  class_name: string | null;
+  major: string | null;
+  advisor: string | null;
+  phone: string | null;
+  email: string | null;
+  gender: string | null;
+  college_id: string | null;
+};
 
 const STATUS_LABELS: Record<Row["aigc_status"], string> = {
   fake: "高风险",
@@ -82,14 +94,13 @@ export default function AigcStatsPanel() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // 学院列表（仅超管）
+  // 学院列表（用于报告里展示"学院"列；所有认证用户均可读 colleges）
   useEffect(() => {
-    if (!isSuperAdmin) return;
     (async () => {
       const { data } = await supabase.from("colleges").select("id, name").eq("active", true).order("name");
       setColleges((data ?? []) as any);
     })();
-  }, [isSuperAdmin]);
+  }, []);
 
   const sinceIso = useMemo(() => {
     const r = RANGES.find((x) => x.v === range);
@@ -121,7 +132,9 @@ export default function AigcStatsPanel() {
       const ids = Array.from(new Set(list.map((r) => r.student_id).filter(Boolean) as string[]));
       if (ids.length) {
         const { data: ps } = await supabase
-          .from("profiles").select("user_id, full_name, student_no").in("user_id", ids);
+          .from("profiles")
+          .select("user_id, full_name, student_no, department, class_name, major, advisor, phone, email, gender, college_id")
+          .in("user_id", ids);
         const m = new Map<string, ProfileLite>();
         (ps ?? []).forEach((p: any) => m.set(p.user_id, p));
         setProfiles(m);
