@@ -97,7 +97,11 @@ const RANGE_RULE = `\n15. 【灵活时间窗口】凡用户问到带具体时间
 metric 选择：问"提交了几份/多少份"用 submitted_count；问"多少学生提交/几个人提交"用 submitted_students；问"详细状态/状态分布/通过几个驳回几个/审核情况"用 status_breakdown；问"多少人没提交/未提交人数/还有多少没交"用 not_submitted_students；问 AIGC/AI 图片状态分布用 aigc_breakdown。
 严禁用 query_stats 的 _week/_month/_total 指标替代 query_stats_range；严禁回答"暂不支持该统计"。`;
 
-const LIST_RULE = `\n16. 【明细列表】当用户在带时间窗口的提问中追问"分别是谁 / 是哪几份 / 哪四份 / 哪五份 / 详细列出 / 是哪些学生 / 是什么学院什么班级 / 提交了什么 / 谁提交的"时，必须调用 list_submissions_range（不要再用 query_stats_range，也不要凭上下文自行编写名单）。range 用法同 query_stats_range；如用户给出具体日期（例如『5 月 10 号 / 5月10日 / 2026-05-10』），把 range 设为 specific_date，并把日期填入 date 参数（格式 YYYY-MM-DD 或 M月D日）。返回为空时如实回复"该时间范围内暂无申请提交记录"，绝不编造姓名、学号、学院、班级、申请编号或日期。回答时严格按工具返回的"明细"字段逐条列出，不得改名、不得增减条数、不得替换学院班级。`;
+const LIST_RULE = `\n16. 【明细列表 / 具体日期】只要用户问到「某天 / 某月某日 / 具体日期 谁提交了 / 提交了什么 / 是哪几份 / 哪几个 / 是什么学院什么班级 / 详细列出 / 谁的申请 / 几份 / 多少份」，必须调用 list_submissions_range，禁止使用 query_stats_range 估算，也禁止凭对话上下文自行编名单或自行报数字。
+- 用户给出具体日期（如『5月10号 / 5月10日 / 五月十号 / 十月一日 / 2026-05-10 / 5/10』），range 设为 specific_date，把用户原始日期串原样填入 date（包含中文数字也直接传，不要自行换算年份），由后端解析。
+- 用户用相对窗口（昨天/前天/今天/本周/近 7 天/本学期 等），range 同 query_stats_range 的取值。
+- 工具返回 count=0 才回答"该时间范围内暂无申请提交记录"。count>0 时严格按 items 字段逐条列出姓名/学号/学院/班级/提交时间/状态/申请编号末 8 位，不得改名、不得增减条数、不得替换学院班级、不得改写日期。
+- 即使用户只问"5月10号提交了几份"这种纯计数问题，也必须调用 list_submissions_range 拿真实条数，不准估算。`;
 
 // 兜底：从模型最终答复中剥离裸 URL / 路径片段 / markdown 链接，避免出现 "/admin/credits?passFilter=fail" 这类英文路径
 function stripPathsFromAnswer(text: string): string {
@@ -317,8 +321,10 @@ const TOOLS = [
               "this_semester",
               "half_semester",
               "all_time",
+              "specific_date",
             ],
           },
+          date: { type: "string", description: "当 range=specific_date 时必填，格式 YYYY-MM-DD / M月D日 / M月D号 / 中文数字（五月十号）均可" },
         },
         required: ["metric", "range"],
       },
@@ -419,19 +425,59 @@ function resolveRange(range: string): { since: Date | null; until: Date | null; 
   return { since: null, until: null, label: "全部时间" };
 }
 
+// 把中文数字段（如 "十"、"二十三"、"十一"）转成 1-31 的整数。失败返回 null。
+function cnNumToInt(s: string): number | null {
+  if (!s) return null;
+  const t = s.replace(/[〇零]/g, "0").trim();
+  if (/^\d+$/.test(t)) return parseInt(t, 10);
+  const map: Record<string, number> = { 一:1, 二:2, 两:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, 九:9 };
+  // 处理 0-9
+  if (t.length === 1 && map[t] != null) return map[t];
+  // 处理 十 / 十X / X十 / X十X / 二十 / 三十 / 三十一 ...
+  if (t === "十") return 10;
+  let m = t.match(/^十([一二三四五六七八九])$/);
+  if (m) return 10 + map[m[1]];
+  m = t.match(/^([二三])十$/);
+  if (m) return map[m[1]] * 10;
+  m = t.match(/^([二三])十([一二三四五六七八九])$/);
+  if (m) return map[m[1]] * 10 + map[m[2]];
+  return null;
+}
+
 // 解析用户口语化的具体日期为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分。
 function resolveSpecificDate(input: string): { since: Date; until: Date; label: string } | null {
   if (!input) return null;
   const TZ = 8 * 3600 * 1000;
   const s = String(input).trim();
   let y: number | null = null, mo: number | null = null, d: number | null = null;
+  // 1) 完整 YYYY-M-D / YYYY/M/D / YYYY年M月D日
   let m = s.match(/(\d{4})\s*[-\/年\.]\s*(\d{1,2})\s*[-\/月\.]\s*(\d{1,2})/);
   if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  // 2) 中文年 + 中文月日：如 2026年五月十号
   if (!m) {
+    const cm = s.match(/(\d{4})\s*年\s*([一二三四五六七八九十百零〇\d]{1,4})\s*月\s*([一二三四五六七八九十百零〇\d]{1,4})\s*[日号]?/);
+    if (cm) {
+      const mm = cnNumToInt(cm[2]); const dd = cnNumToInt(cm[3]);
+      if (mm && dd) { y = +cm[1]; mo = mm; d = dd; }
+    }
+  }
+  // 3) 阿拉伯数字 M月D日 / M月D号 / M-D / M.D / M/D
+  if (mo == null) {
     m = s.match(/(\d{1,2})\s*[月\/\-\.]\s*(\d{1,2})\s*[日号]?/);
     if (m) {
       const now = new Date(Date.now() + TZ);
       y = now.getUTCFullYear(); mo = +m[1]; d = +m[2];
+    }
+  }
+  // 4) 纯中文 X月Y日/号
+  if (mo == null) {
+    const cm = s.match(/([一二三四五六七八九十百零〇\d]{1,4})\s*月\s*([一二三四五六七八九十百零〇\d]{1,4})\s*[日号]?/);
+    if (cm) {
+      const mm = cnNumToInt(cm[1]); const dd = cnNumToInt(cm[2]);
+      if (mm && dd) {
+        const now = new Date(Date.now() + TZ);
+        y = now.getUTCFullYear(); mo = mm; d = dd;
+      }
     }
   }
   if (y == null || mo == null || d == null) return null;
@@ -830,7 +876,15 @@ async function execTool(
   if (name === "query_stats_range") {
     const metric = String(args?.metric || "");
     const range = String(args?.range || "all_time");
-    const { since, until, label } = resolveRange(range);
+    let since: Date | null = null, until: Date | null = null, label = "全部时间";
+    if (range === "specific_date") {
+      const r = resolveSpecificDate(String(args?.date || ""));
+      if (!r) return { metric, range, range_label: "未识别日期", value: 0, note: "未能识别具体日期，请使用 YYYY-MM-DD / M月D日 / 五月十号 等格式" };
+      since = r.since; until = r.until; label = r.label;
+    } else {
+      const r = resolveRange(range);
+      since = r.since; until = r.until; label = r.label;
+    }
     const scopeApps = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
     const applyTime = (q: any) => {
       if (since) q = q.gte("submitted_at", since.toISOString());
@@ -1304,6 +1358,37 @@ Deno.serve(async (req) => {
     let stats: any = null;
     let toolCallCount = 0;
     let dataToolUsed = false;
+
+    // 服务端兜底：若最近一条用户消息既包含具体日期，又包含"谁/哪些/什么学院/什么班级/几份/提交了什么"等问句，
+    // 提前拉一次 list_submissions_range 真实结果，作为权威 system 上下文，防止模型跳过工具自行编造。
+    try {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      const txt = String(lastUser?.content || "");
+      if (txt) {
+        const datePatterns = [
+          /\d{4}\s*[-\/年\.]\s*\d{1,2}\s*[-\/月\.]\s*\d{1,2}/,
+          /\d{1,2}\s*[月\/\-\.]\s*\d{1,2}\s*[日号]?/,
+          /[一二三四五六七八九十百零〇]{1,4}\s*月\s*[一二三四五六七八九十百零〇]{1,4}\s*[日号]?/,
+        ];
+        const askPattern = /(谁|哪些|哪几|哪个|哪四|哪五|哪六|什么学院|什么班级|提交了什么|是什么|是哪|几份|多少份|详细列出|列出|名单)/;
+        let dateStr: string | null = null;
+        for (const re of datePatterns) {
+          const mm = txt.match(re);
+          if (mm) { dateStr = mm[0]; break; }
+        }
+        if (dateStr && askPattern.test(txt)) {
+          const pre = await execTool("list_submissions_range", { range: "specific_date", date: dateStr, limit: 200 }, supabase, ctx);
+          convo.push({
+            role: "system",
+            content: `===== 数据库真实查询结果（请严格基于以下事实回答，禁止改写姓名/学号/学院/班级/条数/日期；如下方 count=0 直接回答"该日无申请提交记录"）=====\n用户提到的日期串："${dateStr}"\n${JSON.stringify(pre, null, 2)}`,
+          });
+          stats = pre;
+          dataToolUsed = true;
+        }
+      }
+    } catch (e) {
+      console.error("preinjection list_submissions_range failed:", e);
+    }
 
     // Up to 3 tool-call rounds
     for (let round = 0; round < 3; round++) {
