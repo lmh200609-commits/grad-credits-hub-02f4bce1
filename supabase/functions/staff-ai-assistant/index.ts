@@ -425,19 +425,59 @@ function resolveRange(range: string): { since: Date | null; until: Date | null; 
   return { since: null, until: null, label: "全部时间" };
 }
 
+// 把中文数字段（如 "十"、"二十三"、"十一"）转成 1-31 的整数。失败返回 null。
+function cnNumToInt(s: string): number | null {
+  if (!s) return null;
+  const t = s.replace(/[〇零]/g, "0").trim();
+  if (/^\d+$/.test(t)) return parseInt(t, 10);
+  const map: Record<string, number> = { 一:1, 二:2, 两:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, 九:9 };
+  // 处理 0-9
+  if (t.length === 1 && map[t] != null) return map[t];
+  // 处理 十 / 十X / X十 / X十X / 二十 / 三十 / 三十一 ...
+  if (t === "十") return 10;
+  let m = t.match(/^十([一二三四五六七八九])$/);
+  if (m) return 10 + map[m[1]];
+  m = t.match(/^([二三])十$/);
+  if (m) return map[m[1]] * 10;
+  m = t.match(/^([二三])十([一二三四五六七八九])$/);
+  if (m) return map[m[1]] * 10 + map[m[2]];
+  return null;
+}
+
 // 解析用户口语化的具体日期为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分。
 function resolveSpecificDate(input: string): { since: Date; until: Date; label: string } | null {
   if (!input) return null;
   const TZ = 8 * 3600 * 1000;
   const s = String(input).trim();
   let y: number | null = null, mo: number | null = null, d: number | null = null;
+  // 1) 完整 YYYY-M-D / YYYY/M/D / YYYY年M月D日
   let m = s.match(/(\d{4})\s*[-\/年\.]\s*(\d{1,2})\s*[-\/月\.]\s*(\d{1,2})/);
   if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  // 2) 中文年 + 中文月日：如 2026年五月十号
   if (!m) {
+    const cm = s.match(/(\d{4})\s*年\s*([一二三四五六七八九十百零〇\d]{1,4})\s*月\s*([一二三四五六七八九十百零〇\d]{1,4})\s*[日号]?/);
+    if (cm) {
+      const mm = cnNumToInt(cm[2]); const dd = cnNumToInt(cm[3]);
+      if (mm && dd) { y = +cm[1]; mo = mm; d = dd; }
+    }
+  }
+  // 3) 阿拉伯数字 M月D日 / M月D号 / M-D / M.D / M/D
+  if (mo == null) {
     m = s.match(/(\d{1,2})\s*[月\/\-\.]\s*(\d{1,2})\s*[日号]?/);
     if (m) {
       const now = new Date(Date.now() + TZ);
       y = now.getUTCFullYear(); mo = +m[1]; d = +m[2];
+    }
+  }
+  // 4) 纯中文 X月Y日/号
+  if (mo == null) {
+    const cm = s.match(/([一二三四五六七八九十百零〇\d]{1,4})\s*月\s*([一二三四五六七八九十百零〇\d]{1,4})\s*[日号]?/);
+    if (cm) {
+      const mm = cnNumToInt(cm[1]); const dd = cnNumToInt(cm[2]);
+      if (mm && dd) {
+        const now = new Date(Date.now() + TZ);
+        y = now.getUTCFullYear(); mo = mm; d = dd;
+      }
     }
   }
   if (y == null || mo == null || d == null) return null;
