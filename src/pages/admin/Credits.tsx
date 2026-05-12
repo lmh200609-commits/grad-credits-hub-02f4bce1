@@ -44,7 +44,6 @@ const Credits = () => {
   const [sp, setSp] = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState("");
-  const [dept, setDept] = useState(sp.get("dept") ?? ALL);
   const [passFilter, setPassFilter] = useState<PassFilter>((sp.get("passFilter") as PassFilter) ?? "all");
   const [classes, setClasses] = useState<Set<string>>(() => {
     const raw = sp.get("classes");
@@ -56,11 +55,9 @@ const Credits = () => {
   useEffect(() => {
     const f = sp.get("passFilter") as PassFilter | null;
     if (f && ["all", "pass", "fail"].includes(f)) setPassFilter(f);
-    const d = sp.get("dept");
-    if (d) setDept(d);
   }, [sp]);
 
-  const updateFilter = (key: "passFilter" | "dept", value: string) => {
+  const updateFilter = (key: "passFilter", value: string) => {
     const next = new URLSearchParams(sp);
     if (!value || value === ALL || value === "all") next.delete(key);
     else next.set(key, value);
@@ -107,20 +104,14 @@ const Credits = () => {
     })();
   }, []);
 
-  const departments = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(),
+  const classOptions = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.class_name).filter(Boolean) as string[])).sort(),
     [rows],
   );
-
-  const classOptions = useMemo(() => {
-    const pool = dept === ALL ? rows : rows.filter((r) => r.department === dept);
-    return Array.from(new Set(pool.map((r) => r.class_name).filter(Boolean) as string[])).sort();
-  }, [rows, dept]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (dept !== ALL && r.department !== dept) return false;
       if (classes.size > 0 && !classes.has(r.class_name ?? "")) return false;
       if (passFilter === "pass" && r.total_credit < PASS_THRESHOLD) return false;
       if (passFilter === "fail" && r.total_credit >= PASS_THRESHOLD) return false;
@@ -129,9 +120,9 @@ const Credits = () => {
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q));
     });
-  }, [rows, search, dept, passFilter, classes]);
+  }, [rows, search, passFilter, classes]);
 
-  useEffect(() => { setPage(0); }, [search, dept, passFilter, classes]);
+  useEffect(() => { setPage(0); }, [search, passFilter, classes]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const passStats = useMemo(() => ({
@@ -182,15 +173,8 @@ const Credits = () => {
 
         <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">筛选</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-5">
+          <CardContent className="grid gap-3 md:grid-cols-4">
             <Input placeholder="搜索姓名 / 学号 / 班级 / 专业" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <Select value={dept} onValueChange={(v) => { setDept(v); updateFilter("dept", v); }}>
-              <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>全部院系</SelectItem>
-                {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" className="justify-between">

@@ -44,7 +44,6 @@ const Students = () => {
   const [studentIds, setStudentIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [dept, setDept] = useState<string>(ALL);
   const [major, setMajor] = useState<string>(ALL);
   const [klass, setKlass] = useState<string>(ALL);
   const [page, setPage] = useState(0);
@@ -78,10 +77,6 @@ const Students = () => {
   useRealtimeTable("profiles", reload, { filter: collegeFilter });
   useRealtimeTable("applications", reload, { filter: collegeFilter });
 
-  const departments = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean) as string[])).sort(),
-    [rows],
-  );
   const majors = useMemo(
     () => Array.from(new Set(rows.map((r) => r.major).filter(Boolean) as string[])).sort(),
     [rows],
@@ -94,7 +89,6 @@ const Students = () => {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (dept !== ALL && r.department !== dept) return false;
       if (major !== ALL && r.major !== major) return false;
       if (klass !== ALL && r.class_name !== klass) return false;
       if (!q) return true;
@@ -102,9 +96,9 @@ const Students = () => {
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q));
     });
-  }, [rows, search, dept, major, klass]);
+  }, [rows, search, major, klass]);
 
-  useEffect(() => { setPage(0); }, [search, dept, major, klass]);
+  useEffect(() => { setPage(0); }, [search, major, klass]);
   const paged = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const submitReset = async () => {
@@ -142,14 +136,7 @@ const Students = () => {
               />
               <Button variant="outline" onClick={() => setBulkOpen(true)}>批量重置密码</Button>
             </div>
-            <div className="grid gap-2 md:grid-cols-4">
-            <Select value={dept} onValueChange={setDept}>
-              <SelectTrigger><SelectValue placeholder="院系" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>全部院系</SelectItem>
-                {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="grid gap-2 md:grid-cols-3">
             <Select value={major} onValueChange={setMajor}>
               <SelectTrigger><SelectValue placeholder="专业" /></SelectTrigger>
               <SelectContent>
