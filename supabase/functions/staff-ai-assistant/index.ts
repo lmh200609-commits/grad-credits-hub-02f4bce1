@@ -809,6 +809,83 @@ async function execTool(
       });
       return { metric, value: total, by_event: byEvent };
     }
+    if (metric === "colleges_overview") {
+      const { data: cols } = await supabase
+        .from("colleges")
+        .select("id,name,short_name,code,active")
+        .order("name", { ascending: true });
+      const total = cols?.length ?? 0;
+      const active = (cols || []).filter((c: any) => c.active).length;
+      return {
+        metric,
+        value: active,
+        总学院数: total,
+        启用学院数: active,
+        停用学院数: total - active,
+        学院列表: (cols || []).map((c: any) => ({
+          名称: c.name,
+          简称: c.short_name || "",
+          代码: c.code || "",
+          状态: c.active ? "启用" : "停用",
+        })),
+      };
+    }
+    if (metric === "college_admins_overview" || metric === "teachers_overview") {
+      const role = metric === "college_admins_overview" ? "admin" : "teacher";
+      const { data: ur } = await supabase
+        .from("user_roles")
+        .select("user_id, college_id")
+        .eq("role", role);
+      const total = ur?.length ?? 0;
+      const userIds = Array.from(new Set((ur || []).map((r: any) => r.user_id)));
+      const collegeIds = Array.from(new Set((ur || []).map((r: any) => r.college_id).filter(Boolean)));
+      const [{ data: profs }, { data: cols }] = await Promise.all([
+        userIds.length
+          ? supabase.from("profiles").select("user_id, full_name, email").in("user_id", userIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+        collegeIds.length
+          ? supabase.from("colleges").select("id, name, short_name").in("id", collegeIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+      ]);
+      const pmap = new Map<string, any>();
+      (profs || []).forEach((p: any) => pmap.set(p.user_id, p));
+      const cmap = new Map<string, any>();
+      (cols || []).forEach((c: any) => cmap.set(c.id, c));
+      const groups: Record<string, any[]> = {};
+      (ur || []).forEach((r: any) => {
+        const c = cmap.get(r.college_id);
+        const collegeName = c ? (c.short_name || c.name) : "（未绑定学院）";
+        const p = pmap.get(r.user_id) || {};
+        if (!groups[collegeName]) groups[collegeName] = [];
+        groups[collegeName].push({ 姓名: p.full_name || "—", 邮箱: p.email || "—" });
+      });
+      const distribution = Object.keys(groups).map((k) => ({ 学院: k, 人数: groups[k].length, 名单: groups[k] }));
+      return {
+        metric,
+        value: total,
+        总人数: total,
+        覆盖学院数: Object.keys(groups).length,
+        按学院分布: distribution,
+        navigate_path: metric === "college_admins_overview" ? "/admin/users/teachers" : "/admin/users/teachers",
+      };
+    }
+    if (metric === "super_admins_overview") {
+      const { data: ur } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "super_admin");
+      const total = ur?.length ?? 0;
+      const userIds = Array.from(new Set((ur || []).map((r: any) => r.user_id)));
+      const { data: profs } = userIds.length
+        ? await supabase.from("profiles").select("user_id, full_name, email").in("user_id", userIds)
+        : { data: [] as any[] };
+      return {
+        metric,
+        value: total,
+        总人数: total,
+        名单: (profs || []).map((p: any) => ({ 姓名: p.full_name || "—", 邮箱: p.email || "—" })),
+      };
+    }
     if (metric === "aigc_fake_week") {
       const { count } = await scopeApps(
         supabase.from("applications")
