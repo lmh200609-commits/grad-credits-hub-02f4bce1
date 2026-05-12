@@ -273,6 +273,34 @@ const StaffAiAssistant = () => {
                     </div>
                   )}
 
+                  {m.stats && Array.isArray((m.stats as any).items) && (m.stats as any).items.length > 0 && (
+                    <div className="w-full max-w-[95%] rounded-md border bg-card p-3 text-xs">
+                      <div className="mb-2 font-medium">
+                        {(m.stats as any).range_label ? `${(m.stats as any).range_label} · ` : ""}
+                        共 {(m.stats as any).count} 条申请
+                        {typeof (m.stats as any).distinct_students === "number" ? `（${(m.stats as any).distinct_students} 名学生）` : ""}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {(m.stats as any).items.map((it: Record<string, any>, idx: number) => (
+                          <div key={idx} className="rounded border bg-muted/30 p-2">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="font-semibold">{it.姓名}</span>
+                              <span className="text-muted-foreground">{it.学号}</span>
+                              <span className="text-muted-foreground">· {it.所属学院}</span>
+                              <span className="text-muted-foreground">· {it.班级}</span>
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-muted-foreground">
+                              {it.提交时间} · {it.状态} · 编号 {it.申请编号末8位}
+                            </div>
+                            {it.申请描述 ? (
+                              <div className="mt-0.5 line-clamp-2 text-[11px]">{it.申请描述}</div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {m.action?.type === "navigate" && m.action.payload?.path && (
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { navigate(m.action!.payload.path); }}>
                       {labelForPath(m.action.payload.path)} <ArrowRight className="h-3 w-3" />

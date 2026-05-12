@@ -97,6 +97,8 @@ const RANGE_RULE = `\n15. 【灵活时间窗口】凡用户问到带具体时间
 metric 选择：问"提交了几份/多少份"用 submitted_count；问"多少学生提交/几个人提交"用 submitted_students；问"详细状态/状态分布/通过几个驳回几个/审核情况"用 status_breakdown；问"多少人没提交/未提交人数/还有多少没交"用 not_submitted_students；问 AIGC/AI 图片状态分布用 aigc_breakdown。
 严禁用 query_stats 的 _week/_month/_total 指标替代 query_stats_range；严禁回答"暂不支持该统计"。`;
 
+const LIST_RULE = `\n16. 【明细列表】当用户在带时间窗口的提问中追问"分别是谁 / 是哪几份 / 哪四份 / 哪五份 / 详细列出 / 是哪些学生 / 是什么学院什么班级 / 提交了什么 / 谁提交的"时，必须调用 list_submissions_range（不要再用 query_stats_range，也不要凭上下文自行编写名单）。range 用法同 query_stats_range；如用户给出具体日期（例如『5 月 10 号 / 5月10日 / 2026-05-10』），把 range 设为 specific_date，并把日期填入 date 参数（格式 YYYY-MM-DD 或 M月D日）。返回为空时如实回复"该时间范围内暂无申请提交记录"，绝不编造姓名、学号、学院、班级、申请编号或日期。回答时严格按工具返回的"明细"字段逐条列出，不得改名、不得增减条数、不得替换学院班级。`;
+
 // 兜底：从模型最终答复中剥离裸 URL / 路径片段 / markdown 链接，避免出现 "/admin/credits?passFilter=fail" 这类英文路径
 function stripPathsFromAnswer(text: string): string {
   if (!text) return text;
@@ -322,6 +324,30 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "list_submissions_range",
+      description: "按时间窗口（含昨天/前天/今天/具体日期/近 N 天/本学期等）列出真实提交申请明细，返回每条申请的学生姓名、学号、学院、专业、班级、提交时间、状态、申请编号末 8 位、描述。用户问『分别是谁/哪几份/详细列出/是什么学院/谁提交的』时必须调用本工具。",
+      parameters: {
+        type: "object",
+        properties: {
+          range: {
+            type: "string",
+            enum: [
+              "today","yesterday","day_before_yesterday",
+              "last_7_days","last_15_days","last_30_days","last_90_days","last_180_days","last_365_days",
+              "this_week","this_month","this_year","this_semester","half_semester","all_time",
+              "specific_date",
+            ],
+          },
+          date: { type: "string", description: "当 range=specific_date 时必填，格式 YYYY-MM-DD 或 M月D日 或 M月D号" },
+          limit: { type: "number", description: "最多返回条数，默认 50，上限 200" },
+        },
+        required: ["range"],
+      },
+    },
+  },
 ];
 
 // 解析中文时间窗口为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分
@@ -391,6 +417,30 @@ function resolveRange(range: string): { since: Date | null; until: Date | null; 
     case "all_time": return { since: null, until: null, label: "全部时间" };
   }
   return { since: null, until: null, label: "全部时间" };
+}
+
+// 解析用户口语化的具体日期为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分。
+function resolveSpecificDate(input: string): { since: Date; until: Date; label: string } | null {
+  if (!input) return null;
+  const TZ = 8 * 3600 * 1000;
+  const s = String(input).trim();
+  let y: number | null = null, mo: number | null = null, d: number | null = null;
+  let m = s.match(/(\d{4})\s*[-\/年\.]\s*(\d{1,2})\s*[-\/月\.]\s*(\d{1,2})/);
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  if (!m) {
+    m = s.match(/(\d{1,2})\s*[月\/\-\.]\s*(\d{1,2})\s*[日号]?/);
+    if (m) {
+      const now = new Date(Date.now() + TZ);
+      y = now.getUTCFullYear(); mo = +m[1]; d = +m[2];
+    }
+  }
+  if (y == null || mo == null || d == null) return null;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const startShifted = new Date(Date.UTC(y, mo - 1, d));
+  const since = new Date(startShifted.getTime() - TZ);
+  const until = new Date(since.getTime() + 24 * 3600 * 1000);
+  const label = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return { since, until, label };
 }
 
 type CallerCtx = {
@@ -838,6 +888,80 @@ async function execTool(
     return { metric, range, range_label: label, value: 0 };
   }
 
+  if (name === "list_submissions_range") {
+    const range = String(args?.range || "all_time");
+    const limit = Math.min(Math.max(Number(args?.limit ?? 50), 1), 200);
+    let since: Date | null = null;
+    let until: Date | null = null;
+    let label = "全部时间";
+    if (range === "specific_date") {
+      const r = resolveSpecificDate(String(args?.date || ""));
+      if (!r) return { range, range_label: "未识别日期", count: 0, items: [], note: "未能识别具体日期，请使用 YYYY-MM-DD 或 M月D日 格式" };
+      since = r.since; until = r.until; label = r.label;
+    } else {
+      const r = resolveRange(range);
+      since = r.since; until = r.until; label = r.label;
+    }
+    let aq = supabase
+      .from("applications")
+      .select("id, student_id, status, submitted_at, description, college_id")
+      .order("submitted_at", { ascending: true })
+      .limit(limit);
+    if (since) aq = aq.gte("submitted_at", since.toISOString());
+    if (until) aq = aq.lt("submitted_at", until.toISOString());
+    if (!isSuper && collegeId) aq = aq.eq("college_id", collegeId);
+    const { data: apps, error: aerr } = await aq;
+    if (aerr) return { range, range_label: label, count: 0, items: [], note: `查询失败：${aerr.message}` };
+    const studentIds = Array.from(new Set((apps || []).map((a: any) => a.student_id)));
+    const collegeIds = Array.from(new Set((apps || []).map((a: any) => a.college_id).filter(Boolean)));
+    const [{ data: profs }, { data: cols }] = await Promise.all([
+      studentIds.length
+        ? supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, advisor, phone, email").in("user_id", studentIds)
+        : Promise.resolve({ data: [] as any[] } as any),
+      collegeIds.length
+        ? supabase.from("colleges").select("id, name, short_name").in("id", collegeIds)
+        : Promise.resolve({ data: [] as any[] } as any),
+    ]);
+    const pmap = new Map<string, any>();
+    (profs || []).forEach((p: any) => pmap.set(p.user_id, p));
+    const cmap = new Map<string, any>();
+    (cols || []).forEach((c: any) => cmap.set(c.id, c));
+    const STATUS_CN: Record<string, string> = {
+      auto_approved: "系统自动通过", approved: "人工通过", rejected: "人工驳回",
+      rejected_by_ai: "AI 初审驳回", pending_review: "待人工复核", pending_ai: "AI 审核中",
+    };
+    const fmtTime = (iso: string) => {
+      const d = new Date(new Date(iso).getTime() + 8 * 3600 * 1000);
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+    };
+    const items = (apps || []).map((a: any) => {
+      const p = pmap.get(a.student_id) || {};
+      const c = cmap.get(a.college_id) || {};
+      return {
+        姓名: p.full_name || "—",
+        学号: p.student_no || "—",
+        所属学院: c.short_name || c.name || (p.department || "—"),
+        院系: p.department || "—",
+        专业: p.major || "—",
+        班级: p.class_name || "—",
+        辅导员: p.advisor || "—",
+        提交时间: fmtTime(a.submitted_at),
+        状态: STATUS_CN[a.status] || a.status,
+        申请编号末8位: String(a.id).slice(-8),
+        申请描述: (a.description || "").slice(0, 120),
+      };
+    });
+    const byStudent = new Map<string, number>();
+    items.forEach((it) => byStudent.set(it.学号, (byStudent.get(it.学号) || 0) + 1));
+    return {
+      range, range_label: label,
+      count: items.length,
+      distinct_students: byStudent.size,
+      items,
+    };
+  }
+
   if (name === "list_aigc_flagged") {
     const range = String(args?.range || "week");
     const status = String(args?.status || "both");
@@ -1170,7 +1294,7 @@ Deno.serve(async (req) => {
     // 服务端权威角色覆盖客户端声明
     userRole = serverRole;
     const ctx: CallerCtx = { userRole, collegeId: callerCollegeId, isSuper: isSuperResolved };
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${RANGE_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${RANGE_RULE}${LIST_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
@@ -1179,6 +1303,7 @@ Deno.serve(async (req) => {
     let candidates: any[] | null = null;
     let stats: any = null;
     let toolCallCount = 0;
+    let dataToolUsed = false;
 
     // Up to 3 tool-call rounds
     for (let round = 0; round < 3; round++) {
@@ -1234,6 +1359,14 @@ Deno.serve(async (req) => {
           }
           if (tc.function?.name === "query_stats_range") {
             stats = result;
+            dataToolUsed = true;
+          }
+          if (tc.function?.name === "list_submissions_range") {
+            stats = result;
+            dataToolUsed = true;
+          }
+          if (tc.function?.name === "query_stats" || tc.function?.name === "student_full_profile" || tc.function?.name === "student_submission_history" || tc.function?.name === "submission_timeline" || tc.function?.name === "list_aigc_flagged" || tc.function?.name === "account_provenance" || tc.function?.name === "list_failing_students") {
+            dataToolUsed = true;
           }
 
           convo.push({
@@ -1248,7 +1381,8 @@ Deno.serve(async (req) => {
 
       let answer = (message?.content || "").trim() || "好的。";
       let polished = false;
-      if (shouldPolish(answer, { toolCalls: toolCallCount })) {
+      // 涉及真实数据的回答不做二次润色，避免模型改写姓名/数字/学院/班级/日期。
+      if (!dataToolUsed && shouldPolish(answer, { toolCalls: toolCallCount })) {
         const r = await callPolish(
           Deno.env.get("SUPABASE_URL")!,
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
