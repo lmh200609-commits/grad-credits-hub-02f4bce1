@@ -1294,7 +1294,7 @@ Deno.serve(async (req) => {
     // 服务端权威角色覆盖客户端声明
     userRole = serverRole;
     const ctx: CallerCtx = { userRole, collegeId: callerCollegeId, isSuper: isSuperResolved };
-    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${RANGE_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
+    const sysMsg: Msg = { role: "system", content: `${SYSTEM_PROMPT}${IDENTITY_RULE}${PROVENANCE_RULE}${AIGC_RULE}${CHINESE_ONLY_RULE}${NO_PATH_RULE}${RANGE_RULE}${LIST_RULE}${FORMAT_GUIDE}\n\n当前用户角色：${userRole}${isSuperResolved ? "（全校范围）" : "（仅本学院范围）"}` };
     const convo: Msg[] = [sysMsg];
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
@@ -1303,6 +1303,7 @@ Deno.serve(async (req) => {
     let candidates: any[] | null = null;
     let stats: any = null;
     let toolCallCount = 0;
+    let dataToolUsed = false;
 
     // Up to 3 tool-call rounds
     for (let round = 0; round < 3; round++) {
@@ -1358,6 +1359,14 @@ Deno.serve(async (req) => {
           }
           if (tc.function?.name === "query_stats_range") {
             stats = result;
+            dataToolUsed = true;
+          }
+          if (tc.function?.name === "list_submissions_range") {
+            stats = result;
+            dataToolUsed = true;
+          }
+          if (tc.function?.name === "query_stats" || tc.function?.name === "student_full_profile" || tc.function?.name === "student_submission_history" || tc.function?.name === "submission_timeline" || tc.function?.name === "list_aigc_flagged" || tc.function?.name === "account_provenance" || tc.function?.name === "list_failing_students") {
+            dataToolUsed = true;
           }
 
           convo.push({
@@ -1372,7 +1381,8 @@ Deno.serve(async (req) => {
 
       let answer = (message?.content || "").trim() || "好的。";
       let polished = false;
-      if (shouldPolish(answer, { toolCalls: toolCallCount })) {
+      // 涉及真实数据的回答不做二次润色，避免模型改写姓名/数字/学院/班级/日期。
+      if (!dataToolUsed && shouldPolish(answer, { toolCalls: toolCallCount })) {
         const r = await callPolish(
           Deno.env.get("SUPABASE_URL")!,
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
