@@ -768,10 +768,6 @@ async function execTool(
     return { metric, value: 0 };
   }
 
-  if (name === "list_aigc_flagged") {
-    // (handled below)
-  }
-
   if (name === "query_stats_range") {
     const metric = String(args?.metric || "");
     const range = String(args?.range || "all_time");
