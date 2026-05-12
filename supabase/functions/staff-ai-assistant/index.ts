@@ -1353,6 +1353,12 @@ Deno.serve(async (req) => {
     if (identityBlock) convo.push({ role: "system", content: identityBlock });
     convo.push(...messages.slice(-12));
 
+    let action: any = null;
+    let candidates: any[] | null = null;
+    let stats: any = null;
+    let toolCallCount = 0;
+    let dataToolUsed = false;
+
     // 服务端兜底：若最近一条用户消息既包含具体日期，又包含"谁/哪些/什么学院/什么班级/几份/提交了什么"等问句，
     // 提前拉一次 list_submissions_range 真实结果，作为权威 system 上下文，防止模型跳过工具自行编造。
     try {
@@ -1383,11 +1389,6 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("preinjection list_submissions_range failed:", e);
     }
-
-    let action: any = null;
-    let candidates: any[] | null = null;
-    // stats / dataToolUsed 已在上方初始化（兜底注入需要）
-    let toolCallCount = 0;
 
     // Up to 3 tool-call rounds
     for (let round = 0; round < 3; round++) {
