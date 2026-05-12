@@ -227,6 +227,141 @@ export default function AigcStatsPanel() {
     : "本学院";
   const rangeLabel = RANGES.find((x) => x.v === range)?.label ?? "";
 
+  const collegeNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    colleges.forEach((c) => m.set(c.id, c.name));
+    return m;
+  }, [colleges]);
+
+  // 报告专用：学生级聚合 + 班级级聚合（仅基于已加载 filtered 数据）
+  type StudentAgg = {
+    student_id: string;
+    profile: ProfileLite | null;
+    college_name: string;
+    class_key: string; // 用于分组：学院|班级
+    class_label: string;
+    fake: number;
+    suspect: number;
+    real: number;
+    pending: number;
+    maxScore: number;
+    lastSubmittedAt: string | null;
+    items: Row[]; // 该学生在范围内的全部申请
+  };
+
+  const { studentAggs, classAggs, orphanRows } = useMemo(() => {
+    const studMap = new Map<string, StudentAgg>();
+    const orphans: Row[] = [];
+    for (const r of filtered) {
+      const sid = r.student_id || "";
+      if (!sid) {
+        orphans.push(r);
+        continue;
+      }
+      const p = profiles.get(sid) || null;
+      if (!p) {
+        orphans.push(r);
+        continue;
+      }
+      const collegeName = collegeNameMap.get(p.college_id || r.college_id || "") || "未设置学院";
+      const className = (p.class_name || "").trim() || "未填写班级";
+      const class_key = `${collegeName}||${className}`;
+      let agg = studMap.get(sid);
+      if (!agg) {
+        agg = {
+          student_id: sid,
+          profile: p,
+          college_name: collegeName,
+          class_key,
+          class_label: className,
+          fake: 0, suspect: 0, real: 0, pending: 0,
+          maxScore: 0,
+          lastSubmittedAt: null,
+          items: [],
+        };
+        studMap.set(sid, agg);
+      }
+      agg.items.push(r);
+      if (r.aigc_status === "fake") agg.fake++;
+      else if (r.aigc_status === "suspect") agg.suspect++;
+      else if (r.aigc_status === "real") agg.real++;
+      else if (r.aigc_status === "pending") agg.pending++;
+      if (typeof r.aigc_score === "number" && r.aigc_score > agg.maxScore) agg.maxScore = r.aigc_score;
+      if (!agg.lastSubmittedAt || r.submitted_at > agg.lastSubmittedAt) agg.lastSubmittedAt = r.submitted_at;
+    }
+    const studentAggs = Array.from(studMap.values()).sort(
+      (a, b) => b.fake - a.fake || b.suspect - a.suspect || b.maxScore - a.maxScore,
+    );
+
+    type ClassAgg = {
+      key: string;
+      college_name: string;
+      class_label: string;
+      advisor: string;
+      students: number;
+      fake: number;
+      suspect: number;
+      real: number;
+      pending: number;
+      total: number;
+    };
+    const cMap = new Map<string, ClassAgg>();
+    for (const s of studentAggs) {
+      let c = cMap.get(s.class_key);
+      if (!c) {
+        c = {
+          key: s.class_key,
+          college_name: s.college_name,
+          class_label: s.class_label,
+          advisor: s.profile?.advisor || "",
+          students: 0, fake: 0, suspect: 0, real: 0, pending: 0, total: 0,
+        };
+        cMap.set(s.class_key, c);
+      }
+      c.students++;
+      c.fake += s.fake;
+      c.suspect += s.suspect;
+      c.real += s.real;
+      c.pending += s.pending;
+      c.total += s.items.length;
+      if (!c.advisor && s.profile?.advisor) c.advisor = s.profile.advisor;
+    }
+    const classAggs = Array.from(cMap.values()).sort(
+      (a, b) => b.fake - a.fake || b.suspect - a.suspect || b.total - a.total,
+    );
+    return { studentAggs, classAggs, orphanRows: orphans };
+  }, [filtered, profiles, collegeNameMap]);
+
+  const summaryCounts = useMemo(() => ({
+    students: studentAggs.length,
+    classes: classAggs.length,
+    colleges: new Set(studentAggs.map((s) => s.college_name)).size,
+  }), [studentAggs, classAggs]);
+
+  // 章节三：仅展示有 fake/suspect 的学生，按班级分组（保持顺序）
+  const groupedRiskyStudents = useMemo(() => {
+    const risky = studentAggs.filter((s) => s.fake > 0 || s.suspect > 0);
+    const truncated = risky.length > 200 ? risky.slice(0, 200) : risky;
+    const groups = new Map<string, { college_name: string; class_label: string; advisor: string; majors: Set<string>; students: StudentAgg[] }>();
+    for (const s of truncated) {
+      let g = groups.get(s.class_key);
+      if (!g) {
+        g = {
+          college_name: s.college_name,
+          class_label: s.class_label,
+          advisor: s.profile?.advisor || "",
+          majors: new Set<string>(),
+          students: [],
+        };
+        groups.set(s.class_key, g);
+      }
+      if (s.profile?.major) g.majors.add(s.profile.major);
+      if (!g.advisor && s.profile?.advisor) g.advisor = s.profile.advisor;
+      g.students.push(s);
+    }
+    return { groups: Array.from(groups.values()), truncatedFrom: risky.length > 200 ? risky.length : null };
+  }, [studentAggs]);
+
   const exportCsv = () => {
     const header = ["申请ID", "提交时间", "AI状态", "AI概率(%)", "申请描述", "学院ID"];
     const lines = filtered.map((r) => [
