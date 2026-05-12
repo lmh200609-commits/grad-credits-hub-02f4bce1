@@ -66,7 +66,7 @@ export function DatePicker({
           )}
         >
           <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-          {parsed ? format(parsed, "yyyy 年 M 月 d 日", { locale: zhCN }) : <span>{placeholder}</span>}
+          {parsed ? format(parsed, "yyyy年M月d日", { locale: zhCN }) : <span>{placeholder}</span>}
           {allowClear && parsed && !disabled && (
             <span
               role="button"
