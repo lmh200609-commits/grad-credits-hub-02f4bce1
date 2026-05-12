@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Upload, AlertCircle } from "lucide-react";
-import { DatePicker } from "@/components/ui/date-picker";
+import { YmdPicker } from "@/components/ui/ymd-picker";
 
 type Profile = {
   full_name: string | null;
@@ -248,7 +248,7 @@ const MyProfile = () => {
             <EField label="政治面貌" v={p.political_status ?? ""} onChange={(v) => setField("political_status", v)} />
             <div>
               <Label>出生日期</Label>
-              <DatePicker
+              <YmdPicker
                 value={p.birth_date ?? ""}
                 onChange={(v) => setField("birth_date", v || null)}
                 disableFuture

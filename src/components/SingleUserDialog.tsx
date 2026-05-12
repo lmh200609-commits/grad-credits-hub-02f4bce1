@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { buildPassword, type ParsedRow } from "@/lib/parseRoster";
-import { DatePicker } from "@/components/ui/date-picker";
+import { YmdPicker } from "@/components/ui/ymd-picker";
 
 type Props = {
   open: boolean;
@@ -195,7 +195,7 @@ const SingleUserDialog = ({ open, role, onClose, onDone }: Props) => {
               <Field req label="性别" value={f.gender} onChange={(v) => set("gender", v)} placeholder="男 / 女" />
               <div>
                 <Label>出生日期 <span className="text-destructive">*</span></Label>
-                <DatePicker
+                <YmdPicker
                   value={f.birth_date}
                   onChange={(v) => set("birth_date", v)}
                   disableFuture
@@ -221,7 +221,7 @@ const SingleUserDialog = ({ open, role, onClose, onDone }: Props) => {
               <Field label="院系" value={f.department} onChange={(v) => set("department", v)} />
               <div>
                 <Label>出生日期</Label>
-                <DatePicker
+                <YmdPicker
                   value={f.birth_date}
                   onChange={(v) => set("birth_date", v)}
                   disableFuture
