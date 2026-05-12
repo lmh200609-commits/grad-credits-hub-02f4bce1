@@ -1,80 +1,80 @@
-## 问题
+## 目标
 
-工作助手目前只支持固定时间窗口（近 7 天 / 近 30 天 / 累计），无法回答：
+把"AI 生成材料鉴别"导出的 PDF 从一张概览图扩展成一份"可分发给班主任/辅导员"的详细报告：包含每个高风险/嫌疑学生的完整个人信息，以及按班级聚合的统计与名单。
 
-- "昨天/前天提交了几份"
-- "近半个月 / 近半年提交了几份"
-- "这一学期 / 半学期提交了几份"
-- "这一周提交的详细状态"（通过几个、驳回几个、待 AI 几个、待复核几个、AI 疑似几个）
-- "还有多少人没有提交"
+## 现状
 
-模型问到这些就只能回"暂不支持该统计"，体验差。
+`src/components/AigcStatsPanel.tsx` 用 html2canvas + jsPDF 把一个隐藏 DOM 截图导成 PDF：
+- 顶部 5 个 KPI（已检测/高风险/嫌疑/检出率/平均概率）
+- 每日趋势柱状图 + 状态分布饼图
+- 仅 "Top 20 高风险申请明细" 表，**且只显示提交时间/状态/AI概率/描述前 40 字**，没有学生姓名、学号、班级、专业、辅导员、联系方式
 
-## 修复方案
+学生信息已在 `profiles` 表里齐全：`full_name, student_no, department, class_name, major, advisor, phone, email`。
 
-### 1. 新增"灵活时间窗口"统计工具（后端）
+## 改造方案（仅前端 + 已有数据）
 
-文件：`supabase/functions/staff-ai-assistant/index.ts`
+文件：`src/components/AigcStatsPanel.tsx`
 
-**新增工具 `query_stats_range`**，参数：
+### 1. 拉取更完整的学生信息
 
-- `metric` — 必填，枚举：
-  - `submitted_count` — 时间窗口内提交申请总数
-  - `submitted_students` — 时间窗口内去重提交学生数
-  - `status_breakdown` — 时间窗口内按状态拆分（auto_approved / approved / rejected / rejected_by_ai / pending_review / pending_ai 各多少条）
-  - `not_submitted_students` — 时间窗口内**未**提交申请的学生人数（= 范围内学生总数 − 提交过学生数）
-  - `aigc_breakdown` — 时间窗口内 AIGC 鉴别拆分（fake / suspect / real / pending）
-- `range` — 必填，枚举（覆盖中文常见说法）：
-  - `yesterday` / `day_before_yesterday` — 自然日（按本地 Asia/Shanghai 0 点切分）
-  - `today`
-  - `last_7_days` / `last_15_days` / `last_30_days` / `last_90_days` / `last_180_days` / `last_365_days`
-  - `this_week` / `this_month` / `this_year`
-  - `this_semester` — 本学期：3-1 ~ 7-15（春）或 9-1 ~ 次年 1-15（秋），按当前日期判断
-  - `half_semester` — 学期前/后半段（按当前日期落在前/后判定）
-  - `all_time`
+修改 `load()` 里对 `profiles` 的 select：
+```
+user_id, full_name, student_no, department, class_name, major, advisor, phone, email
+```
+`ProfileLite` 类型同步扩展。
 
-实现要点：
-- 全部走 Postgres 真实查询（`submitted_at` 为时间锚点；`status_breakdown` 用 `applications.status` 分组；`not_submitted_students` 用 `user_roles.role='student'` 总数 减去窗口内 `distinct student_id`）。
-- 学院作用域沿用现有 `CallerCtx`：超管全局，学院管理员/教师按 `college_id` 过滤；`not_submitted_students` 的"学生总数"也按相同作用域取。
-- 时区使用 Asia/Shanghai 计算自然日和学期边界，避免 UTC 错位导致"昨天"差一天。
+### 2. 重写隐藏的 PDF 报告 DOM（`reportRef`）
 
-### 2. 系统提示里教模型怎么映射中文到 range
+新版报告分四个章节，所有学生数据从已加载的 `filtered` + `profiles` 取，零额外查询：
 
-在 `index.ts` 的 SYSTEM 中追加：
+**封面区（保留并增强）**
+- 标题、范围/时间窗口/筛选状态/生成时间
+- 5 个 KPI 卡 + 一行新增汇总文字："覆盖学生 X 人 · 涉及班级 Y 个 · 涉及学院 Z 个"
 
-> 凡问"昨天/前天/今天/这一周/这一月/这一年/近 X 天/近半月/近半年/这一学期/半个学期"等任何带时间窗口的统计，必须调用 `query_stats_range`，并将中文映射到对应的 `range` 枚举（昨天→yesterday、前天→day_before_yesterday、近半月→last_15_days、近半年→last_180_days、这一学期→this_semester、半个学期→half_semester …）。问"详细状态/审核情况/各种状态多少"必须用 `metric="status_breakdown"`；问"还有多少人没提交/未提交人数"必须用 `metric="not_submitted_students"`。**严禁**用 `query_stats` 的 `_week`/`_total` 指标替代。
+**章节一：总体趋势**
+- 保留每日趋势柱状图 + 状态分布饼图（不变）
 
-保留现有 `query_stats` 不动，向后兼容旧的固定指标（本周通过/驳回、累计提交等）。
+**章节二：按班级汇总（新）**
+- 表格列：学院 / 班级 / 涉及学生数 / 高风险次数 / 嫌疑次数 / 通过次数 / 待检测次数 / 检出率 / 班主任(advisor)
+- 排序：高风险次数倒序、其次嫌疑次数
+- 仅展示有"高风险或嫌疑"的班级，便于辅导员关注；末行加"合计"
+- 班级 = `profiles.class_name`，未填写者归到 "未填写班级"
 
-### 3. 前端展示（已存在的 `StaffAiAssistant.tsx`）
+**章节三：高风险/嫌疑学生完整名单（新，分班分组）**
+- 按班级分组（同上排序），每组一个小标题块：
+  - 标题行："学院 · 专业 · 班级（班主任：xxx）—— 高风险 a 人 / 嫌疑 b 人"
+  - 学生表格列：# / 姓名 / 学号 / 性别（如有）/ 专业 / 联系电话 / 邮箱 / 高风险次数 / 嫌疑次数 / 最高 AI 概率 / 最近一次提交时间
+  - 同一学生的多条申请合并为一行（按 `student_id` 聚合）
+- 每个学生下方再嵌一个"该学生申请明细"小表（最多展示该学生最近 10 条 fake/suspect 记录）：申请ID、提交时间、状态、AI概率、描述前 60 字、跳转链接（PDF 静态显示申请ID 即可）
 
-文件：`src/components/StaffAiAssistant.tsx`
+**章节四：未匹配到学生信息的申请（兜底）**
+- 当某条申请在 `profiles` 里找不到对应学生时，单独列一张表，避免数据丢失
 
-- 在 `METRIC_LABELS` 字典里追加新 key 的中文标签：
-  - `submitted_count` → "提交申请数"
-  - `submitted_students` → "提交学生数"
-  - `status_breakdown` → "状态分布"
-  - `not_submitted_students` → "未提交学生数"
-  - `aigc_breakdown` → "AI 鉴别分布"
-- 卡片渲染逻辑增强：当后端返回的 `stats.value` 是对象（如 status_breakdown 的 `{auto_approved: 3, approved: 5, ...}`）时，改为渲染"标题 + 多行键值"列表，而不是单个大数字。键名同样走中文映射（auto_approved→系统初审通过、approved→人工通过 等）。
-- 卡片副标题展示后端返回的 `range_label`（如"昨天"、"近 15 天"、"本学期 (2026-03-01 ~ 2026-07-15)"），让用户清楚口径。
+**保留**：CSV 导出按钮不动。
 
-### 4. 验证（必跑）
+### 3. 分页与清晰度
 
-1. 超管 / 学院管理员 / 教师 三类账号分别提问，结果都要与对应 SQL 一致：
-   - "昨天提交了几份" → `query_stats_range(metric=submitted_count, range=yesterday)`
-   - "前天提交了几份" → `range=day_before_yesterday`
-   - "近半个月提交了几份" → `range=last_15_days`
-   - "近半年提交了几份" → `range=last_180_days`
-   - "这一学期提交了几份" → `range=this_semester`
-   - "半个学期提交了几份" → `range=half_semester`
-   - "这一周提交的详细状态" → `metric=status_breakdown, range=this_week`，卡片展示六类计数
-   - "还有多少学生没有提交" → `metric=not_submitted_students, range=all_time`
-2. 学院管理员/教师查询的数字必须只覆盖本学院（不能等于全平台数）。
-3. 卡片不出现英文 key、`status_breakdown` 等原始字符串。
+- 在每个章节标题块上加 `pageBreakBefore: "always"` 内联样式（PDF 截图导出仍按高度分页，但章节起点不会被截断在页中间——通过额外加 `padding-top` 与"分页提示"实现）
+- 截图宽度沿用 794px (A4)；增加章节间 `marginTop: 24`
+- 文件名格式保持：`AIGC统计报告_{scope}_{range}_{ts}.pdf`
 
-## 范围之外
+### 4. 性能与限制
 
-- 不动 RLS、表结构、其他 Edge Function。
-- 不修改 AI 模型 / 鉴权流程。
-- 旧的 `query_stats` 固定指标继续保留，避免回归。
+- 当前 query 已 `.limit(2000)`，不改
+- 如果学生人数 > 200，章节三只展示前 200 名学生（按 高风险次数→嫌疑次数→最高概率 排序），并在章节末尾标注"为控制 PDF 长度，已截断显示前 200 名学生"
+
+## 不在范围内
+
+- 不改后端、edge function、RLS、表结构
+- 不改 CSV 导出
+- 不改交互式表格（页面上的 RiskyTable）
+- 不动学院/教师端其他报告
+
+## 验收
+
+1. 在 `/admin/dashboard` AIGC 卡片点击"PDF"，导出文件包含：
+   - 封面 + KPI + 趋势/饼图
+   - "按班级汇总"表（高风险班级在前）
+   - "高风险/嫌疑学生完整名单"按班级分组，每个学生显示姓名/学号/专业/班级/班主任/电话/邮箱及该学生申请明细
+2. 学院管理员导出仅含本学院数据；超管按学院筛选生效
+3. 找不到 profiles 的申请落入"未匹配学生信息"表，不被丢弃

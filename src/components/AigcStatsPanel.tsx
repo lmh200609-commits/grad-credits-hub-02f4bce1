@@ -31,7 +31,19 @@ type Row = {
   student_id?: string | null;
 };
 
-type ProfileLite = { user_id: string; full_name: string | null; student_no: string | null };
+type ProfileLite = {
+  user_id: string;
+  full_name: string | null;
+  student_no: string | null;
+  department: string | null;
+  class_name: string | null;
+  major: string | null;
+  advisor: string | null;
+  phone: string | null;
+  email: string | null;
+  gender: string | null;
+  college_id: string | null;
+};
 
 const STATUS_LABELS: Record<Row["aigc_status"], string> = {
   fake: "高风险",
@@ -82,14 +94,13 @@ export default function AigcStatsPanel() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // 学院列表（仅超管）
+  // 学院列表（用于报告里展示"学院"列；所有认证用户均可读 colleges）
   useEffect(() => {
-    if (!isSuperAdmin) return;
     (async () => {
       const { data } = await supabase.from("colleges").select("id, name").eq("active", true).order("name");
       setColleges((data ?? []) as any);
     })();
-  }, [isSuperAdmin]);
+  }, []);
 
   const sinceIso = useMemo(() => {
     const r = RANGES.find((x) => x.v === range);
@@ -121,7 +132,9 @@ export default function AigcStatsPanel() {
       const ids = Array.from(new Set(list.map((r) => r.student_id).filter(Boolean) as string[]));
       if (ids.length) {
         const { data: ps } = await supabase
-          .from("profiles").select("user_id, full_name, student_no").in("user_id", ids);
+          .from("profiles")
+          .select("user_id, full_name, student_no, department, class_name, major, advisor, phone, email, gender, college_id")
+          .in("user_id", ids);
         const m = new Map<string, ProfileLite>();
         (ps ?? []).forEach((p: any) => m.set(p.user_id, p));
         setProfiles(m);
@@ -213,6 +226,141 @@ export default function AigcStatsPanel() {
     ? (collegeFilter === "all" ? "全校" : (colleges.find((c) => c.id === collegeFilter)?.name ?? "—"))
     : "本学院";
   const rangeLabel = RANGES.find((x) => x.v === range)?.label ?? "";
+
+  const collegeNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    colleges.forEach((c) => m.set(c.id, c.name));
+    return m;
+  }, [colleges]);
+
+  // 报告专用：学生级聚合 + 班级级聚合（仅基于已加载 filtered 数据）
+  type StudentAgg = {
+    student_id: string;
+    profile: ProfileLite | null;
+    college_name: string;
+    class_key: string; // 用于分组：学院|班级
+    class_label: string;
+    fake: number;
+    suspect: number;
+    real: number;
+    pending: number;
+    maxScore: number;
+    lastSubmittedAt: string | null;
+    items: Row[]; // 该学生在范围内的全部申请
+  };
+
+  const { studentAggs, classAggs, orphanRows } = useMemo(() => {
+    const studMap = new Map<string, StudentAgg>();
+    const orphans: Row[] = [];
+    for (const r of filtered) {
+      const sid = r.student_id || "";
+      if (!sid) {
+        orphans.push(r);
+        continue;
+      }
+      const p = profiles.get(sid) || null;
+      if (!p) {
+        orphans.push(r);
+        continue;
+      }
+      const collegeName = collegeNameMap.get(p.college_id || r.college_id || "") || "未设置学院";
+      const className = (p.class_name || "").trim() || "未填写班级";
+      const class_key = `${collegeName}||${className}`;
+      let agg = studMap.get(sid);
+      if (!agg) {
+        agg = {
+          student_id: sid,
+          profile: p,
+          college_name: collegeName,
+          class_key,
+          class_label: className,
+          fake: 0, suspect: 0, real: 0, pending: 0,
+          maxScore: 0,
+          lastSubmittedAt: null,
+          items: [],
+        };
+        studMap.set(sid, agg);
+      }
+      agg.items.push(r);
+      if (r.aigc_status === "fake") agg.fake++;
+      else if (r.aigc_status === "suspect") agg.suspect++;
+      else if (r.aigc_status === "real") agg.real++;
+      else if (r.aigc_status === "pending") agg.pending++;
+      if (typeof r.aigc_score === "number" && r.aigc_score > agg.maxScore) agg.maxScore = r.aigc_score;
+      if (!agg.lastSubmittedAt || r.submitted_at > agg.lastSubmittedAt) agg.lastSubmittedAt = r.submitted_at;
+    }
+    const studentAggs = Array.from(studMap.values()).sort(
+      (a, b) => b.fake - a.fake || b.suspect - a.suspect || b.maxScore - a.maxScore,
+    );
+
+    type ClassAgg = {
+      key: string;
+      college_name: string;
+      class_label: string;
+      advisor: string;
+      students: number;
+      fake: number;
+      suspect: number;
+      real: number;
+      pending: number;
+      total: number;
+    };
+    const cMap = new Map<string, ClassAgg>();
+    for (const s of studentAggs) {
+      let c = cMap.get(s.class_key);
+      if (!c) {
+        c = {
+          key: s.class_key,
+          college_name: s.college_name,
+          class_label: s.class_label,
+          advisor: s.profile?.advisor || "",
+          students: 0, fake: 0, suspect: 0, real: 0, pending: 0, total: 0,
+        };
+        cMap.set(s.class_key, c);
+      }
+      c.students++;
+      c.fake += s.fake;
+      c.suspect += s.suspect;
+      c.real += s.real;
+      c.pending += s.pending;
+      c.total += s.items.length;
+      if (!c.advisor && s.profile?.advisor) c.advisor = s.profile.advisor;
+    }
+    const classAggs = Array.from(cMap.values()).sort(
+      (a, b) => b.fake - a.fake || b.suspect - a.suspect || b.total - a.total,
+    );
+    return { studentAggs, classAggs, orphanRows: orphans };
+  }, [filtered, profiles, collegeNameMap]);
+
+  const summaryCounts = useMemo(() => ({
+    students: studentAggs.length,
+    classes: classAggs.length,
+    colleges: new Set(studentAggs.map((s) => s.college_name)).size,
+  }), [studentAggs, classAggs]);
+
+  // 章节三：仅展示有 fake/suspect 的学生，按班级分组（保持顺序）
+  const groupedRiskyStudents = useMemo(() => {
+    const risky = studentAggs.filter((s) => s.fake > 0 || s.suspect > 0);
+    const truncated = risky.length > 200 ? risky.slice(0, 200) : risky;
+    const groups = new Map<string, { college_name: string; class_label: string; advisor: string; majors: Set<string>; students: StudentAgg[] }>();
+    for (const s of truncated) {
+      let g = groups.get(s.class_key);
+      if (!g) {
+        g = {
+          college_name: s.college_name,
+          class_label: s.class_label,
+          advisor: s.profile?.advisor || "",
+          majors: new Set<string>(),
+          students: [],
+        };
+        groups.set(s.class_key, g);
+      }
+      if (s.profile?.major) g.majors.add(s.profile.major);
+      if (!g.advisor && s.profile?.advisor) g.advisor = s.profile.advisor;
+      g.students.push(s);
+    }
+    return { groups: Array.from(groups.values()), truncatedFrom: risky.length > 200 ? risky.length : null };
+  }, [studentAggs]);
 
   const exportCsv = () => {
     const header = ["申请ID", "提交时间", "AI状态", "AI概率(%)", "申请描述", "学院ID"];
@@ -453,6 +601,9 @@ export default function AigcStatsPanel() {
               <div style={{ marginTop: 6, fontSize: 12, color: "#475569" }}>
                 范围：{scopeLabel} · {rangeLabel} · 状态筛选：{statuses.map((s) => STATUS_LABELS[s]).join(" / ")} · 生成于 {new Date().toLocaleString()}
               </div>
+              <div style={{ marginTop: 4, fontSize: 12, color: "#475569" }}>
+                覆盖学生 <b>{summaryCounts.students}</b> 人 · 涉及班级 <b>{summaryCounts.classes}</b> 个 · 涉及学院 <b>{summaryCounts.colleges}</b> 个 · 申请条数 <b>{filtered.length}</b>
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -541,6 +692,218 @@ export default function AigcStatsPanel() {
                 </table>
               )}
             </div>
+
+            {/* 章节二：按班级汇总 */}
+            <div style={{ marginTop: 28 }}>
+              <div style={sectionTitle}>按班级汇总（仅展示有高风险/嫌疑的班级）</div>
+              {classAggs.filter((c) => c.fake > 0 || c.suspect > 0).length === 0 ? (
+                <div style={{ fontSize: 12, color: "#64748b" }}>当前范围内没有班级出现高风险/嫌疑申请。</div>
+              ) : (
+                <table style={tbl}>
+                  <thead>
+                    <tr style={{ background: "#f1f5f9" }}>
+                      <th style={th}>#</th>
+                      <th style={{ ...th, textAlign: "left" }}>学院</th>
+                      <th style={{ ...th, textAlign: "left" }}>班级</th>
+                      <th style={th}>学生数</th>
+                      <th style={th}>高风险</th>
+                      <th style={th}>嫌疑</th>
+                      <th style={th}>通过</th>
+                      <th style={th}>待检测</th>
+                      <th style={th}>检出率</th>
+                      <th style={{ ...th, textAlign: "left" }}>班主任</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {classAggs.filter((c) => c.fake > 0 || c.suspect > 0).map((c, i) => {
+                      const checked = c.fake + c.suspect + c.real;
+                      const detectRate = checked ? ((c.fake + c.suspect) / checked) * 100 : 0;
+                      return (
+                        <tr key={c.key}>
+                          <td style={td}>{i + 1}</td>
+                          <td style={{ ...td, textAlign: "left" }}>{c.college_name}</td>
+                          <td style={{ ...td, textAlign: "left" }}>{c.class_label}</td>
+                          <td style={td}>{c.students}</td>
+                          <td style={{ ...td, color: c.fake ? "#b91c1c" : "#0f172a", fontWeight: c.fake ? 600 : 400 }}>{c.fake}</td>
+                          <td style={{ ...td, color: c.suspect ? "#b45309" : "#0f172a" }}>{c.suspect}</td>
+                          <td style={td}>{c.real}</td>
+                          <td style={td}>{c.pending}</td>
+                          <td style={td}>{detectRate.toFixed(1)}%</td>
+                          <td style={{ ...td, textAlign: "left" }}>{c.advisor || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                    {(() => {
+                      const list = classAggs.filter((c) => c.fake > 0 || c.suspect > 0);
+                      const sum = list.reduce(
+                        (a, c) => ({
+                          students: a.students + c.students,
+                          fake: a.fake + c.fake,
+                          suspect: a.suspect + c.suspect,
+                          real: a.real + c.real,
+                          pending: a.pending + c.pending,
+                        }),
+                        { students: 0, fake: 0, suspect: 0, real: 0, pending: 0 },
+                      );
+                      const checked = sum.fake + sum.suspect + sum.real;
+                      const dr = checked ? ((sum.fake + sum.suspect) / checked) * 100 : 0;
+                      return (
+                        <tr style={{ background: "#f8fafc", fontWeight: 600 }}>
+                          <td style={td} colSpan={3}>合计</td>
+                          <td style={td}>{sum.students}</td>
+                          <td style={{ ...td, color: "#b91c1c" }}>{sum.fake}</td>
+                          <td style={{ ...td, color: "#b45309" }}>{sum.suspect}</td>
+                          <td style={td}>{sum.real}</td>
+                          <td style={td}>{sum.pending}</td>
+                          <td style={td}>{dr.toFixed(1)}%</td>
+                          <td style={td}>—</td>
+                        </tr>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* 章节三：高风险/嫌疑学生完整名单（按班级分组） */}
+            <div style={{ marginTop: 28 }}>
+              <div style={sectionTitle}>高风险 / 嫌疑学生完整名单（按班级分组，便于下发辅导员）</div>
+              {groupedRiskyStudents.groups.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#64748b" }}>当前范围内无高风险/嫌疑学生。</div>
+              ) : (
+                <>
+                  {groupedRiskyStudents.groups.map((g, gi) => {
+                    const fakeStu = g.students.filter((s) => s.fake > 0).length;
+                    const susStu = g.students.filter((s) => s.fake === 0 && s.suspect > 0).length;
+                    const majors = Array.from(g.majors).join(" / ") || "—";
+                    return (
+                      <div key={gi} style={{ marginTop: gi === 0 ? 0 : 18, border: "1px solid #e2e8f0", borderRadius: 6, padding: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a" }}>
+                          {g.college_name} · {majors} · {g.class_label}
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: "#475569" }}>
+                            （班主任：{g.advisor || "—"}）—— 高风险 <b style={{ color: "#b91c1c" }}>{fakeStu}</b> 人 / 嫌疑 <b style={{ color: "#b45309" }}>{susStu}</b> 人
+                          </span>
+                        </div>
+                        <table style={{ ...tbl, marginTop: 6 }}>
+                          <thead>
+                            <tr style={{ background: "#f8fafc" }}>
+                              <th style={th}>#</th>
+                              <th style={{ ...th, textAlign: "left" }}>姓名</th>
+                              <th style={{ ...th, textAlign: "left" }}>学号</th>
+                              <th style={th}>性别</th>
+                              <th style={{ ...th, textAlign: "left" }}>专业</th>
+                              <th style={{ ...th, textAlign: "left" }}>电话</th>
+                              <th style={{ ...th, textAlign: "left" }}>邮箱</th>
+                              <th style={th}>高风险</th>
+                              <th style={th}>嫌疑</th>
+                              <th style={th}>最高概率</th>
+                              <th style={th}>最近提交</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {g.students.map((s, si) => (
+                              <tr key={s.student_id}>
+                                <td style={td}>{si + 1}</td>
+                                <td style={{ ...td, textAlign: "left", fontWeight: 600 }}>{s.profile?.full_name || "—"}</td>
+                                <td style={{ ...td, textAlign: "left" }}>{s.profile?.student_no || "—"}</td>
+                                <td style={td}>{s.profile?.gender || "—"}</td>
+                                <td style={{ ...td, textAlign: "left" }}>{s.profile?.major || "—"}</td>
+                                <td style={{ ...td, textAlign: "left" }}>{s.profile?.phone || "—"}</td>
+                                <td style={{ ...td, textAlign: "left", wordBreak: "break-all" }}>{s.profile?.email || "—"}</td>
+                                <td style={{ ...td, color: s.fake ? "#b91c1c" : "#0f172a", fontWeight: s.fake ? 600 : 400 }}>{s.fake}</td>
+                                <td style={{ ...td, color: s.suspect ? "#b45309" : "#0f172a" }}>{s.suspect}</td>
+                                <td style={td}>{(s.maxScore * 100).toFixed(1)}%</td>
+                                <td style={td}>{s.lastSubmittedAt ? new Date(s.lastSubmittedAt).toLocaleString() : "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {/* 每个学生的申请明细（仅 fake/suspect，最多 10 条） */}
+                        {g.students.map((s) => {
+                          const items = s.items
+                            .filter((r) => r.aigc_status === "fake" || r.aigc_status === "suspect")
+                            .sort((a, b) => (b.submitted_at < a.submitted_at ? -1 : 1))
+                            .slice(0, 10);
+                          if (items.length === 0) return null;
+                          return (
+                            <div key={`d-${s.student_id}`} style={{ marginTop: 8 }}>
+                              <div style={{ fontSize: 11, color: "#475569", marginBottom: 4 }}>
+                                <b>{s.profile?.full_name || "—"}（{s.profile?.student_no || "—"}）</b> 申请明细
+                              </div>
+                              <table style={tbl}>
+                                <thead>
+                                  <tr style={{ background: "#f8fafc" }}>
+                                    <th style={th}>#</th>
+                                    <th style={th}>提交时间</th>
+                                    <th style={th}>状态</th>
+                                    <th style={th}>AI 概率</th>
+                                    <th style={{ ...th, textAlign: "left" }}>申请描述</th>
+                                    <th style={{ ...th, textAlign: "left" }}>申请ID</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {items.map((r, ri) => (
+                                    <tr key={r.id}>
+                                      <td style={td}>{ri + 1}</td>
+                                      <td style={td}>{new Date(r.submitted_at).toLocaleString()}</td>
+                                      <td style={{ ...td, color: r.aigc_status === "fake" ? "#b91c1c" : "#b45309", fontWeight: 600 }}>
+                                        {STATUS_LABELS[r.aigc_status]}
+                                      </td>
+                                      <td style={td}>{typeof r.aigc_score === "number" ? `${(r.aigc_score * 100).toFixed(1)}%` : "—"}</td>
+                                      <td style={{ ...td, textAlign: "left" }}>{(r.description ?? "").slice(0, 60)}</td>
+                                      <td style={{ ...td, textAlign: "left", fontFamily: "monospace", fontSize: 10 }}>{r.id.slice(0, 8)}…</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  {groupedRiskyStudents.truncatedFrom && (
+                    <div style={{ marginTop: 8, fontSize: 11, color: "#b45309" }}>
+                      为控制 PDF 长度，已截断显示前 200 名学生（共 {groupedRiskyStudents.truncatedFrom} 名）。如需完整名单请使用 CSV 导出。
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* 章节四：未匹配学生信息的申请 */}
+            {orphanRows.length > 0 && (
+              <div style={{ marginTop: 28 }}>
+                <div style={sectionTitle}>未匹配学生信息的申请</div>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
+                  以下申请在 profiles 中找不到对应学生记录（可能是已离校或档案缺失），请人工核实。
+                </div>
+                <table style={tbl}>
+                  <thead>
+                    <tr style={{ background: "#f1f5f9" }}>
+                      <th style={th}>#</th>
+                      <th style={th}>提交时间</th>
+                      <th style={th}>状态</th>
+                      <th style={th}>AI 概率</th>
+                      <th style={{ ...th, textAlign: "left" }}>学生 ID</th>
+                      <th style={{ ...th, textAlign: "left" }}>申请描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orphanRows.slice(0, 100).map((r, i) => (
+                      <tr key={r.id}>
+                        <td style={td}>{i + 1}</td>
+                        <td style={td}>{new Date(r.submitted_at).toLocaleString()}</td>
+                        <td style={{ ...td, fontWeight: 600 }}>{STATUS_LABELS[r.aigc_status]}</td>
+                        <td style={td}>{typeof r.aigc_score === "number" ? `${(r.aigc_score * 100).toFixed(1)}%` : "—"}</td>
+                        <td style={{ ...td, textAlign: "left", fontFamily: "monospace", fontSize: 10 }}>{r.student_id?.slice(0, 8) ?? "—"}…</td>
+                        <td style={{ ...td, textAlign: "left" }}>{(r.description ?? "").slice(0, 60)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </CardContent>
@@ -553,6 +916,13 @@ const th: React.CSSProperties = {
 };
 const td: React.CSSProperties = {
   border: "1px solid #e2e8f0", padding: "4px 6px", textAlign: "center", color: "#0f172a",
+};
+const tbl: React.CSSProperties = {
+  width: "100%", borderCollapse: "collapse", fontSize: 11,
+};
+const sectionTitle: React.CSSProperties = {
+  fontSize: 14, fontWeight: 700, marginBottom: 8, paddingBottom: 4,
+  borderBottom: "1px solid #cbd5e1", color: "#0f172a",
 };
 
 function Kpi({ label, value, accent, onClick }: { label: string; value: string | number; accent?: string; onClick?: () => void }) {
