@@ -32,7 +32,7 @@ export function DatePicker({
   disableFuture,
   className,
   allowClear = true,
-  align = "start",
+  align = "end",
 }: DatePickerProps) {
   const parsed = React.useMemo(() => {
     if (!value) return undefined;
@@ -83,7 +83,12 @@ export function DatePicker({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align={align}>
+      <PopoverContent
+        className="w-auto p-0 z-50 max-h-[var(--radix-popover-content-available-height)] overflow-auto"
+        align={align}
+        sideOffset={8}
+        collisionPadding={16}
+      >
         <Calendar
           mode="single"
           selected={parsed}
