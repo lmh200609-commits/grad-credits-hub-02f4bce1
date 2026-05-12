@@ -11,6 +11,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -480,13 +481,17 @@ export default function AigcStatsPanel() {
           {isSuperAdmin && (
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">学院</span>
-              <Select value={collegeFilter} onValueChange={setCollegeFilter}>
-                <SelectTrigger className="h-8 w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部学院</SelectItem>
-                  {colleges.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={collegeFilter}
+                onChange={setCollegeFilter}
+                options={[
+                  { value: "all", label: "全部学院" },
+                  ...colleges.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+                placeholder="全部学院"
+                searchPlaceholder="搜索学院…"
+                className="h-8 w-[160px]"
+              />
             </div>
           )}
         </div>
