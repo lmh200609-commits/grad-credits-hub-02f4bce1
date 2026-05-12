@@ -97,6 +97,8 @@ const RANGE_RULE = `\n15. 【灵活时间窗口】凡用户问到带具体时间
 metric 选择：问"提交了几份/多少份"用 submitted_count；问"多少学生提交/几个人提交"用 submitted_students；问"详细状态/状态分布/通过几个驳回几个/审核情况"用 status_breakdown；问"多少人没提交/未提交人数/还有多少没交"用 not_submitted_students；问 AIGC/AI 图片状态分布用 aigc_breakdown。
 严禁用 query_stats 的 _week/_month/_total 指标替代 query_stats_range；严禁回答"暂不支持该统计"。`;
 
+const LIST_RULE = `\n16. 【明细列表】当用户在带时间窗口的提问中追问"分别是谁 / 是哪几份 / 哪四份 / 哪五份 / 详细列出 / 是哪些学生 / 是什么学院什么班级 / 提交了什么 / 谁提交的"时，必须调用 list_submissions_range（不要再用 query_stats_range，也不要凭上下文自行编写名单）。range 用法同 query_stats_range；如用户给出具体日期（例如『5 月 10 号 / 5月10日 / 2026-05-10』），把 range 设为 specific_date，并把日期填入 date 参数（格式 YYYY-MM-DD 或 M月D日）。返回为空时如实回复"该时间范围内暂无申请提交记录"，绝不编造姓名、学号、学院、班级、申请编号或日期。回答时严格按工具返回的"明细"字段逐条列出，不得改名、不得增减条数、不得替换学院班级。`;
+
 // 兜底：从模型最终答复中剥离裸 URL / 路径片段 / markdown 链接，避免出现 "/admin/credits?passFilter=fail" 这类英文路径
 function stripPathsFromAnswer(text: string): string {
   if (!text) return text;
@@ -319,6 +321,30 @@ const TOOLS = [
           },
         },
         required: ["metric", "range"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_submissions_range",
+      description: "按时间窗口（含昨天/前天/今天/具体日期/近 N 天/本学期等）列出真实提交申请明细，返回每条申请的学生姓名、学号、学院、专业、班级、提交时间、状态、申请编号末 8 位、描述。用户问『分别是谁/哪几份/详细列出/是什么学院/谁提交的』时必须调用本工具。",
+      parameters: {
+        type: "object",
+        properties: {
+          range: {
+            type: "string",
+            enum: [
+              "today","yesterday","day_before_yesterday",
+              "last_7_days","last_15_days","last_30_days","last_90_days","last_180_days","last_365_days",
+              "this_week","this_month","this_year","this_semester","half_semester","all_time",
+              "specific_date",
+            ],
+          },
+          date: { type: "string", description: "当 range=specific_date 时必填，格式 YYYY-MM-DD 或 M月D日 或 M月D号" },
+          limit: { type: "number", description: "最多返回条数，默认 50，上限 200" },
+        },
+        required: ["range"],
       },
     },
   },
