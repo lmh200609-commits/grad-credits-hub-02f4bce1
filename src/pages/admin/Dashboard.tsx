@@ -96,14 +96,15 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-7">
           <StatCard label="申请总数" value={stats.total} accent="text-indigo-600" />
           <StatCard label="已通过" value={stats.approved} accent="text-emerald-600" />
           <StatCard label="系统核验中" value={stats.pending_ai} accent="text-sky-600" />
           <StatCard label="待教师复核" value={stats.pending_review} accent="text-amber-600" />
           <StatCard label="已拒绝" value={stats.rejected} accent="text-rose-600" />
           <StatCard label="累计学分" value={Number(stats.total_credit).toFixed(1)} accent="text-fuchsia-600" />
-          <StatCard label="规则 / 师生" value={`${ruleCount} / ${teacherCount}+${studentCount}`} accent="text-cyan-600" />
+          <StatCard label="规则数" value={ruleCount} accent="text-cyan-600" />
+          <StatCard label="教师 / 学生" value={`${teacherCount} / ${studentCount}`} accent="text-cyan-600" />
         </div>
 
         <Card>
