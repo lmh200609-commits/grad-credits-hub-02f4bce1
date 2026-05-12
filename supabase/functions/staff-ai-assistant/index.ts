@@ -43,6 +43,10 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
     · keywords_overview     — 关键词库总数（含启用/停用拆分）+ 按类别分布
     · certificate_types_overview — 证书类型字典总数 + 按类别/级别分布
     · submission_records_overview — 申请流水总数 + 按事件类型分布
+    · colleges_overview     — 学院总数（含启用/停用）+ 学院列表
+    · college_admins_overview — 学院管理员总人数 + 按学院分布
+    · teachers_overview     — 教师总人数 + 按学院分布
+    · super_admins_overview — 超级管理员总人数
 
 【路径白名单（仅可使用以下路径）】
 - /admin/dashboard           数据看板（管理员）
@@ -197,6 +201,10 @@ const TOOLS = [
               "keywords_overview",
               "certificate_types_overview",
               "submission_records_overview",
+              "colleges_overview",
+              "college_admins_overview",
+              "teachers_overview",
+              "super_admins_overview",
               "aigc_fake_week",
               "aigc_suspect_week",
               "aigc_pending_total",
