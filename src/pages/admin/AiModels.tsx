@@ -15,6 +15,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Pencil, PlugZap, CheckCircle2, XCircle, Loader2, Cpu } from "lucide-react";
 
@@ -350,32 +351,30 @@ const BindingRow = ({
       </TableCell>
       <TableCell className="min-w-[340px] align-top">
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Select value={providerId} onValueChange={onProviderChange} disabled={saving}>
-            <SelectTrigger className="sm:w-[180px]">
-              <SelectValue placeholder="未绑定（环境变量）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">未绑定（环境回退）</SelectItem>
-              {providers.map((p) => (
-                <SelectItem key={p.id} value={p.id}>{p.name} · {p.vendor}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={showCustomInput ? "__custom__" : binding.model}
-            onValueChange={onModelChange}
+          <SearchableSelect
+            value={providerId}
+            onChange={onProviderChange}
             disabled={saving}
-          >
-            <SelectTrigger className="font-mono text-xs sm:w-[180px]">
-              <SelectValue placeholder="选择模型" />
-            </SelectTrigger>
-            <SelectContent>
-              {modelOptions.map((m) => (
-                <SelectItem key={m} value={m} className="font-mono text-xs">{m}</SelectItem>
-              ))}
-              <SelectItem value="__custom__" className="text-xs">自定义模型名…</SelectItem>
-            </SelectContent>
-          </Select>
+            options={[
+              { value: "__none__", label: "未绑定（环境回退）" },
+              ...providers.map((p) => ({ value: p.id, label: `${p.name} · ${p.vendor}` })),
+            ]}
+            placeholder="未绑定（环境变量）"
+            searchPlaceholder="搜索 Provider…"
+            className="sm:w-[180px]"
+          />
+          <SearchableSelect
+            value={showCustomInput ? "__custom__" : binding.model}
+            onChange={onModelChange}
+            disabled={saving}
+            options={[
+              ...modelOptions.map((m) => ({ value: m, label: m })),
+              { value: "__custom__", label: "自定义模型名…" },
+            ]}
+            placeholder="选择模型"
+            searchPlaceholder="搜索模型…"
+            className="font-mono text-xs sm:w-[180px]"
+          />
         </div>
         {showCustomInput && (
           <div className="mt-2 flex items-center gap-2">
