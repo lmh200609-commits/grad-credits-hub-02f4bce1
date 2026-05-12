@@ -39,39 +39,40 @@ export function ConfidenceBadge({
   confidence: number | null;
   reviewSource?: string | null;
 }) {
+  const tip = "判定确信度 = AI / 系统对最终判定结果（通过 / 驳回 / 需复核）的把握程度，不是材料本身的真实性概率。例如「驳回 90%」= 90% 确定该驳回。";
   if (reviewSource === "student_appeal") {
     return (
-      <Badge variant="outline" className="bg-warning/15 text-warning border-transparent">
-        学生申诉，无系统置信度
+      <Badge variant="outline" className="bg-warning/15 text-warning border-transparent" title={tip}>
+        学生申诉，无判定确信度
       </Badge>
     );
   }
   if (confidence == null) {
-    return <Badge variant="outline" className="text-muted-foreground">置信度 —</Badge>;
+    return <Badge variant="outline" className="text-muted-foreground" title={tip}>判定确信度 —</Badge>;
   }
   const pct = `${(Number(confidence) * 100).toFixed(0)}%`;
   if (status === "auto_approved") {
     return (
-      <Badge variant="outline" className="bg-success/15 text-success border-transparent">
-        系统高置信通过 {pct}
+      <Badge variant="outline" className="bg-success/15 text-success border-transparent" title={tip}>
+        系统强通过（确信度 {pct}）
       </Badge>
     );
   }
   if (status === "rejected_by_ai") {
     return (
-      <Badge variant="outline" className="bg-danger/15 text-danger border-transparent">
-        系统高置信驳回 {pct}
+      <Badge variant="outline" className="bg-danger/15 text-danger border-transparent" title={tip}>
+        系统强驳回（确信度 {pct}）
       </Badge>
     );
   }
   if (status === "pending_review") {
     return (
-      <Badge variant="outline" className="bg-muted text-muted-foreground border-transparent">
-        系统低置信，转人工 {pct}
+      <Badge variant="outline" className="bg-muted text-muted-foreground border-transparent" title={tip}>
+        系统不确定，转人工（确信度 {pct}）
       </Badge>
     );
   }
-  return <Badge variant="outline">置信度 {pct}</Badge>;
+  return <Badge variant="outline" title={tip}>判定确信度 {pct}</Badge>;
 }
 
 function CheckRow({
