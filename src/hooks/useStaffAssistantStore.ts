@@ -32,13 +32,29 @@ type State = {
   input: string;
 };
 
-const STORAGE_KEY = "staff-assistant-v1";
+const STORAGE_PREFIX = "staff-assistant-v1";
+const LEGACY_KEY = "staff-assistant-v1";
 const MAX_MESSAGES = 50;
 
-const loadPersisted = (): Pick<State, "messages"> => {
+let currentUserId: string | null = null;
+const keyFor = (uid: string | null) => `${STORAGE_PREFIX}:${uid ?? "anon"}`;
+
+// One-time cleanup of legacy unscoped key so it can't leak across accounts.
+if (typeof window !== "undefined") {
+  try {
+    if (window.localStorage.getItem(LEGACY_KEY) !== null
+        && !LEGACY_KEY.includes(":")) {
+      window.localStorage.removeItem(LEGACY_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+const loadPersisted = (uid: string | null): Pick<State, "messages"> => {
   if (typeof window === "undefined") return { messages: [WELCOME] };
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(keyFor(uid));
     if (!raw) return { messages: [WELCOME] };
     const parsed = JSON.parse(raw);
     const messages = Array.isArray(parsed?.messages) && parsed.messages.length > 0 ? parsed.messages : [WELCOME];
@@ -48,7 +64,7 @@ const loadPersisted = (): Pick<State, "messages"> => {
   }
 };
 
-const initial = loadPersisted();
+const initial = loadPersisted(currentUserId);
 let state: State = {
   open: false,
   messages: initial.messages,
@@ -62,7 +78,7 @@ const persist = () => {
   try {
     const trimmed = state.messages.slice(-MAX_MESSAGES);
     window.localStorage.setItem(
-      STORAGE_KEY,
+      keyFor(currentUserId),
       JSON.stringify({ messages: trimmed }),
     );
   } catch {
@@ -93,4 +109,17 @@ export const staffAssistantActions = {
     setState({ messages: next });
   },
   clearMessages: () => setState({ messages: [WELCOME] }),
+};
+
+/**
+ * Switch the storage scope to the given user. Called by the auth layer on
+ * sign-in / sign-out so chat history is never shared across accounts on the
+ * same browser.
+ */
+export const setStaffAssistantUser = (userId: string | null) => {
+  if (currentUserId === userId) return;
+  currentUserId = userId;
+  const { messages } = loadPersisted(userId);
+  state = { open: false, input: "", messages };
+  listeners.forEach((l) => l());
 };
