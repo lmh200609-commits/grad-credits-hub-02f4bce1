@@ -769,6 +769,71 @@ async function execTool(
   }
 
   if (name === "list_aigc_flagged") {
+    // (handled below)
+  }
+
+  if (name === "query_stats_range") {
+    const metric = String(args?.metric || "");
+    const range = String(args?.range || "all_time");
+    const { since, until, label } = resolveRange(range);
+    const scopeApps = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
+    const applyTime = (q: any) => {
+      if (since) q = q.gte("submitted_at", since.toISOString());
+      if (until) q = q.lt("submitted_at", until.toISOString());
+      return q;
+    };
+    if (metric === "submitted_count") {
+      const { count } = await applyTime(
+        scopeApps(supabase.from("applications").select("id", { count: "exact", head: true })),
+      );
+      return { metric, range, range_label: label, value: count ?? 0 };
+    }
+    if (metric === "submitted_students") {
+      const { data } = await applyTime(scopeApps(supabase.from("applications").select("student_id")));
+      const set = new Set((data || []).map((r: any) => r.student_id));
+      return { metric, range, range_label: label, value: set.size };
+    }
+    if (metric === "status_breakdown") {
+      const { data } = await applyTime(scopeApps(supabase.from("applications").select("status")));
+      const counts: Record<string, number> = {
+        auto_approved: 0, approved: 0, rejected: 0, rejected_by_ai: 0,
+        pending_review: 0, pending_ai: 0,
+      };
+      (data || []).forEach((r: any) => {
+        const s = String(r.status || "");
+        counts[s] = (counts[s] ?? 0) + 1;
+      });
+      return { metric, range, range_label: label, value: counts, total: (data || []).length };
+    }
+    if (metric === "not_submitted_students") {
+      let rq = supabase.from("user_roles").select("user_id").eq("role", "student");
+      if (!isSuper && collegeId) rq = rq.eq("college_id", collegeId);
+      const { data: roles } = await rq;
+      const allIds = new Set((roles || []).map((r: any) => r.user_id));
+      const { data: apps } = await applyTime(scopeApps(supabase.from("applications").select("student_id")));
+      const submitted = new Set((apps || []).map((r: any) => r.student_id));
+      let notCount = 0;
+      allIds.forEach((id) => { if (!submitted.has(id)) notCount++; });
+      return {
+        metric, range, range_label: label,
+        value: notCount,
+        total_students: allIds.size,
+        submitted_students: submitted.size,
+      };
+    }
+    if (metric === "aigc_breakdown") {
+      const { data } = await applyTime(scopeApps(supabase.from("applications").select("aigc_status")));
+      const counts: Record<string, number> = { fake: 0, suspect: 0, real: 0, pending: 0, skipped: 0, error: 0 };
+      (data || []).forEach((r: any) => {
+        const s = String(r.aigc_status || "pending");
+        counts[s] = (counts[s] ?? 0) + 1;
+      });
+      return { metric, range, range_label: label, value: counts, total: (data || []).length };
+    }
+    return { metric, range, range_label: label, value: 0 };
+  }
+
+  if (name === "list_aigc_flagged") {
     const range = String(args?.range || "week");
     const status = String(args?.status || "both");
     const since = new Date();
