@@ -190,7 +190,7 @@ const SubmissionWindows = () => {
                 <Label>切换学院</Label>
                 <SearchableSelect
                   value={activeCollege ?? ""}
-                  onChange={setActiveCollege}
+                  onChange={(v) => setActiveCollege(v || null)}
                   options={colleges.map((c) => ({ value: c.id, label: c.name }))}
                   placeholder="选择学院"
                   searchPlaceholder="搜索学院…"
