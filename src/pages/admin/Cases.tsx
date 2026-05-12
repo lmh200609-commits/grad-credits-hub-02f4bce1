@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { caseSchema } from "@/lib/schemas";
@@ -103,23 +103,39 @@ const CasesPage = () => {
           actions={
             <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />新增案例</Button></DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{editing ? "编辑案例" : "新增案例"}</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div><Label>标题</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-                <div><Label>摘要</Label><Textarea value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={4} /></div>
-                <div>
-                  <Label>关联规则</Label>
-                  <Select value={form.rule_id} onValueChange={(v) => setForm({ ...form, rule_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="选择规则" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">未关联</SelectItem>
-                      {rules.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-sm">标题</Label>
+                  <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
                 </div>
-                <div><Label>给定学分</Label><Input type="number" step="0.5" value={form.awarded_credit} onChange={(e) => setForm({ ...form, awarded_credit: Number(e.target.value) })} /></div>
-                <div><Label>备注</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
+                <div className="space-y-1">
+                  <Label className="text-sm">关联规则</Label>
+                  <SearchableSelect
+                    value={form.rule_id}
+                    onChange={(v) => setForm({ ...form, rule_id: v || "none" })}
+                    options={[
+                      { value: "none", label: "未关联" },
+                      ...rules.map((r) => ({ value: r.id, label: r.name })),
+                    ]}
+                    placeholder="选择规则"
+                    searchPlaceholder="搜索规则名称…"
+                    emptyText="无匹配规则"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm">给定学分</Label>
+                  <Input type="number" step="0.5" value={form.awarded_credit} onChange={(e) => setForm({ ...form, awarded_credit: Number(e.target.value) })} />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-sm">摘要</Label>
+                  <Textarea value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} rows={3} />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-sm">备注</Label>
+                  <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
+                </div>
               </div>
               <DialogFooter><Button onClick={save}>保存</Button></DialogFooter>
             </DialogContent>

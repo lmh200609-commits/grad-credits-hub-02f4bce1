@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import { buildPassword, type ParsedRow } from "@/lib/parseRoster";
 import { YmdPicker } from "@/components/ui/ymd-picker";
@@ -179,12 +180,13 @@ const SingleUserDialog = ({ open, role, onClose, onDone }: Props) => {
           {isSuperAdmin && (
             <div className="sm:col-span-2">
               <Label>归属学院 <span className="text-destructive">*</span></Label>
-              <Select value={collegeId} onValueChange={setCollegeId}>
-                <SelectTrigger><SelectValue placeholder="请选择学院" /></SelectTrigger>
-                <SelectContent>
-                  {colleges.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={collegeId}
+                onChange={setCollegeId}
+                options={colleges.map((c) => ({ value: c.id, label: c.name }))}
+                placeholder="请选择学院"
+                searchPlaceholder="搜索学院…"
+              />
             </div>
           )}
           <Field req label={idLabel} value={f.student_no} onChange={(v) => set("student_no", v)} />

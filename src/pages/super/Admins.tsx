@@ -13,6 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -132,12 +133,13 @@ const Admins = () => {
                   <Input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
                 </div>
                 <div><Label>所属学院 *</Label>
-                  <Select value={form.college_id} onValueChange={(v) => setForm({ ...form, college_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="选择学院" /></SelectTrigger>
-                    <SelectContent>
-                      {colleges.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={form.college_id}
+                    onChange={(v) => setForm({ ...form, college_id: v })}
+                    options={colleges.map((c) => ({ value: c.id, label: c.name }))}
+                    placeholder="选择学院"
+                    searchPlaceholder="搜索学院…"
+                  />
                 </div>
               </div>
               <DialogFooter>
