@@ -172,6 +172,14 @@ Deno.serve(async (req) => {
     } catch {
       parsed = null;
     }
+    // 兜底：模型没调用工具，而是直接输出文本时，尝试从文本中提取 JSON
+    if (!parsed) {
+      const text: string = data?.choices?.[0]?.message?.content ?? "";
+      const m = typeof text === "string" ? text.match(/\{[\s\S]*\}/) : null;
+      if (m) {
+        try { parsed = JSON.parse(m[0]); } catch { parsed = null; }
+      }
+    }
     if (!parsed) {
       await note("AI 未返回结构化结论", null, "error");
       return json({ status: "error", note: "AI 未返回结构化结论" });
