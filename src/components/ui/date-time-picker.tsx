@@ -67,15 +67,17 @@ export function DateTimePicker({
             {date ? format(date, "yyyy 年 M 月 d 日", { locale: zhCN }) : <span>{placeholder}</span>}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
+        <PopoverContent
+          className="w-auto p-0 z-50 max-h-[var(--radix-popover-content-available-height)] overflow-auto"
+          align="end"
+          sideOffset={8}
+          collisionPadding={16}
+        >
           <Calendar
             mode="single"
             selected={date}
             onSelect={(d) => emit(d, hour, minute)}
             defaultMonth={date ?? new Date()}
-            captionLayout="dropdown-buttons"
-            fromYear={_fromYear}
-            toYear={_toYear}
             locale={zhCN}
             initialFocus
             className={cn("p-3 pointer-events-auto")}
