@@ -419,6 +419,30 @@ function resolveRange(range: string): { since: Date | null; until: Date | null; 
   return { since: null, until: null, label: "全部时间" };
 }
 
+// 解析用户口语化的具体日期为 [since, until)（UTC 瞬时），按 Asia/Shanghai 自然日切分。
+function resolveSpecificDate(input: string): { since: Date; until: Date; label: string } | null {
+  if (!input) return null;
+  const TZ = 8 * 3600 * 1000;
+  const s = String(input).trim();
+  let y: number | null = null, mo: number | null = null, d: number | null = null;
+  let m = s.match(/(\d{4})\s*[-\/年\.]\s*(\d{1,2})\s*[-\/月\.]\s*(\d{1,2})/);
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  if (!m) {
+    m = s.match(/(\d{1,2})\s*[月\/\-\.]\s*(\d{1,2})\s*[日号]?/);
+    if (m) {
+      const now = new Date(Date.now() + TZ);
+      y = now.getUTCFullYear(); mo = +m[1]; d = +m[2];
+    }
+  }
+  if (y == null || mo == null || d == null) return null;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const startShifted = new Date(Date.UTC(y, mo - 1, d));
+  const since = new Date(startShifted.getTime() - TZ);
+  const until = new Date(since.getTime() + 24 * 3600 * 1000);
+  const label = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return { since, until, label };
+}
+
 type CallerCtx = {
   userRole: string; // 'super_admin' | 'admin' | 'teacher'
   collegeId: string | null;
