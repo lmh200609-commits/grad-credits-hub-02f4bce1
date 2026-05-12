@@ -472,7 +472,12 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
     if (failedChecks.length > 0) {
       // 任一核验失败 → 强制驳回 + 高置信
       if (result.recommendation !== "reject") {
-        const orig = result.recommendation;
+        const recMap: Record<string, string> = {
+          approve: "通过",
+          reject: "驳回",
+          review: "需人工复核",
+        };
+        const orig = recMap[result.recommendation as string] ?? String(result.recommendation ?? "");
         overrideNotes.push(
           `AI 原判定为「${orig}」，但核验项「${failedChecks.join("、")}」未通过，已强制改判为「驳回」。`,
         );
@@ -480,14 +485,14 @@ reasoning_short：一句话（≤60 字）给学生看，只点出"是否通过 
       }
       const c = Number(result.confidence ?? 0);
       if (!(c >= 0.85)) {
-        overrideNotes.push(`AI 置信度 ${(c * 100).toFixed(0)}% 与"明确不通过"不一致，已上调至 90%。`);
+        overrideNotes.push(`（判定确信度按系统改判后的"明确驳回"重置为 90%。）`);
         result.confidence = 0.9;
       }
     } else if (result.recommendation === "review") {
       // review 不允许高置信度（自相矛盾）
       const c = Number(result.confidence ?? 0.5);
       if (c > 0.7) {
-        overrideNotes.push(`AI 给出"需人工复核"但置信度 ${(c * 100).toFixed(0)}% 偏高，已下调至 70%（不确定不应高置信）。`);
+        overrideNotes.push(`AI 给出"需人工复核"但确信度 ${(c * 100).toFixed(0)}% 偏高（不确定本不应高确信），系统已校正为 70%。`);
         result.confidence = 0.7;
       }
       if (c < 0.4) {
