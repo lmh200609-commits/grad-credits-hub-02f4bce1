@@ -175,7 +175,7 @@ const SingleUserDialog = ({ open, role, onClose, onDone }: Props) => {
           </div>
         )}
 
-        <div className="grid max-h-[60vh] gap-3 overflow-y-auto sm:grid-cols-2">
+        <div className="grid max-h-[60vh] gap-3 overflow-y-auto px-1 py-1 sm:grid-cols-2">
           {isSuperAdmin && (
             <div className="sm:col-span-2">
               <Label>归属学院 <span className="text-destructive">*</span></Label>

@@ -1,38 +1,42 @@
-# 修复"新建教师/学生账号"日期选择器乱码与被遮挡
+# 修复表单聚焦边框被裁切 & 日期选择器重复"五月/2026"
 
-## 问题
+## 问题与根因
 
-1. **乱码重叠**：日历顶部出现"五月 / Year: 2026 / 2026 ▾"等文字与箭头叠在一起。
-2. **被遮挡**：日历弹层超出对话框右边缘，部分日期看不见。
+### 1. 输入框聚焦时边框被裁切
+`src/components/SingleUserDialog.tsx` 第 178 行：
+```
+<div className="grid max-h-[60vh] gap-3 overflow-y-auto sm:grid-cols-2">
+```
+该容器为滚动容器（`overflow-y-auto`）但无内边距。`Input` 聚焦环 `focus-visible:ring-2 ring-offset-2` 共 4px，会被容器左/右/下边缘裁掉，造成截图中"床号"边框缺一块。
 
-## 根因
-
-- `src/components/ui/calendar.tsx` 中 `classNames` 未为 `captionLayout="dropdown-buttons"` 提供下拉布局相关样式（缺 `caption_dropdowns / dropdown / dropdown_month / dropdown_year / vhidden`），导致原生 `<select>`、隐藏的 caption 文本、左右翻页按钮全部重叠。
-- `src/components/ui/date-picker.tsx` 的 `<PopoverContent>` 使用 `align="start"` 且无 `collisionPadding / sideOffset`，在 Dialog 右列触发时弹层向右溢出被裁切。
+### 2. 日期选择器重复显示"五月/2026"
+react-day-picker dropdown 模式下，每个 `rdp-dropdown_month / rdp-dropdown_year` 内部同时含有 `<select>` 与一个用于视觉显示的 `caption_label`。上一次修改把 `dropdown` 类设为可见 select 样式，但未隐藏其下方的 `caption_label`，于是出现两套"五月 ▾ / 2026 ▾"。
 
 ## 改动
 
-### 1. `src/components/ui/calendar.tsx`
-为 `dropdown-buttons` caption 补齐样式：
-- 新增 `caption_dropdowns: "flex justify-center gap-1"`
-- 新增 `vhidden: "hidden"`（隐藏原 caption 文字"五月"以避免与下拉重叠）
-- 新增 `dropdown: "bg-background border border-input rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"`
-- 新增 `dropdown_month / dropdown_year: "relative"`
-- 调整 `caption_label` 在 dropdown 模式下隐藏（通过 `vhidden`，react-day-picker 会自动应用）
+### A. `src/components/SingleUserDialog.tsx`（仅改一行）
+将第 178 行容器加内边距，给焦点环留空间：
+```diff
+- <div className="grid max-h-[60vh] gap-3 overflow-y-auto sm:grid-cols-2">
++ <div className="grid max-h-[60vh] gap-3 overflow-y-auto px-1 py-1 sm:grid-cols-2">
+```
 
-### 2. `src/components/ui/date-picker.tsx`
-让弹层在 Dialog 内不被遮挡：
-- `<PopoverContent>` 增加 `align="end"`（默认值改为 end，仍允许 prop 覆盖）
-- 增加 `sideOffset={8}` 与 `collisionPadding={16}`
-- 给 `PopoverContent` 加 `z-50 max-h-[--radix-popover-content-available-height] overflow-auto`
+### B. `src/components/ui/calendar.tsx`
+隐藏 dropdown 内部重复的 caption_label，仅保留可见的 `<select>`：
+```diff
+- dropdown_month: "relative",
+- dropdown_year: "relative",
++ dropdown_month: "relative [&>.rdp-caption_label]:hidden",
++ dropdown_year: "relative [&>.rdp-caption_label]:hidden",
+```
+（不影响普通 buttons 模式 —— 那种模式下 caption_label 是 caption 的直接子级，不在 dropdown_* 内部。）
 
 ## 不改动
 
-- 不修改任何业务页面（`SingleUserDialog.tsx` 等）；本次只动 UI 基础组件。
-- 不改后端、不改数据库。
+- 不动业务逻辑、表单字段、提交流程。
+- 不动后端、数据库。
 
 ## 验证
 
-打开"新建教师账号"/"新建学生账号"对话框，点击"选择日期"：
-- 顶部应显示两个清晰的下拉框（年 / 月）+ 左右翻页箭头，无文字叠加。
-- 日历完整显示在 Dialog 内，不被右边缘截断。
+1. 打开"新建学生账号"/"新建教师账号"，依次点击各输入框（含最右列、最底部的"床号"）：聚焦环完整可见，不再被裁切。
+2. 点击"出生日期 → 选择日期"：顶部仅有一行"月份 ▾ 年份 ▾"下拉 + 左右翻页箭头，不再重复出现"五月/2026"。
