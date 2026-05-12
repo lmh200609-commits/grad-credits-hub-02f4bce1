@@ -876,7 +876,15 @@ async function execTool(
   if (name === "query_stats_range") {
     const metric = String(args?.metric || "");
     const range = String(args?.range || "all_time");
-    const { since, until, label } = resolveRange(range);
+    let since: Date | null = null, until: Date | null = null, label = "全部时间";
+    if (range === "specific_date") {
+      const r = resolveSpecificDate(String(args?.date || ""));
+      if (!r) return { metric, range, range_label: "未识别日期", value: 0, note: "未能识别具体日期，请使用 YYYY-MM-DD / M月D日 / 五月十号 等格式" };
+      since = r.since; until = r.until; label = r.label;
+    } else {
+      const r = resolveRange(range);
+      since = r.since; until = r.until; label = r.label;
+    }
     const scopeApps = (q: any) => (!isSuper && collegeId ? q.eq("college_id", collegeId) : q);
     const applyTime = (q: any) => {
       if (since) q = q.gte("submitted_at", since.toISOString());
