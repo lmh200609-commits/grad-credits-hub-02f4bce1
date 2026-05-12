@@ -1,29 +1,100 @@
-## 问题
-当前出生日期用通用 `DatePicker`（shadcn Calendar 默认头部），只有「← →」逐月翻动，选 80/90/00 后年份要点几十下，完全不适合"出生日期"这种跨度大的场景。
+## 目标
+1. 优化「新增/编辑案例」对话框布局，减少纵向高度
+2. 新增通用「可搜索下拉」组件，先用于"关联规则"，并同步到系统中其他长列表下拉
 
-## 方案：新建一个紧凑的"年/月/日"三段下拉选择器
+---
 
-不动通用 `DatePicker`（提交时间窗口等仍需要日历视图）。新增专用组件给"出生日期"用，三段 `Select` 横排，一屏内最多 3 次点击完成选择。
+## 一、案例对话框布局优化（`src/pages/admin/Cases.tsx`）
 
-### 1. 新建 `src/components/ui/ymd-picker.tsx`
-- Props 与 `DatePicker` 兼容：`value: string | null` (YYYY-MM-DD)、`onChange(v: string)`、`disabled`、`placeholder`、`fromYear?`、`toYear?`、`disableFuture?`、`allowClear?`、`className?`。
-- UI：三个紧挨着的 shadcn `Select`，宽度自适应，整体一行：
-  - 年：`fromYear`（默认 1940）→ `toYear`（默认今年），降序排列，方便往近年找。
-  - 月：1–12。
-  - 日：根据已选年/月动态生成 28–31，并自动钳制（如 2 月 30 日 → 2 月 28/29）。
-- 任意一段未选完整时不触发 `onChange`；三段齐全时输出 `YYYY-MM-DD`，并对 `disableFuture` 做校验（未来日期 → 不写入并轻提示）。
-- 当 `allowClear` 且已有值时，行尾显示一个小「清除」按钮。
-- 仍兼容现有的字符串校验（`/^\d{4}-\d{2}-\d{2}$/`）。
+当前问题：竖向堆叠 6 个字段 + 大段 Textarea，整体超出小屏视口需要滚动，按钮被挤到底部。
 
-### 2. 接入两处出生日期
-- `src/pages/student/MyProfile.tsx`：把 `DatePicker` 换成 `YmdPicker`（保留 `disableFuture`、默认 `fromYear=1940`）。
-- `src/components/SingleUserDialog.tsx`：必填和可选两个出生日期都换成 `YmdPicker`。
+调整方案：
+- `DialogContent` 加宽：`sm:max-w-2xl`，并 `max-h-[85vh] overflow-y-auto`
+- 使用 2 列栅格 `grid grid-cols-2 gap-3`：
+  - 第 1 行：标题（占 2 列）
+  - 第 2 行：关联规则 / 给定学分（各 1 列）
+  - 第 3 行：摘要（占 2 列，`rows={3}`）
+  - 第 4 行：备注（占 2 列，`rows={2}`）
+- Label 改为更紧凑的 `text-sm` + `mb-1` 间距
+- 保存按钮保持在 Footer
 
-### 3. 不动的内容
-- 通用 `DatePicker` 保持不变，提交时间窗口等仍用日历。
-- 数据库字段、字符串格式、校验逻辑、导入模板均保持 `YYYY-MM-DD`，零迁移。
+视觉上对话框由原来约 700px 高压缩到约 480px。
 
-## 验证
-- 学生端「我的档案」出生日期：年/月/日三个下拉，可在 3 次点击内完成；2 月选 30 日时自动变 28/29；未来日期不能选；清除可恢复为空。
-- 新建教师账号（当前页面 /admin/users/teachers）→ 出生日期同样三段式，必填校验依旧生效。
-- 已存在的旧值（`1998-05-12`）打开后三段正确回显。
+---
+
+## 二、新增通用可搜索下拉组件
+
+新建 `src/components/ui/searchable-select.tsx`：
+- 基于已存在的 `Popover` + `Command`（cmdk）封装，外观贴近 `Select`
+- API 与 `Select` 兼容，便于直接替换：
+  ```ts
+  type Option = { value: string; label: string; description?: string };
+  interface Props {
+    value?: string;
+    onChange: (v: string) => void;
+    options: Option[];
+    placeholder?: string;
+    searchPlaceholder?: string;
+    emptyText?: string;
+    disabled?: boolean;
+    allowClear?: boolean;
+    className?: string;
+  }
+  ```
+- 触发器样式复用 `Select` 的 trigger class，保证全站观感一致
+- 使用 `CommandInput` 实时过滤（label + description）
+- 列表超过约 8 项时自动启用滚动；少于则正常展示
+
+---
+
+## 三、接入"关联规则"搜索（核心需求）
+
+在 `src/pages/admin/Cases.tsx` 中将 Select 替换为 `SearchableSelect`：
+```tsx
+<SearchableSelect
+  value={form.rule_id}
+  onChange={(v) => setForm({ ...form, rule_id: v })}
+  options={[
+    { value: "none", label: "未关联" },
+    ...rules.map(r => ({ value: r.id, label: r.name }))
+  ]}
+  placeholder="选择规则"
+  searchPlaceholder="搜索规则名称…"
+  emptyText="无匹配规则"
+/>
+```
+
+---
+
+## 四、同步替换系统内其他"长列表 + 来自数据库"下拉
+
+仅替换数据驱动、可能很长的下拉，固定枚举（合格/不合格、布局类型等）保持原 Select。
+
+涉及文件：
+| 文件 | 字段 | 选项来源 |
+|---|---|---|
+| `src/pages/super/Admins.tsx` | 所属学院 | colleges |
+| `src/pages/admin/SubmissionWindows.tsx` | 所属学院 | colleges |
+| `src/components/SingleUserDialog.tsx` | 所属学院 | colleges |
+| `src/components/AigcStatsPanel.tsx` | 学院筛选 | colleges |
+| `src/pages/admin/AiModels.tsx` | Provider / 模型名 | providers / models |
+| `src/pages/admin/AuditLogs.tsx` | 操作类型 | actions 列表 |
+
+筛选类下拉（专业/班级）多为短列表，本轮暂不动；待后续观察用户反馈。
+
+---
+
+## 技术细节
+
+- `SearchableSelect` 内部使用项目已有的 `cmdk`（来自 `@/components/ui/command`）和 `Popover`，无需新增依赖
+- 触发器使用 `<button>` + `ChevronsUpDown` 图标，与 shadcn Combobox 模式一致
+- 选中值在 `options` 找到对应 label 后回显；找不到时显示 `placeholder`
+- `allowClear` 在 trigger 右侧显示 `X`，点击后 `onChange("")`（仅当 `allowClear` 为 true）
+- a11y：`role="combobox"`、`aria-expanded`，键盘上下/回车选择由 cmdk 提供
+
+---
+
+## 不在本次范围
+- 不改动 `DatePicker` / `YmdPicker`
+- 不改动 `Apply.tsx` 的关键词选择（已是搜索式交互）
+- 不改业务逻辑、Schema、数据库
