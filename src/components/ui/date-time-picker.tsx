@@ -64,7 +64,7 @@ export function DateTimePicker({
             className={cn("flex-1 min-w-[10rem] justify-start text-left font-normal", !date && "text-muted-foreground")}
           >
             <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-            {date ? format(date, "yyyy 年 M 月 d 日", { locale: zhCN }) : <span>{placeholder}</span>}
+            {date ? format(date, "yyyy年M月d日", { locale: zhCN }) : <span>{placeholder}</span>}
           </Button>
         </PopoverTrigger>
         <PopoverContent
