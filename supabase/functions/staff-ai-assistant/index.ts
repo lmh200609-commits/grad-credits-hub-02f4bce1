@@ -43,6 +43,10 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
     · keywords_overview     — 关键词库总数（含启用/停用拆分）+ 按类别分布
     · certificate_types_overview — 证书类型字典总数 + 按类别/级别分布
     · submission_records_overview — 申请流水总数 + 按事件类型分布
+    · colleges_overview     — 学院总数（含启用/停用）+ 学院列表
+    · college_admins_overview — 学院管理员总人数 + 按学院分布
+    · teachers_overview     — 教师总人数 + 按学院分布
+    · super_admins_overview — 超级管理员总人数
 
 【路径白名单（仅可使用以下路径）】
 - /admin/dashboard           数据看板（管理员）
@@ -67,7 +71,7 @@ const SYSTEM_PROMPT = `你是「教师/管理员工作助手」，仅为学校�
 3. 如果用户请求与学分系统无关，礼貌拒绝并提醒可用功能。
 4. 回答简洁，不超过两句话；执行动作时直接调工具，不要冗长解释。
 5. 教师角色不要给出"管理员后台"建议；管理员角色可访问全部页面。
-6. 【严禁幻觉，严禁替换指标】凡涉及任何数量、人数、统计的提问（"多少人"、"几个"、"提交了多少"、"合格/不合格人数"、"通过/驳回数"等），必须先调用 query_stats（或对应工具如 list_failing_students）拿到真实数字，绝不允许凭对话上下文、记忆或推测给出数字。
+6. 【严禁幻觉，严禁替换指标】凡涉及任何数量、人数、统计的提问（"多少人"、"几个"、"提交了多少"、"合格/不合格人数"、"通过/驳回数"、"几个学院"、"几位学院管理员"、"几位教师"、"几位超级管理员"等），必须先调用 query_stats（或对应工具如 list_failing_students）拿到真实数字，绝不允许凭对话上下文、记忆或推测给出数字。问"几个学院"用 colleges_overview；问"几位学院管理员/学院管理员人数"用 college_admins_overview；问"几位教师"用 teachers_overview；问"几位超级管理员"用 super_admins_overview。这四个指标永远返回全校真实数字，不受调用者学院范围限制，禁止回答 0 或"暂无"，除非数据库真的为 0。
    - 时间窗口必须严格匹配：用户问"本周/这一周/近 7 天"必须使用 submitted_students_week / submitted_count_week / approved_week / rejected_week / aigc_fake_week / aigc_suspect_week 等带 _week 的指标；问"近 30 天/本月"用 _month 或 total_apps_month；问"累计/全部/总共"才用 _total。严禁用 _total 指标回答 _week 问题，也不得在拿到 _total 后口头改写为"近 7 天"。
    - 如果用户问的统计指标不在 metric 列表内，必须直接回复"暂不支持该统计"，禁止用近义指标替代。
 7. 如果用户问的统计指标不在上面 metric 列表中，回复"暂不支持该统计"，不要编造。
@@ -197,6 +201,10 @@ const TOOLS = [
               "keywords_overview",
               "certificate_types_overview",
               "submission_records_overview",
+              "colleges_overview",
+              "college_admins_overview",
+              "teachers_overview",
+              "super_admins_overview",
               "aigc_fake_week",
               "aigc_suspect_week",
               "aigc_pending_total",
@@ -800,6 +808,83 @@ async function execTool(
         byEvent[e] = (byEvent[e] || 0) + 1;
       });
       return { metric, value: total, by_event: byEvent };
+    }
+    if (metric === "colleges_overview") {
+      const { data: cols } = await supabase
+        .from("colleges")
+        .select("id,name,short_name,code,active")
+        .order("name", { ascending: true });
+      const total = cols?.length ?? 0;
+      const active = (cols || []).filter((c: any) => c.active).length;
+      return {
+        metric,
+        value: active,
+        总学院数: total,
+        启用学院数: active,
+        停用学院数: total - active,
+        学院列表: (cols || []).map((c: any) => ({
+          名称: c.name,
+          简称: c.short_name || "",
+          代码: c.code || "",
+          状态: c.active ? "启用" : "停用",
+        })),
+      };
+    }
+    if (metric === "college_admins_overview" || metric === "teachers_overview") {
+      const role = metric === "college_admins_overview" ? "admin" : "teacher";
+      const { data: ur } = await supabase
+        .from("user_roles")
+        .select("user_id, college_id")
+        .eq("role", role);
+      const total = ur?.length ?? 0;
+      const userIds = Array.from(new Set((ur || []).map((r: any) => r.user_id)));
+      const collegeIds = Array.from(new Set((ur || []).map((r: any) => r.college_id).filter(Boolean)));
+      const [{ data: profs }, { data: cols }] = await Promise.all([
+        userIds.length
+          ? supabase.from("profiles").select("user_id, full_name, email").in("user_id", userIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+        collegeIds.length
+          ? supabase.from("colleges").select("id, name, short_name").in("id", collegeIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+      ]);
+      const pmap = new Map<string, any>();
+      (profs || []).forEach((p: any) => pmap.set(p.user_id, p));
+      const cmap = new Map<string, any>();
+      (cols || []).forEach((c: any) => cmap.set(c.id, c));
+      const groups: Record<string, any[]> = {};
+      (ur || []).forEach((r: any) => {
+        const c = cmap.get(r.college_id);
+        const collegeName = c ? (c.short_name || c.name) : "（未绑定学院）";
+        const p = pmap.get(r.user_id) || {};
+        if (!groups[collegeName]) groups[collegeName] = [];
+        groups[collegeName].push({ 姓名: p.full_name || "—", 邮箱: p.email || "—" });
+      });
+      const distribution = Object.keys(groups).map((k) => ({ 学院: k, 人数: groups[k].length, 名单: groups[k] }));
+      return {
+        metric,
+        value: total,
+        总人数: total,
+        覆盖学院数: Object.keys(groups).length,
+        按学院分布: distribution,
+        navigate_path: metric === "college_admins_overview" ? "/admin/users/teachers" : "/admin/users/teachers",
+      };
+    }
+    if (metric === "super_admins_overview") {
+      const { data: ur } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "super_admin");
+      const total = ur?.length ?? 0;
+      const userIds = Array.from(new Set((ur || []).map((r: any) => r.user_id)));
+      const { data: profs } = userIds.length
+        ? await supabase.from("profiles").select("user_id, full_name, email").in("user_id", userIds)
+        : { data: [] as any[] };
+      return {
+        metric,
+        value: total,
+        总人数: total,
+        名单: (profs || []).map((p: any) => ({ 姓名: p.full_name || "—", 邮箱: p.email || "—" })),
+      };
     }
     if (metric === "aigc_fake_week") {
       const { count } = await scopeApps(
