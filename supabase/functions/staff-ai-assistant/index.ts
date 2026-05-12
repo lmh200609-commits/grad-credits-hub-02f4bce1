@@ -888,6 +888,80 @@ async function execTool(
     return { metric, range, range_label: label, value: 0 };
   }
 
+  if (name === "list_submissions_range") {
+    const range = String(args?.range || "all_time");
+    const limit = Math.min(Math.max(Number(args?.limit ?? 50), 1), 200);
+    let since: Date | null = null;
+    let until: Date | null = null;
+    let label = "全部时间";
+    if (range === "specific_date") {
+      const r = resolveSpecificDate(String(args?.date || ""));
+      if (!r) return { range, range_label: "未识别日期", count: 0, items: [], note: "未能识别具体日期，请使用 YYYY-MM-DD 或 M月D日 格式" };
+      since = r.since; until = r.until; label = r.label;
+    } else {
+      const r = resolveRange(range);
+      since = r.since; until = r.until; label = r.label;
+    }
+    let aq = supabase
+      .from("applications")
+      .select("id, student_id, status, submitted_at, description, college_id")
+      .order("submitted_at", { ascending: true })
+      .limit(limit);
+    if (since) aq = aq.gte("submitted_at", since.toISOString());
+    if (until) aq = aq.lt("submitted_at", until.toISOString());
+    if (!isSuper && collegeId) aq = aq.eq("college_id", collegeId);
+    const { data: apps, error: aerr } = await aq;
+    if (aerr) return { range, range_label: label, count: 0, items: [], note: `查询失败：${aerr.message}` };
+    const studentIds = Array.from(new Set((apps || []).map((a: any) => a.student_id)));
+    const collegeIds = Array.from(new Set((apps || []).map((a: any) => a.college_id).filter(Boolean)));
+    const [{ data: profs }, { data: cols }] = await Promise.all([
+      studentIds.length
+        ? supabase.from("profiles").select("user_id, full_name, student_no, department, major, class_name, advisor, phone, email").in("user_id", studentIds)
+        : Promise.resolve({ data: [] as any[] } as any),
+      collegeIds.length
+        ? supabase.from("colleges").select("id, name, short_name").in("id", collegeIds)
+        : Promise.resolve({ data: [] as any[] } as any),
+    ]);
+    const pmap = new Map<string, any>();
+    (profs || []).forEach((p: any) => pmap.set(p.user_id, p));
+    const cmap = new Map<string, any>();
+    (cols || []).forEach((c: any) => cmap.set(c.id, c));
+    const STATUS_CN: Record<string, string> = {
+      auto_approved: "系统自动通过", approved: "人工通过", rejected: "人工驳回",
+      rejected_by_ai: "AI 初审驳回", pending_review: "待人工复核", pending_ai: "AI 审核中",
+    };
+    const fmtTime = (iso: string) => {
+      const d = new Date(new Date(iso).getTime() + 8 * 3600 * 1000);
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+    };
+    const items = (apps || []).map((a: any) => {
+      const p = pmap.get(a.student_id) || {};
+      const c = cmap.get(a.college_id) || {};
+      return {
+        姓名: p.full_name || "—",
+        学号: p.student_no || "—",
+        所属学院: c.short_name || c.name || (p.department || "—"),
+        院系: p.department || "—",
+        专业: p.major || "—",
+        班级: p.class_name || "—",
+        辅导员: p.advisor || "—",
+        提交时间: fmtTime(a.submitted_at),
+        状态: STATUS_CN[a.status] || a.status,
+        申请编号末8位: String(a.id).slice(-8),
+        申请描述: (a.description || "").slice(0, 120),
+      };
+    });
+    const byStudent = new Map<string, number>();
+    items.forEach((it) => byStudent.set(it.学号, (byStudent.get(it.学号) || 0) + 1));
+    return {
+      range, range_label: label,
+      count: items.length,
+      distinct_students: byStudent.size,
+      items,
+    };
+  }
+
   if (name === "list_aigc_flagged") {
     const range = String(args?.range || "week");
     const status = String(args?.status || "both");
