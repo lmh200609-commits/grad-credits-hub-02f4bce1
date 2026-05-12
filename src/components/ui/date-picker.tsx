@@ -94,9 +94,6 @@ export function DatePicker({
           selected={parsed}
           onSelect={handleSelect}
           defaultMonth={parsed ?? new Date(Math.min(today.getFullYear(), _toYear), today.getMonth(), 1)}
-          captionLayout="dropdown-buttons"
-          fromYear={_fromYear}
-          toYear={_toYear}
           disabled={disableFuture ? (d) => d > today : undefined}
           locale={zhCN}
           initialFocus
