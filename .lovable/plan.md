@@ -1,133 +1,78 @@
 ## 目标
 
-1. **图片去重（全平台）**：同一张图片一旦在 `applications` 中存在，任何学生都不能再次提交。
-2. **关键词集合去重（按学生）**：当前学生的「已通过」申请如果已经存在「完全相同的关键词集合」，则不允许再次提交；被驳回的申请不影响后续提交。
+参考你上传的 `deployment-guide-3.md`（LMS 自托管部署指南）风格、章节顺序与精简度，结合本项目（综合素质学分认定系统）的真实组成，**单独生成一份新的部署文档**，输出为可下载的 Markdown 文件：
 
----
+- 路径：`/mnt/documents/credits-deployment-guide.md`
+- 不修改仓库内已有的 `docs/self-hosted-deployment.md`
+- 域名占位符沿用 `credits.example.edu`（用户确认）
 
-## 一、数据库改动（migration）
-
-### 1.1 `applications` 表新增列
-- `file_hash text`：图片内容的 SHA-256 十六进制串。
-- `keywords_fingerprint text`：`selected_keywords ∪ custom_keywords` 经规范化、排序、去重后拼接的稳定指纹。
-
-两个字段都允许为空（兼容历史数据；新申请由前端填入）。
-
-### 1.2 索引
-- `CREATE INDEX idx_applications_file_hash ON public.applications (file_hash) WHERE file_hash IS NOT NULL;`
-- `CREATE INDEX idx_applications_student_kwfp ON public.applications (student_id, keywords_fingerprint) WHERE keywords_fingerprint IS NOT NULL;`
-
-不使用 UNIQUE 约束，理由：
-- 图片：跨学生场景需要给出明确中文报错，trigger 比 unique 体验更好。
-- 关键词：仅当目标行 status ∈ approved/auto_approved 时才视为冲突，UNIQUE 表达不出条件。
-
-### 1.3 校验触发器 `applications_dedupe_guard`（BEFORE INSERT）
-逻辑（仅对学生本人插入生效；teacher/admin/super_admin/服务端绕过）：
+## 文档大纲（与上传文档对齐，按本系统替换内容）
 
 ```text
-若 NEW.file_hash 非空：
-  存在 applications.file_hash = NEW.file_hash 且 id <> NEW.id 的任意一行
-    → RAISE '该图片已被提交过，请勿重复使用'
-
-若 NEW.keywords_fingerprint 非空：
-  存在 student_id = NEW.student_id
-       AND keywords_fingerprint = NEW.keywords_fingerprint
-       AND status IN ('approved','auto_approved')
-    → RAISE '该关键词组合你已审核通过，无需重复提交'
+0.  系统拓扑（前端 SPA + Nginx + 自托管 Supabase + AI 网关）
+1.  前置准备
+    - 服务器（4c8g 起 / Ubuntu 22.04 / 安全组 22·80·443·1Panel）
+    - 域名 + DNS（credits.example.edu）
+    - 需提前准备的密钥：DASHSCOPE_API_KEY、DEEPSEEK_API_KEY、AI_KEY_ENCRYPTION_SECRET
+2.  服务器初始化（apt、Node 20、nginx、certbot）
+3.  安装 1Panel
+4.  部署自托管 Supabase
+    4.1 拉镜像 + generate-keys.sh
+    4.2 判断是否需 add-new-auth-keys.sh（grep 法）
+    4.3 .env 关键变量（域名 / AUTOCONFIRM / 3 个 AI 密钥）
+    4.4 启动并 docker compose ps
+5.  跑仓库的 init.sql（核心自动化）
+    - 重建 on_auth_user_created → handle_new_user
+    - 创建 2 个 bucket：application-files（私有）、college-badges（公开）
+    - 可选 admin_uid 一键授 super_admin + admin
+6.  部署 23 个 Edge Functions（按用途分组列表）
+    - 账号管理 8 个 / 名册导入 4 个 / AI 评估 4 个 / 助手 3 个 / 工具 4 个
+    - rsync 上传 → restart functions auth → curl 自检
+7.  创建超管账号 + 一键授权（Studio 添加用户 + psql -v admin_uid 跑 init.sql）
+8.  从 Lovable Cloud 迁移数据（可选）
+    - supabase CLI dump roles/schema/data
+    - 严格顺序导入 + 重跑 init.sql
+    - 校对 user_roles.college_id（避免 RLS 拦截）
+9.  前端部署（.env.production、本地 build、上传 /var/www/credits、权限）
+10. Nginx + HTTPS（drop-in credits.conf + certbot）
+11. 验收清单（10 项，含 ai_eval_queue 全链路、bucket、徽章公开访问）
+12. 常见问题排查（≈12 行表格，针对本系统：pending_ai 卡住、AI provider not configured、college_id NULL、face-compare 503 等）
+13. 下次再迁移：精简版命令（一段 bash 全流程）
+14. 高并发调优建议（提交截止前夜 + AI 队列堆积两个真实场景）
+    - PostgreSQL 参数（4c8g 基线）
+    - PostgREST 连接池
+    - process-eval-queue 多 worker 触发节奏
+    - Nginx upstream keepalive
+    - 监控命令
+    - 容量预估表（日常 / 截止前夜 / 学期末高峰）
+15. 附录：目录速查 / 关键端口 / 范围之外
 ```
 
-### 1.4 防绕过：`applications_student_update_guard` 增补
-学生本人 UPDATE 时，强制保留 `file_hash` 与 `keywords_fingerprint`，避免提交后改写指纹绕过去重。
+## 关键差异（相对上传文档）
 
----
-
-## 二、前端改动
-
-### 2.1 新增工具 `src/lib/fileHash.ts`
-```ts
-export async function sha256Hex(file: Blob): Promise<string>
-// 使用 crypto.subtle.digest('SHA-256', await file.arrayBuffer())
-```
-
-### 2.2 新增工具 `src/lib/keywordFingerprint.ts`
-```ts
-export function buildKeywordsFingerprint(
-  selected: string[],
-  custom: string[],
-): string
-// 1) 合并 → normalizeKeyword（复用 src/lib/keywords.ts 的 NFKC/全半角/小写）
-// 2) 过滤空串、去重
-// 3) sort()
-// 4) join('|')
-```
-
-### 2.3 `src/pages/student/Apply.tsx` 提交流程改造
-在 `submit()` 内、`upload` 之前：
-1. `const fileHash = await sha256Hex(file)`
-2. `const fingerprint = buildKeywordsFingerprint(selected_keywords, customKeywords)`
-3. **预检 1**（明确文案，不消耗存储配额）：
-   ```ts
-   const { data: dupImg } = await supabase
-     .from('applications')
-     .select('id', { head: true, count: 'exact' })
-     .eq('file_hash', fileHash)
-     .limit(1);
-   if (count > 0) → toast 「该图片已被提交过…」并 return
-   ```
-4. **预检 2**：
-   ```ts
-   const { count } = await supabase
-     .from('applications')
-     .select('id', { head: true, count: 'exact' })
-     .eq('student_id', user.id)
-     .eq('keywords_fingerprint', fingerprint)
-     .in('status', ['approved','auto_approved'])
-     .limit(1);
-   if (count > 0) → toast 「该关键词组合你已审核通过…」并 return
-   ```
-5. 通过后再上传图片、insert，并把 `file_hash`、`keywords_fingerprint` 一起写入。
-6. insert 失败时，若错误信息包含上述两条 trigger 文案，原样 toast，并执行 `storage.remove([filePath])` 回滚已上传的图片。
-
-预检 + trigger 双保险：trigger 防绕过，预检给出即时友好提示并避免无谓上传。
-
----
-
-## 三、历史数据回填（一次性 SQL，写在同一 migration 里）
-
-```sql
--- keywords_fingerprint 可直接由 SQL 回填
-UPDATE public.applications
-SET keywords_fingerprint = (
-  SELECT string_agg(k, '|' ORDER BY k)
-  FROM (
-    SELECT DISTINCT lower(btrim(regexp_replace(unnest, '\s+', ' ', 'g'))) AS k
-    FROM unnest(selected_keywords || custom_keywords)
-    WHERE coalesce(btrim(unnest), '') <> ''
-  ) t
-)
-WHERE keywords_fingerprint IS NULL;
-```
-
-`file_hash` 无法在 SQL 里计算（图片在 Storage），不回填；老数据视为「未登记」，不参与去重判断（trigger 仅在 NEW.file_hash 非空时检查）。这样不会误伤历史申请。
-
----
-
-## 四、不在本次范围
-
-- 不改变任何审核流程、AI 评估、AIGC 检测、人脸比对逻辑。
-- 不调整关键词维度选择 UI、对话框布局等视觉。
-- 不为老申请的图片做 Storage 回扫与回填（成本高、价值低）；仅新提交开始受图片去重保护。
-
----
-
-## 五、技术细节速查
-
-| 文件 | 类型 | 说明 |
+| 维度 | 上传文档（LMS） | 本文档（学分系统） |
 |---|---|---|
-| `supabase/migrations/<ts>_add_dedupe.sql` | 新建 | 加列、加索引、加 trigger、回填 |
-| `src/lib/fileHash.ts` | 新建 | SHA-256（Web Crypto） |
-| `src/lib/keywordFingerprint.ts` | 新建 | 复用 `normalizeKeyword` |
-| `src/pages/student/Apply.tsx` | 修改 | 预检 + 写入新字段 + 失败回滚上传 |
-| `src/hooks/useAuth.tsx` 等 | 不动 | — |
+| Bucket 数量 | 3（avatars / courses / contents） | 2（application-files 私有、college-badges 公开） |
+| 业务密钥 | 阿里云 VOD 4 件套 | DashScope / DeepSeek / AI_KEY_ENCRYPTION_SECRET |
+| Edge Functions | 8 个 | **23 个**，按 5 组分类 |
+| auth trigger | autoconfirm + handle_new_user 两个 | 仅 handle_new_user 一个（本系统不用假邮箱注册） |
+| 高并发场景 | 考试集中交卷 | 提交窗口截止 + AI 评估队列 |
+| 验收特色项 | 视频上传播放 | AI 评估全链路（pending_ai → auto_approved/pending_review）+ 徽章公开访问 |
+| 常见问题特色 | VOD / Realtime | ai_eval_queue / college_id RLS / DashScope 模型未开通 |
 
-报错文案集中在 trigger 的 `RAISE EXCEPTION` 里，前端做兜底拦截。
+## 风格约定
+
+- 中文正文、命令块用 ```bash / ```env / ```nginx / ```sql
+- 全部沿用上传文档的"⚠️ / 💡 / ⭐"标记习惯
+- 每节末尾该有的"必须 true / 严格按顺序 / 重复执行也安全"提示保留
+- 不超出"Tailwind + Motion 设计预览"范围之外的话题；只写部署，不重写业务说明
+
+## 不做
+
+- 不修改 `docs/self-hosted-deployment.md`
+- 不创建 `supabase/self-hosted/init.sql`、`deploy/nginx/credits.conf` 等仓库文件（文档内嵌 SQL/配置即可，与上传文档处理方式一致）
+- 不改任何前端代码
+
+## 交付
+
+在 `/mnt/documents/credits-deployment-guide.md` 生成完整 Markdown，并以 `<presentation-artifact>` 标签返回，便于直接下载。
