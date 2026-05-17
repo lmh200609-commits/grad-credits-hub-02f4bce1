@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { randomUUID } from "@/lib/uuid";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import ProcessSteps from "@/components/ProcessSteps";
