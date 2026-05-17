@@ -19,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { Copy } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { copyText } from "@/lib/clipboard";
 
 type Profile = {
   user_id: string;

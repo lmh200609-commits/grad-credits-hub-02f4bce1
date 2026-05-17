@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AlertTriangle, Copy, Loader2 } from "lucide-react";
+import { copyText } from "@/lib/clipboard";
 
 type Result = {
   success?: boolean;
