@@ -411,7 +411,7 @@ const ApplyPage = () => {
       let filePath: string | null = null;
       if (file) {
         const ext = file.name.split(".").pop();
-        filePath = `${user!.id}/${crypto.randomUUID()}.${ext}`;
+        filePath = `${user!.id}/${randomUUID()}.${ext}`;
         const { error: upErr } = await supabase.storage
           .from("application-files")
           .upload(filePath, file, { contentType: file.type });
