@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AlertTriangle, Copy, Loader2 } from "lucide-react";
+import { copyText } from "@/lib/clipboard";
 
 type Result = {
   success?: boolean;
@@ -55,10 +56,12 @@ export default function PurgeAndBootstrap() {
     toast.success("清理完成，请妥善保存新管理员账号");
   };
 
-  const copyAdmin = () => {
+  const copyAdmin = async () => {
     if (!result?.new_admin) return;
     const text = `账号：${result.new_admin.account}\n邮箱：${result.new_admin.email}\n密码：${result.new_admin.password}`;
-    navigator.clipboard.writeText(text).then(() => toast.success("已复制"));
+    const ok = await copyText(text);
+    if (ok) toast.success("已复制");
+    else toast.error("复制失败，请手动选择文本复制");
   };
 
   return (

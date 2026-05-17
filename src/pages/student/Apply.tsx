@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { randomUUID } from "@/lib/uuid";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
 import ProcessSteps from "@/components/ProcessSteps";
@@ -411,7 +412,7 @@ const ApplyPage = () => {
       let filePath: string | null = null;
       if (file) {
         const ext = file.name.split(".").pop();
-        filePath = `${user!.id}/${crypto.randomUUID()}.${ext}`;
+        filePath = `${user!.id}/${randomUUID()}.${ext}`;
         const { error: upErr } = await supabase.storage
           .from("application-files")
           .upload(filePath, file, { contentType: file.type });

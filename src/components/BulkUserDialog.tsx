@@ -19,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { Copy } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { copyText } from "@/lib/clipboard";
 
 type Profile = {
   user_id: string;
@@ -148,10 +149,12 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
     }
   };
 
-  const copyAll = () => {
+  const copyAll = async () => {
     if (!results) return;
     const text = results.filter((r) => r.ok).map((r) => `${r.label}\t${r.password}`).join("\n");
-    navigator.clipboard.writeText(text).then(() => toast.success("已复制到剪贴板"));
+    const ok = await copyText(text);
+    if (ok) toast.success("已复制到剪贴板");
+    else toast.error("复制失败，请手动选择文本复制");
   };
 
   const title = mode === "delete" ? "批量删除账号" : "批量重置密码";

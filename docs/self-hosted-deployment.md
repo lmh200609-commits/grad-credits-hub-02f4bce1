@@ -1,3 +1,17 @@
+
+## HTTP（非 HTTPS / 局域网 IP）部署注意事项
+
+本系统已对依赖"安全上下文（Secure Context）"的浏览器 API 做了纯 JS 兜底，
+在以 HTTP + 内网 IP 访问时仍可正常工作：
+
+- 文件 SHA-256 哈希：`crypto.subtle.digest` 不可用时回退到 `js-sha256`。
+- 随机 UUID：优先 `crypto.randomUUID`，否则使用 `crypto.getRandomValues`。
+- 复制到剪贴板：`navigator.clipboard` 不可用时回退到 `document.execCommand('copy')`。
+
+以下浏览器能力**仍**仅在 HTTPS / localhost 下可用（本项目当前未使用，仅作提醒）：
+摄像头/麦克风（`getUserMedia`）、Service Worker、Web Push、地理位置精确定位等。
+
+建议：仅在受信任的内网环境使用 HTTP 访问；对外发布请配置 HTTPS。
 # 综合素质学分认定系统 自托管部署完整指南
 
 > 适用版本：v2026.05
