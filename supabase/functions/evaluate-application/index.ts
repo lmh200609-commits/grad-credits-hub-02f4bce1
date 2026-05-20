@@ -139,12 +139,14 @@ Deno.serve(async (req) => {
       const orExpr = cleanedKw
         .flatMap((k) => [`title.ilike.%${k}%`, `summary.ilike.%${k}%`])
         .join(",");
-      const { data: matched } = await admin
+      let casesQ = admin
         .from("cases")
         .select("id, title, summary, awarded_credit")
         .or(orExpr)
         .order("created_at", { ascending: false })
         .limit(8);
+      if (app.college_id) casesQ = casesQ.eq("college_id", app.college_id);
+      const { data: matched } = await casesQ;
       relatedCases = (matched as CaseRow[]) ?? [];
     }
 

@@ -271,6 +271,7 @@ const ApplicationDetail = () => {
           awarded_credit: credit,
           notes: `人工复核通过沉淀。复核备注：${note.trim() || "（无）"}`,
           created_by: user!.id,
+          college_id: (app as any).college_id ?? null,
         });
         if (!ce) toast({ title: "已通过", description: "新案例已加入案例库，学生端可搜索使用" });
         else toast({ title: "已通过" });
@@ -306,6 +307,7 @@ const ApplicationDetail = () => {
           source: string;
           usage_count: number;
           created_by: string;
+          college_id: string | null;
         }> = [];
         const toBump: typeof libByNorm extends Map<string, infer V> ? V[] : never = [] as any;
         for (const k of customKws) {
@@ -319,14 +321,12 @@ const ApplicationDetail = () => {
               source: `人工复核通过 · ${new Date().toISOString().slice(0, 10)}`,
               usage_count: 1,
               created_by: user!.id,
+              college_id: (app as any).college_id ?? null,
             });
           }
         }
         if (toInsert.length > 0) {
-          await supabase.from("keywords").upsert(toInsert, {
-            onConflict: "keyword",
-            ignoreDuplicates: true,
-          });
+          await supabase.from("keywords").insert(toInsert);
         }
         await Promise.all(
           toBump.map((k) =>
