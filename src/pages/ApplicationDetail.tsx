@@ -28,6 +28,7 @@ import StudentAigcWarning from "@/components/StudentAigcWarning";
 import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { toastErrorLegacy } from "@/lib/errors";
 
 // 把后端/Supabase 的英文错误信息翻译成简体中文，避免 RLS / JWT 等英文消息直接弹给用户
 function friendlyError(err: any): string {
@@ -223,7 +224,7 @@ const ApplicationDetail = () => {
       credit: decision === "approved" ? credit : null,
       note: note.trim() || null,
     });
-    if (re) return toast({ title: "保存失败", description: friendlyError(re), variant: "destructive" });
+    if (re) return toastErrorLegacy(re, "保存失败");
 
     const { error: ue } = await supabase
       .from("applications")
@@ -235,7 +236,7 @@ const ApplicationDetail = () => {
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", app.id);
-    if (ue) return toast({ title: "更新失败", description: friendlyError(ue), variant: "destructive" });
+    if (ue) return toastErrorLegacy(ue, "更新失败");
 
     // 人工通过时：检查该关键词组合是否已有完全匹配的规则或案例，没有则沉淀到案例库
     if (decision === "approved") {
@@ -356,7 +357,7 @@ const ApplicationDetail = () => {
       .update({ status: "pending_review", review_source: "student_appeal" })
       .eq("id", app.id)
       .select("id, status");
-    if (error) return toast({ title: "申请失败", description: friendlyError(error), variant: "destructive" });
+    if (error) return toastErrorLegacy(error, "申请失败");
     if (!data || data.length === 0) {
       return toast({
         title: "申请未生效",
@@ -396,7 +397,7 @@ const ApplicationDetail = () => {
         toast({ title: "已完成新一轮 AI 审核" });
       }
     } catch (e: any) {
-      toast({ title: "重试失败", description: e?.message ?? "网络异常", variant: "destructive" });
+      toastErrorLegacy(e, "重试失败");
     } finally {
       setRetrying(false);
       load();
@@ -447,7 +448,7 @@ const ApplicationDetail = () => {
         description: snap.taken_at ? `备份时间：${new Date(snap.taken_at).toLocaleString()}` : undefined,
       });
     } catch (e: any) {
-      toast({ title: "回滚失败", description: e?.message ?? "未知错误", variant: "destructive" });
+      toastErrorLegacy(e, "回滚失败");
     } finally {
       setRollingBack(false);
       load();
@@ -512,7 +513,7 @@ const ApplicationDetail = () => {
       setPreviewOpen(true);
       load();
     } catch (e: any) {
-      toast({ title: "准备失败", description: e?.message ?? "未知错误", variant: "destructive" });
+      toastErrorLegacy(e, "准备失败");
     } finally {
       setPreparing(false);
     }
@@ -536,7 +537,7 @@ const ApplicationDetail = () => {
       toast({ title: "证明已导出", description: `证书编号：${certData.certificateNo}` });
       setPreviewOpen(false);
     } catch (e: any) {
-      toast({ title: "导出失败", description: e?.message ?? "未知错误", variant: "destructive" });
+      toastErrorLegacy(e, "导出失败");
     } finally {
       setExporting(false);
     }

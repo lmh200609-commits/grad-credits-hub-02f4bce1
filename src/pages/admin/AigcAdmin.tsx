@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
 import { ScanEye, RefreshCw, Loader2, AlertTriangle, ShieldCheck, Image as ImageIcon } from "lucide-react";
+import { toastErrorLegacy } from "@/lib/errors";
 
 const DEFAULT_SUSPECT = 0.4;
 const DEFAULT_FAKE = 0.8;
@@ -86,7 +87,7 @@ const AigcAdmin = () => {
     const nextTheme = { ...(col.theme || {}), aigc: nextAigc };
     const { error } = await supabase.from("colleges").update({ theme: nextTheme }).eq("id", col.id);
     if (error) {
-      toast({ title: "保存失败", description: error.message, variant: "destructive" });
+      toastErrorLegacy(error, "保存失败");
       return;
     }
     setColleges((arr) => arr.map((c) => (c.id === col.id ? { ...c, theme: nextTheme } : c)));

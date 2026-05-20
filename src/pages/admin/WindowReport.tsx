@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Printer, ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { toastError } from "@/lib/errors";
 
 type Summary = any;
 
@@ -110,7 +111,7 @@ const WindowReport = () => {
       .order("generated_at", { ascending: false })
       .limit(1);
     if (error) {
-      toast.error(error.message);
+      toastError(error);
       setData(null);
       setLoading(false);
       return;
@@ -136,7 +137,7 @@ const WindowReport = () => {
       toast.success("报告已生成");
       await fetchReport();
     } catch (e: any) {
-      toast.error(e?.message ?? "生成失败");
+      toastError(e, "生成失败");
     } finally {
       setGenerating(false);
     }

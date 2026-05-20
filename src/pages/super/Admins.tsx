@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+import { toastError } from "@/lib/errors";
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
@@ -65,7 +66,7 @@ const Admins = () => {
   const removeAdmin = async (r: AdminRow) => {
     const { error } = await supabase.from("user_roles")
       .delete().eq("user_id", r.user_id).eq("role", "admin");
-    if (error) { toast.error(error.message); return; }
+    if (error) { toastError(error); return; }
     toast.success("已撤销管理员权限");
     void load();
   };
@@ -79,7 +80,7 @@ const Admins = () => {
     });
     setResetSaving(false);
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "重置失败");
+      toastError(error, "重置失败");
       return;
     }
     toast.success(`已重置 ${resetting.profiles?.full_name ?? ""} 的密码`);
@@ -104,7 +105,7 @@ const Admins = () => {
     });
     setSaving(false);
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "创建失败");
+      toastError(error, "创建失败");
       return;
     }
     toast.success("学院管理员已创建");

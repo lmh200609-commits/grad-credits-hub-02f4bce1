@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import { zhCN } from "date-fns/locale";
 import LibraryScopeSelect, { useLibraryScope, applyScope, scopeWriteCollegeId } from "@/components/LibraryScopeSelect";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Keyword = {
   id: string;
@@ -56,7 +57,7 @@ const KeywordsPage = () => {
       scope,
     );
     if (error) {
-      toast({ title: "加载失败", description: error.message, variant: "destructive" });
+      toastErrorLegacy(error, "加载失败");
     }
     setItems((data as Keyword[]) ?? []);
     setLoading(false);
@@ -141,7 +142,7 @@ const KeywordsPage = () => {
       .insert(payload)
       .select("id, keyword");
     if (error) {
-      return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+      return toastErrorLegacy(error, "保存失败");
     }
     const inserted = (data ?? []) as { id: string; keyword: string }[];
     writeAuditLog({
@@ -170,7 +171,7 @@ const KeywordsPage = () => {
     if (!confirm(`确认删除关键词「${k.keyword}」？`)) return;
     const { error } = await supabase.from("keywords").delete().eq("id", k.id);
     if (error) {
-      return toast({ title: "删除失败", description: error.message, variant: "destructive" });
+      return toastErrorLegacy(error, "删除失败");
     }
     writeAuditLog({
       action: "keyword_delete",
