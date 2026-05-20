@@ -127,7 +127,7 @@ export default function AigcStatsPanel() {
         setLoading(false);
         return;
       }
-      toast({ title: "加载 AI 鉴别数据失败", description: error.message, variant: "destructive" });
+      toastErrorLegacy(error, "加载 AI 鉴别数据失败");
     } else {
       const list = (data ?? []) as Row[];
       setRows(list);
