@@ -730,10 +730,12 @@ async function execTool(
       return { metric, value: count ?? 0 };
     }
     if (metric === "rules_overview") {
-      const { data: rules } = await supabase
+      let rulesOQ = supabase
         .from("rules")
         .select("category,level,identity,active")
         .eq("active", true);
+      if (!isSuper && collegeId) rulesOQ = rulesOQ.eq("college_id", collegeId);
+      const { data: rules } = await rulesOQ;
       const byCategory: Record<string, number> = {};
       const byLevel: Record<string, number> = {};
       const byIdentity: Record<string, number> = {};
@@ -756,7 +758,9 @@ async function execTool(
       };
     }
     if (metric === "cases_overview") {
-      const { data: cases } = await supabase.from("cases").select("rule_id");
+      let casesOQ = supabase.from("cases").select("rule_id");
+      if (!isSuper && collegeId) casesOQ = casesOQ.eq("college_id", collegeId);
+      const { data: cases } = await casesOQ;
       const ruleIds = new Set((cases || []).map((c: any) => c.rule_id).filter(Boolean));
       return {
         metric,
@@ -766,7 +770,9 @@ async function execTool(
       };
     }
     if (metric === "keywords_overview") {
-      const { data: kws } = await supabase.from("keywords").select("category,active");
+      let kwsOQ = supabase.from("keywords").select("category,active");
+      if (!isSuper && collegeId) kwsOQ = kwsOQ.eq("college_id", collegeId);
+      const { data: kws } = await kwsOQ;
       const total = kws?.length ?? 0;
       let active = 0;
       const byCategory: Record<string, number> = {};
