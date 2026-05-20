@@ -17,6 +17,7 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import TablePagination from "@/components/TablePagination";
 import { fetchAll } from "@/lib/fetchAll";
+import LibraryScopeSelect, { useLibraryScope, applyScope, scopeWriteCollegeId } from "@/components/LibraryScopeSelect";
 
 type Rule = { id: string; name: string };
 type Case = { id: string; title: string; summary: string; rule_id: string | null; awarded_credit: number | null; notes: string | null };
@@ -33,18 +34,28 @@ const CasesPage = () => {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
+  const { scope, ready } = useLibraryScope("lib_scope_cases");
 
   const load = async () => {
+    if (!ready) return;
     setLoading(true);
-    const [c, r] = await Promise.all([
-      fetchAll<Case>(supabase.from("cases").select("*").order("created_at", { ascending: false })),
+    const casesQuery = applyScope(
+      supabase.from("cases").select("*").order("created_at", { ascending: false }),
+      scope,
+    );
+    const rulesQuery = applyScope(
       supabase.from("rules").select("id, name").eq("active", true),
+      scope,
+    );
+    const [c, r] = await Promise.all([
+      fetchAll<Case>(casesQuery),
+      rulesQuery,
     ]);
     setCases(c);
     setRules((r.data as Rule[]) ?? []);
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [scope, ready]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -73,16 +84,20 @@ const CasesPage = () => {
       return toast({ title: parsed.error.issues[0]?.message ?? "请检查表单", variant: "destructive" });
     }
     const v = parsed.data;
-    const payload = {
+    const payload: any = {
       title: v.title,
       summary: v.summary,
       rule_id: v.rule_id === "none" ? null : v.rule_id,
       awarded_credit: v.awarded_credit,
       notes: v.notes?.trim() || null,
     };
-    const { error } = editing
-      ? await supabase.from("cases").update(payload).eq("id", editing.id)
-      : await supabase.from("cases").insert(payload);
+    let error: any;
+    if (editing) {
+      ({ error } = await supabase.from("cases").update(payload).eq("id", editing.id));
+    } else {
+      payload.college_id = scopeWriteCollegeId(scope);
+      ({ error } = await supabase.from("cases").insert(payload));
+    }
     if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
     toast({ title: editing ? "已更新" : "已新增" }); setOpen(false); load();
   };
@@ -101,7 +116,9 @@ const CasesPage = () => {
           title="案例库"
           description="历史通过的认证案例，AI 评估时作为相似度参考"
           actions={
-            <Dialog open={open} onOpenChange={setOpen}>
+            <div className="flex items-center gap-2">
+              <LibraryScopeSelect storageKey="lib_scope_cases" />
+              <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />新增案例</Button></DialogTrigger>
             <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{editing ? "编辑案例" : "新增案例"}</DialogTitle></DialogHeader>
@@ -139,7 +156,8 @@ const CasesPage = () => {
               </div>
               <DialogFooter><Button onClick={save}>保存</Button></DialogFooter>
             </DialogContent>
-          </Dialog>
+              </Dialog>
+            </div>
           }
         />
         <Card>

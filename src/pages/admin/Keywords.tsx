@@ -26,6 +26,7 @@ import { CalendarIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import { zhCN } from "date-fns/locale";
+import LibraryScopeSelect, { useLibraryScope, applyScope, scopeWriteCollegeId } from "@/components/LibraryScopeSelect";
 
 type Keyword = {
   id: string;
@@ -45,13 +46,15 @@ const KeywordsPage = () => {
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [bulk, setBulk] = useState({ keywords: "", category: "", source: "" });
+  const { scope, ready } = useLibraryScope("lib_scope_keywords");
 
   const load = async () => {
+    if (!ready) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("keywords")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await applyScope(
+      supabase.from("keywords").select("*").order("created_at", { ascending: false }),
+      scope,
+    );
     if (error) {
       toast({ title: "加载失败", description: error.message, variant: "destructive" });
     }
@@ -61,7 +64,8 @@ const KeywordsPage = () => {
 
   useEffect(() => {
     load();
-  }, []);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [scope, ready]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -107,10 +111,11 @@ const KeywordsPage = () => {
       localUnique.push(k);
     }
 
-    // 2) 与库内已有关键词按规范化形式比对，剔除重复
-    const { data: existingAll } = await supabase
-      .from("keywords")
-      .select("keyword");
+    // 2) 与当前范围内已有关键词按规范化形式比对，剔除重复
+    const { data: existingAll } = await applyScope(
+      supabase.from("keywords").select("keyword"),
+      scope,
+    );
     const existingNormSet = new Set(
       ((existingAll as { keyword: string }[]) ?? []).map((r) => normalizeKeyword(r.keyword)),
     );
@@ -129,10 +134,11 @@ const KeywordsPage = () => {
       category: bulk.category.trim() || null,
       source: bulk.source.trim() || null,
       created_by: user?.id ?? null,
+      college_id: scopeWriteCollegeId(scope),
     }));
     const { data, error } = await supabase
       .from("keywords")
-      .upsert(payload, { onConflict: "keyword", ignoreDuplicates: true })
+      .insert(payload)
       .select("id, keyword");
     if (error) {
       return toast({ title: "保存失败", description: error.message, variant: "destructive" });
@@ -185,7 +191,9 @@ const KeywordsPage = () => {
           title="关键词库"
           description="往届毕业生认证材料中提炼的关键词，AI 评估和学分匹配时会优先参考"
           actions={
-            <Dialog open={open} onOpenChange={setOpen}>
+            <div className="flex items-center gap-2">
+              <LibraryScopeSelect storageKey="lib_scope_keywords" />
+              <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="mr-1 h-4 w-4" />
@@ -230,7 +238,8 @@ const KeywordsPage = () => {
                   <Button onClick={save}>保存</Button>
                 </DialogFooter>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           }
         />
 
