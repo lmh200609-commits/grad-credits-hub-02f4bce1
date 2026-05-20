@@ -280,17 +280,23 @@ Deno.serve(async (req) => {
     }
 
     // RAG: load all active rules, score in memory
-    const { data: allRules } = await supabase
+    const myCollegeId: string | null = (myProfile as any)?.college_id ?? null;
+    let rulesQ = supabase
       .from("rules")
       .select("id,name,keywords,description,identity,level,achievement,project,category,credit")
       .eq("active", true);
+    if (myCollegeId) rulesQ = rulesQ.eq("college_id", myCollegeId);
+    const { data: allRules } = await rulesQ;
 
     // 统计/盘点类问题：直接基于数据库给出实时数量分布
     if (isStatsQuery(query)) {
-      const [{ count: casesCount }, { count: keywordsCount }] = await Promise.all([
-        supabase.from("cases").select("id", { count: "exact", head: true }),
-        supabase.from("keywords").select("id", { count: "exact", head: true }).eq("active", true),
-      ]);
+      let casesCountQ = supabase.from("cases").select("id", { count: "exact", head: true });
+      let kwCountQ = supabase.from("keywords").select("id", { count: "exact", head: true }).eq("active", true);
+      if (myCollegeId) {
+        casesCountQ = casesCountQ.eq("college_id", myCollegeId);
+        kwCountQ = kwCountQ.eq("college_id", myCollegeId);
+      }
+      const [{ count: casesCount }, { count: keywordsCount }] = await Promise.all([casesCountQ, kwCountQ]);
       const answer = formatStats(allRules || [], casesCount || 0, keywordsCount || 0);
       const cleaned = normalizeMarkdown(answer);
       return new Response(JSON.stringify({
@@ -311,11 +317,13 @@ Deno.serve(async (req) => {
       .map((x) => x.r);
 
     // 案例库直接打分检索（独立于 rules）
-    const { data: allCases } = await supabase
+    let allCasesQ = supabase
       .from("cases")
       .select("id,title,summary,awarded_credit,notes,rule_id")
       .order("created_at", { ascending: false })
       .limit(500);
+    if (myCollegeId) allCasesQ = allCasesQ.eq("college_id", myCollegeId);
+    const { data: allCases } = await allCasesQ;
 
     const scoredCases = (allCases || [])
       .map((c) => ({ c, s: scoreCase(query, c) }))
@@ -343,13 +351,16 @@ Deno.serve(async (req) => {
 
     // 合并：通过 rules 关联回带的案例 + 独立打分命中的案例（去重）
     const ruleIds = scored.map((r) => r.id);
-    const { data: linkedCases } = ruleIds.length
-      ? await supabase
-          .from("cases")
-          .select("id,title,summary,awarded_credit,notes,rule_id")
-          .in("rule_id", ruleIds)
-          .limit(5)
-      : { data: [] as any[] };
+    let linkedQ: any = null;
+    if (ruleIds.length) {
+      linkedQ = supabase
+        .from("cases")
+        .select("id,title,summary,awarded_credit,notes,rule_id")
+        .in("rule_id", ruleIds)
+        .limit(5);
+      if (myCollegeId) linkedQ = linkedQ.eq("college_id", myCollegeId);
+    }
+    const { data: linkedCases } = linkedQ ? await linkedQ : { data: [] as any[] };
     const seen = new Set<string>();
     const cases = [...scoredCases, ...((linkedCases as any[]) || [])].filter((c) => {
       if (seen.has(c.id)) return false;
