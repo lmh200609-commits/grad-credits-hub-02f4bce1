@@ -4,6 +4,7 @@ import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScanFace, AlertTriangle, CheckCircle2, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Status = "unknown" | "no_face" | "match" | "mismatch" | "error" | null | undefined;
 
@@ -76,7 +77,7 @@ export default function FaceMatchAlert({
       toast({ title: "已重新比对", description: "结果已更新" });
       onRefreshed?.();
     } catch (e: any) {
-      toast({ title: "比对失败", description: e?.message ?? "未知错误", variant: "destructive" });
+      toastErrorLegacy(e, "比对失败");
     } finally {
       setRunning(false);
     }
