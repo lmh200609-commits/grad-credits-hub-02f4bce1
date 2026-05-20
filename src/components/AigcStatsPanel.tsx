@@ -21,6 +21,7 @@ import { toast } from "@/hooks/use-toast";
 import { handleAuthExpired } from "@/lib/sessionGuard";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Row = {
   id: string;
@@ -426,7 +427,7 @@ export default function AigcStatsPanel() {
       const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
       pdf.save(`AIGC统计报告_${scopeLabel}_${rangeLabel}_${ts}.pdf`);
     } catch (e: any) {
-      toast({ title: "导出 PDF 失败", description: e?.message ?? "未知错误", variant: "destructive" });
+      toastErrorLegacy(e, "导出 PDF 失败");
     } finally {
       setExportingPdf(false);
     }

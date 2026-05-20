@@ -69,7 +69,7 @@ const AigcAdmin = () => {
         fake: f.count || 0, skipped: sk.count || 0, error: er.count || 0,
       });
     } catch (e) {
-      toast({ title: "加载失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "加载失败");
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ const AigcAdmin = () => {
       });
       await load();
     } catch (e) {
-      toast({ title: "执行失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "执行失败");
     } finally {
       setRunning(false);
     }
@@ -124,7 +124,7 @@ const AigcAdmin = () => {
       toast({ title: "已重新检测", description: application_id.slice(0, 8) });
       await load();
     } catch (e) {
-      toast({ title: "重试失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "重试失败");
     }
   };
 
