@@ -303,7 +303,7 @@ const UsersManage = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>确认重置密码</AlertDialogTitle>
             <AlertDialogDescription>
-              将把 <span className="font-semibold text-foreground">{resetTarget?.full_name ?? resetTarget?.student_no ?? resetTarget?.email ?? "该用户"}</span> 的密码重置为默认密码（学号 + 身份证后 6 位，缺失则补 0）。请通过安全渠道告知用户。
+              将把 <span className="font-semibold text-foreground">{resetTarget?.full_name ?? resetTarget?.student_no ?? resetTarget?.email ?? "该用户"}</span> 的密码重置为默认密码（{role === "student" ? "学号" : "工号"} + 手机号后 6 位，缺失则补 0）。请通过安全渠道告知用户。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
