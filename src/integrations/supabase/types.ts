@@ -512,6 +512,7 @@ export type Database = {
       cases: {
         Row: {
           awarded_credit: number | null
+          college_id: string | null
           created_at: string
           created_by: string | null
           id: string
@@ -523,6 +524,7 @@ export type Database = {
         }
         Insert: {
           awarded_credit?: number | null
+          college_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -534,6 +536,7 @@ export type Database = {
         }
         Update: {
           awarded_credit?: number | null
+          college_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -544,6 +547,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "cases_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "cases_rule_id_fkey"
             columns: ["rule_id"]
@@ -653,6 +663,7 @@ export type Database = {
         Row: {
           active: boolean
           category: string | null
+          college_id: string | null
           created_at: string
           created_by: string | null
           id: string
@@ -664,6 +675,7 @@ export type Database = {
         Insert: {
           active?: boolean
           category?: string | null
+          college_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -675,6 +687,7 @@ export type Database = {
         Update: {
           active?: boolean
           category?: string | null
+          college_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -683,7 +696,15 @@ export type Database = {
           updated_at?: string
           usage_count?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "keywords_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -818,6 +839,7 @@ export type Database = {
           achievement: string | null
           active: boolean
           category: string | null
+          college_id: string | null
           created_at: string
           created_by: string | null
           credit: number
@@ -834,6 +856,7 @@ export type Database = {
           achievement?: string | null
           active?: boolean
           category?: string | null
+          college_id?: string | null
           created_at?: string
           created_by?: string | null
           credit?: number
@@ -850,6 +873,7 @@ export type Database = {
           achievement?: string | null
           active?: boolean
           category?: string | null
+          college_id?: string | null
           created_at?: string
           created_by?: string | null
           credit?: number
@@ -862,7 +886,15 @@ export type Database = {
           project?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "rules_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       submission_records: {
         Row: {
@@ -1123,6 +1155,10 @@ export type Database = {
           attempts: number
           id: string
         }[]
+      }
+      clone_template_to_college: {
+        Args: { _college: string }
+        Returns: undefined
       }
       current_open_window: {
         Args: { _college: string }
