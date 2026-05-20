@@ -307,6 +307,7 @@ const ApplicationDetail = () => {
           source: string;
           usage_count: number;
           created_by: string;
+          college_id: string | null;
         }> = [];
         const toBump: typeof libByNorm extends Map<string, infer V> ? V[] : never = [] as any;
         for (const k of customKws) {
