@@ -35,13 +35,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: roleRow } = await admin
+    const { data: roleRows } = await admin
       .from("user_roles")
       .select("role")
       .eq("user_id", callerId)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (!roleRow) return json({ error: "Forbidden: admin role required" }, 403);
+      .in("role", ["admin", "super_admin", "teacher"]);
+    if (!roleRows || roleRows.length === 0) {
+      return json({ error: "Forbidden: 需要管理员或教师权限" }, 403);
+    }
 
     const body = await req.json();
     const action = String(body.action ?? "");
