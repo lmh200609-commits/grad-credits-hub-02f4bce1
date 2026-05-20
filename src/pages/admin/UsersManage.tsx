@@ -24,6 +24,7 @@ import BulkUserDialog from "@/components/BulkUserDialog";
 import SingleUserDialog from "@/components/SingleUserDialog";
 import { UserPlus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { toastError } from "@/lib/errors";
 
 const PAGE_SIZE = 50;
 
@@ -157,7 +158,7 @@ const UsersManage = () => {
     });
     setResetting(false);
     if (error || (data as { error?: string })?.error) {
-      toast.error((data as { error?: string })?.error ?? error?.message ?? "重置失败");
+      toastError(error, "重置失败");
       return;
     }
     const pwd = (data as { password?: string })?.password;
@@ -178,7 +179,7 @@ const UsersManage = () => {
     });
     setDeleting(false);
     if (error || (data as { error?: string })?.error) {
-      toast.error((data as { error?: string })?.error ?? error?.message ?? "删除失败");
+      toastError(error, "删除失败");
       return;
     }
     toast.success(`已删除 ${deleteTarget.full_name ?? deleteTarget.student_no ?? deleteTarget.email ?? "账号"}`);

@@ -16,6 +16,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import EmptyState from "@/components/EmptyState";
+import { toastError } from "@/lib/errors";
 
 type College = {
   id: string;
@@ -75,7 +76,7 @@ const Colleges = () => {
           code: `C${Date.now().toString(36).toUpperCase()}`,
         });
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toastError(error); return; }
     toast.success(editing ? "已更新" : "学院已创建");
     setOpen(false);
     void load();
@@ -83,7 +84,7 @@ const Colleges = () => {
 
   const setActive = async (c: College, next: boolean) => {
     const { error } = await supabase.from("colleges").update({ active: next }).eq("id", c.id);
-    if (error) toast.error(error.message); else { toast.success(next ? "已启用" : "已停用"); void load(); }
+    if (error) toastError(error); else { toast.success(next ? "已启用" : "已停用"); void load(); }
   };
   const requestToggle = (c: College) => {
     if (c.active) setPendingDisable(c);

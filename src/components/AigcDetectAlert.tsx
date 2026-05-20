@@ -4,6 +4,7 @@ import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, ShieldCheck, ShieldQuestion, RefreshCw, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Status = "pending" | "real" | "suspect" | "fake" | "skipped" | "error" | null | undefined;
 
@@ -80,7 +81,7 @@ export default function AigcDetectAlert({
       toast({ title: "已重新鉴别", description: "结果已更新" });
       onRefreshed?.();
     } catch (e: any) {
-      toast({ title: "鉴别失败", description: e?.message ?? "未知错误", variant: "destructive" });
+      toastErrorLegacy(e, "鉴别失败");
     } finally {
       setRunning(false);
     }

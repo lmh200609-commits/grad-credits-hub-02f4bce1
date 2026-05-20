@@ -18,6 +18,7 @@ import TableSkeleton from "@/components/TableSkeleton";
 import TablePagination from "@/components/TablePagination";
 import { fetchAll } from "@/lib/fetchAll";
 import LibraryScopeSelect, { useLibraryScope, applyScope, scopeWriteCollegeId } from "@/components/LibraryScopeSelect";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Rule = { id: string; name: string };
 type Case = { id: string; title: string; summary: string; rule_id: string | null; awarded_credit: number | null; notes: string | null };
@@ -98,14 +99,14 @@ const CasesPage = () => {
       payload.college_id = scopeWriteCollegeId(scope);
       ({ error } = await supabase.from("cases").insert(payload));
     }
-    if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+    if (error) return toastErrorLegacy(error, "保存失败");
     toast({ title: editing ? "已更新" : "已新增" }); setOpen(false); load();
   };
 
   const remove = async (id: string) => {
     if (!confirm("删除该案例？")) return;
     const { error } = await supabase.from("cases").delete().eq("id", id);
-    if (error) return toast({ title: "删除失败", description: error.message, variant: "destructive" });
+    if (error) return toastErrorLegacy(error, "删除失败");
     load();
   };
 

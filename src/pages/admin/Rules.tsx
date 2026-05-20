@@ -18,6 +18,7 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { writeAuditLog } from "@/lib/audit";
 import LibraryScopeSelect, { useLibraryScope, applyScope, scopeWriteCollegeId } from "@/components/LibraryScopeSelect";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Rule = {
   id: string;
@@ -92,7 +93,7 @@ const RulesPage = () => {
     };
     if (editing) {
       const { error } = await supabase.from("rules").update(payload).eq("id", editing.id);
-      if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+      if (error) return toastErrorLegacy(error, "保存失败");
       writeAuditLog({
         action: "rule_update",
         target_ids: [editing.id],
@@ -104,7 +105,7 @@ const RulesPage = () => {
     } else {
       payload.college_id = scopeWriteCollegeId(scope);
       const { data, error } = await supabase.from("rules").insert(payload).select("id").single();
-      if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+      if (error) return toastErrorLegacy(error, "保存失败");
       writeAuditLog({
         action: "rule_create",
         target_ids: data?.id ? [data.id] : [],
@@ -123,7 +124,7 @@ const RulesPage = () => {
     if (!confirm("确认删除该规则？")) return;
     const target = rules.find((r) => r.id === id);
     const { error } = await supabase.from("rules").delete().eq("id", id);
-    if (error) return toast({ title: "删除失败", description: error.message, variant: "destructive" });
+    if (error) return toastErrorLegacy(error, "删除失败");
     writeAuditLog({
       action: "rule_delete",
       target_ids: [id],

@@ -27,6 +27,7 @@ import { applySchema } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 import { sha256Hex } from "@/lib/fileHash";
 import { buildKeywordsFingerprint } from "@/lib/keywordFingerprint";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Rule = {
   id: string;
@@ -445,7 +446,7 @@ const ApplyPage = () => {
       }).catch(() => { /* 静默失败 */ });
       navigate("/my-applications");
     } catch (e: any) {
-      toast({ title: "提交失败", description: e.message, variant: "destructive" });
+      toastErrorLegacy(e, "提交失败");
     } finally { setSubmitting(false); }
   };
 

@@ -18,6 +18,7 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Trash2, Pencil, PlugZap, CheckCircle2, XCircle, Loader2, Cpu } from "lucide-react";
+import { toastErrorLegacy } from "@/lib/errors";
 
 const VENDOR_PRESETS = [
   { vendor: "deepseek", label: "DeepSeek 深度求索", baseUrl: "https://api.deepseek.com/v1", sample: "deepseek-chat",
@@ -93,7 +94,7 @@ const AiModelsPage = () => {
       setBindings(b.bindings || []);
       setFallback(b.fallback ?? null);
     } catch (e) {
-      toast({ title: "加载失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "加载失败");
     } finally {
       setLoading(false);
     }
@@ -123,7 +124,7 @@ const AiModelsPage = () => {
       toast({ title: "已删除" });
       load();
     } catch (e) {
-      toast({ title: "删除失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "删除失败");
     }
   };
 
@@ -235,7 +236,7 @@ const AiModelsPage = () => {
                     console.log("restore_defaults:", r);
                     load();
                   } catch (e) {
-                    toast({ title: "恢复失败", description: (e as Error).message, variant: "destructive" });
+                    toastErrorLegacy(e, "恢复失败");
                   }
                 }}
               >
@@ -314,7 +315,7 @@ const BindingRow = ({
       setCustomDraft("");
       onSaved();
     } catch (e) {
-      toast({ title: "保存失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "保存失败");
     } finally {
       setSaving(false);
     }
@@ -478,7 +479,7 @@ const ProviderDialog = ({
       toast({ title: editing ? "已更新" : "已创建" });
       onSaved();
     } catch (e) {
-      toast({ title: "保存失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "保存失败");
     } finally {
       setSaving(false);
     }

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import BulkUserDialog from "@/components/BulkUserDialog";
+import { toastError } from "@/lib/errors";
 
 const PAGE_SIZE = 50;
 
@@ -109,7 +110,7 @@ const Students = () => {
     });
     setResetting(false);
     if (error || (data as { error?: string })?.error) {
-      toast.error("重置失败", { description: (data as { error?: string })?.error ?? error?.message });
+      toastError(error, "重置失败");
       return;
     }
     const pwd = (data as { password?: string })?.password;

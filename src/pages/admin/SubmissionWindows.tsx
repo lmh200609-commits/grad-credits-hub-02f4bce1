@@ -18,6 +18,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import { Plus, FileSpreadsheet, RefreshCw, Trash2, FileText, Pencil } from "lucide-react";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { toastError } from "@/lib/errors";
 
 type Window = {
   id: string;
@@ -82,7 +83,7 @@ const SubmissionWindows = () => {
       .select("*")
       .eq("college_id", activeCollege)
       .order("starts_at", { ascending: false });
-    if (error) toast.error(error.message);
+    if (error) toastError(error);
     setItems((data ?? []) as Window[]);
     setLoading(false);
   }, [activeCollege]);
@@ -126,10 +127,10 @@ const SubmissionWindows = () => {
     };
     if (editing) {
       const { error } = await supabase.from("submission_windows").update(payload).eq("id", editing.id);
-      if (error) return toast.error(error.message);
+      if (error) return toastError(error);
     } else {
       const { error } = await supabase.from("submission_windows").insert(payload);
-      if (error) return toast.error(error.message);
+      if (error) return toastError(error);
     }
     toast.success("已保存");
     setDialogOpen(false);
@@ -138,7 +139,7 @@ const SubmissionWindows = () => {
 
   const toggleActive = async (w: Window) => {
     const { error } = await supabase.from("submission_windows").update({ active: !w.active }).eq("id", w.id);
-    if (error) toast.error(error.message);
+    if (error) toastError(error);
     else void load();
   };
 
@@ -146,7 +147,7 @@ const SubmissionWindows = () => {
     if (w.report_generated_at) return toast.error("已生成报告，无法删除");
     if (!confirm(`确定删除「${w.name}」?`)) return;
     const { error } = await supabase.from("submission_windows").delete().eq("id", w.id);
-    if (error) toast.error(error.message);
+    if (error) toastError(error);
     else void load();
   };
 
@@ -162,7 +163,7 @@ const SubmissionWindows = () => {
       void load();
       navigate(route);
     } catch (e: any) {
-      toast.error(e.message ?? "生成失败");
+      toastError(e, "生成失败");
     } finally {
       setBusyId(null);
     }

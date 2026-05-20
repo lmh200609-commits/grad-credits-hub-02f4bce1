@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AlertTriangle, Copy, Loader2 } from "lucide-react";
 import { copyText } from "@/lib/clipboard";
+import { toastError } from "@/lib/errors";
 
 type Result = {
   success?: boolean;

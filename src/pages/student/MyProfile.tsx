@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Upload, AlertCircle } from "lucide-react";
 import { YmdPicker } from "@/components/ui/ymd-picker";
+import { toastErrorLegacy } from "@/lib/errors";
 
 type Profile = {
   full_name: string | null;
@@ -82,7 +83,7 @@ const MyProfile = () => {
     setPwdSaving(true);
     const { error } = await supabase.auth.updateUser({ password: pwd });
     setPwdSaving(false);
-    if (error) return toast({ title: "修改失败", description: error.message, variant: "destructive" });
+    if (error) return toastErrorLegacy(error, "修改失败");
     setPwd(""); setPwd2("");
     toast({ title: "密码已更新" });
   };
@@ -141,7 +142,7 @@ const MyProfile = () => {
       })
       .eq("user_id", user.id);
     setSaving(false);
-    if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
+    if (error) return toastErrorLegacy(error, "保存失败");
     toast({ title: "已保存" });
     load();
   };
@@ -175,14 +176,14 @@ const MyProfile = () => {
       .upload(path, f, { upsert: true, contentType: f.type });
     if (ue) {
       setUploading(false);
-      return toast({ title: "上传失败", description: ue.message, variant: "destructive" });
+      return toastErrorLegacy(ue, "上传失败");
     }
     const { error: pe } = await supabase
       .from("profiles")
       .update({ photo_url: path })
       .eq("user_id", user.id);
     setUploading(false);
-    if (pe) return toast({ title: "保存失败", description: pe.message, variant: "destructive" });
+    if (pe) return toastErrorLegacy(pe, "保存失败");
     toast({ title: "照片已更新" });
     load();
   };

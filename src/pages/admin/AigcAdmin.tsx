@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
 import { ScanEye, RefreshCw, Loader2, AlertTriangle, ShieldCheck, Image as ImageIcon } from "lucide-react";
+import { toastErrorLegacy } from "@/lib/errors";
 
 const DEFAULT_SUSPECT = 0.4;
 const DEFAULT_FAKE = 0.8;
@@ -68,7 +69,7 @@ const AigcAdmin = () => {
         fake: f.count || 0, skipped: sk.count || 0, error: er.count || 0,
       });
     } catch (e) {
-      toast({ title: "加载失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "加载失败");
     } finally {
       setLoading(false);
     }
@@ -86,7 +87,7 @@ const AigcAdmin = () => {
     const nextTheme = { ...(col.theme || {}), aigc: nextAigc };
     const { error } = await supabase.from("colleges").update({ theme: nextTheme }).eq("id", col.id);
     if (error) {
-      toast({ title: "保存失败", description: error.message, variant: "destructive" });
+      toastErrorLegacy(error, "保存失败");
       return;
     }
     setColleges((arr) => arr.map((c) => (c.id === col.id ? { ...c, theme: nextTheme } : c)));
@@ -110,7 +111,7 @@ const AigcAdmin = () => {
       });
       await load();
     } catch (e) {
-      toast({ title: "执行失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "执行失败");
     } finally {
       setRunning(false);
     }
@@ -123,7 +124,7 @@ const AigcAdmin = () => {
       toast({ title: "已重新检测", description: application_id.slice(0, 8) });
       await load();
     } catch (e) {
-      toast({ title: "重试失败", description: (e as Error).message, variant: "destructive" });
+      toastErrorLegacy(e, "重试失败");
     }
   };
 
