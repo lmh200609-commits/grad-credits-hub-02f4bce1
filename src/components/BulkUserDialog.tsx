@@ -158,9 +158,10 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
   };
 
   const title = mode === "delete" ? "批量删除账号" : "批量重置密码";
+  const idLabel = role === "student" ? "学号" : "工号";
   const desc = mode === "delete"
     ? "选择要删除的账号。删除后不可恢复，请谨慎操作。"
-    : "选择要重置密码的账号。默认密码 = 学号 + 身份证后 6 位（缺失则补 0）。";
+    : `选择要重置密码的账号。默认密码 = ${idLabel} + 手机号后 6 位（缺失则补 0）。`;
 
   return (
     <>
@@ -294,7 +295,7 @@ export default function BulkUserDialog({ open, mode, role, onClose, onDone }: Pr
             <AlertDialogDescription>
               {mode === "delete"
                 ? `将永久删除 ${selected.size} 个账号及其个人资料、角色，操作不可撤销。`
-                : `将把 ${selected.size} 个账号的密码重置为默认值（学号 + 身份证后 6 位）。`}
+                : `将把 ${selected.size} 个账号的密码重置为默认值（${idLabel} + 手机号后 6 位）。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {mode === "delete" && selected.size > 10 && (

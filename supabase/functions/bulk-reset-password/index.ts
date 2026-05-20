@@ -1,4 +1,4 @@
-// Admin/Teacher: bulk reset passwords to default = student_no + last6(id_card)
+// Admin/Teacher: bulk reset passwords to default = student_no/工号 + last6(phone)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
@@ -6,9 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function defaultPassword(studentNo: string | null, idCard: string | null, email: string | null): string {
+function defaultPassword(studentNo: string | null, phone: string | null, email: string | null): string {
   const prefix = (studentNo && studentNo.trim()) || (email ? email.split("@")[0] : "user");
-  const tail = idCard && idCard.length >= 6 ? idCard.slice(-6) : "000000";
+  const digits = (phone ?? "").replace(/\D/g, "");
+  const tail = digits.length >= 6 ? digits.slice(-6) : (digits + "000000").slice(0, 6);
   let pwd = `${prefix}${tail}`;
   if (pwd.length < 8) pwd = (pwd + "00000000").slice(0, 8);
   return pwd;
@@ -82,7 +83,7 @@ Deno.serve(async (req) => {
 
     const { data: profiles } = await admin
       .from("profiles")
-      .select("user_id, full_name, student_no, id_card, email")
+      .select("user_id, full_name, student_no, phone, email")
       .in("user_id", ids);
     const pmap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
 
@@ -90,7 +91,7 @@ Deno.serve(async (req) => {
     let success = 0, failure = 0;
     for (const uid of ids) {
       const p = pmap.get(uid);
-      const pwd = defaultPassword(p?.student_no ?? null, p?.id_card ?? null, p?.email ?? null);
+      const pwd = defaultPassword(p?.student_no ?? null, p?.phone ?? null, p?.email ?? null);
       const label = p?.full_name || p?.student_no || p?.email || uid;
       const { error } = await admin.auth.admin.updateUserById(uid, { password: pwd });
       if (error) { failure++; results.push({ user_id: uid, ok: false, label, error: error.message }); }

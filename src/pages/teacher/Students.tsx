@@ -219,7 +219,7 @@ const Students = () => {
             <AlertDialogTitle>确认重置学生密码</AlertDialogTitle>
             <AlertDialogDescription>
               将把 <span className="font-semibold text-foreground">{resetTarget?.full_name ?? "该学生"}</span>
-              （{resetTarget?.student_no ?? "—"}）的密码重置为默认密码（学号 + 身份证后 6 位，缺失则补 0）。请通过线下渠道告知学生。
+              （{resetTarget?.student_no ?? "—"}）的密码重置为默认密码（学号 + 手机号后 6 位，缺失则补 0）。请通过线下渠道告知学生。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

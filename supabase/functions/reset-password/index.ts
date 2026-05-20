@@ -64,12 +64,13 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await admin
       .from("profiles")
-      .select("full_name, student_no, id_card, email")
+      .select("full_name, student_no, phone, email")
       .eq("user_id", user_id)
       .maybeSingle();
 
     const prefix = (profile?.student_no && profile.student_no.trim()) || (profile?.email ? profile.email.split("@")[0] : "user");
-    const tail = profile?.id_card && profile.id_card.length >= 6 ? profile.id_card.slice(-6) : "000000";
+    const phoneDigits = (profile?.phone ?? "").replace(/\D/g, "");
+    const tail = phoneDigits.length >= 6 ? phoneDigits.slice(-6) : (phoneDigits + "000000").slice(0, 6);
     let password = `${prefix}${tail}`;
     if (password.length < 8) password = (password + "00000000").slice(0, 8);
 
