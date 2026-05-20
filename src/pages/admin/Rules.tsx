@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import PageHeader from "@/components/PageHeader";
@@ -12,11 +12,12 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, Search } from "lucide-react";
 import { ruleSchema } from "@/lib/schemas";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { writeAuditLog } from "@/lib/audit";
+import LibraryScopeSelect, { useLibraryScope, applyScope, scopeWriteCollegeId } from "@/components/LibraryScopeSelect";
 
 type Rule = {
   id: string;
@@ -36,14 +37,34 @@ const RulesPage = () => {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Rule | null>(null);
   const [form, setForm] = useState<typeof empty>(empty);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const { scope, ready } = useLibraryScope("lib_scope_rules");
 
   const load = async () => {
+    if (!ready) return;
     setLoading(true);
-    const { data } = await supabase.from("rules").select("*").order("created_at", { ascending: false });
+    const base = supabase.from("rules").select("*").order("created_at", { ascending: false });
+    const { data } = await applyScope(base, scope);
     setRules((data as Rule[]) ?? []);
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [scope, ready]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rules.filter((r) => {
+      if (statusFilter === "active" && !r.active) return false;
+      if (statusFilter === "inactive" && r.active) return false;
+      if (!q) return true;
+      return (
+        r.name.toLowerCase().includes(q) ||
+        (r.category ?? "").toLowerCase().includes(q) ||
+        (r.description ?? "").toLowerCase().includes(q) ||
+        r.keywords.some((k) => k.toLowerCase().includes(q))
+      );
+    });
+  }, [rules, search, statusFilter]);
 
   const openNew = () => { setEditing(null); setForm(empty); setOpen(true); };
   const openEdit = (r: Rule) => {
@@ -61,7 +82,7 @@ const RulesPage = () => {
       return toast({ title: parsed.error.issues[0]?.message ?? "请检查表单", variant: "destructive" });
     }
     const v = parsed.data;
-    const payload = {
+    const payload: any = {
       name: v.name,
       category: v.category?.trim() || null,
       keywords: (v.keywords ?? "").split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean),
@@ -81,6 +102,7 @@ const RulesPage = () => {
         metadata: { before: { name: editing.name, credit: editing.credit, active: editing.active }, after: payload },
       });
     } else {
+      payload.college_id = scopeWriteCollegeId(scope);
       const { data, error } = await supabase.from("rules").insert(payload).select("id").single();
       if (error) return toast({ title: "保存失败", description: error.message, variant: "destructive" });
       writeAuditLog({
@@ -121,7 +143,9 @@ const RulesPage = () => {
           title="规则库"
           description="学分认证匹配规则，由 AI 在评估时参考"
           actions={
-            <Dialog open={open} onOpenChange={setOpen}>
+            <div className="flex items-center gap-2">
+              <LibraryScopeSelect storageKey="lib_scope_rules" />
+              <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button onClick={openNew}><Plus className="mr-1 h-4 w-4" />新增规则</Button></DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle>{editing ? "编辑规则" : "新增规则"}</DialogTitle></DialogHeader>
@@ -141,11 +165,34 @@ const RulesPage = () => {
               </div>
               <DialogFooter><Button onClick={save}>保存</Button></DialogFooter>
             </DialogContent>
-          </Dialog>
+              </Dialog>
+            </div>
           }
         />
         <Card>
-          <CardHeader><CardTitle className="text-base">规则列表（{rules.length}）</CardTitle></CardHeader>
+          <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base">规则列表（{filtered.length}{(search || statusFilter !== "all") && ` / ${rules.length}`}）</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="all">全部状态</option>
+                <option value="active">仅启用</option>
+                <option value="inactive">仅停用</option>
+              </select>
+              <div className="relative w-64 max-w-full">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索名称 / 类别 / 关键词"
+                  className="pl-8"
+                />
+              </div>
+            </div>
+          </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
@@ -158,9 +205,9 @@ const RulesPage = () => {
               <TableBody>
                 {loading ? (
                   <TableSkeleton rows={4} cols={6} />
-                ) : rules.length === 0 ? (
-                  <TableRow><TableCell colSpan={6}><EmptyState title="暂无规则" description="点击右上角新增第一条匹配规则" /></TableCell></TableRow>
-                ) : rules.map((r) => (
+                ) : filtered.length === 0 ? (
+                  <TableRow><TableCell colSpan={6}><EmptyState title={search || statusFilter !== "all" ? "无匹配规则" : "暂无规则"} description={search || statusFilter !== "all" ? "调整搜索或筛选条件" : "点击右上角新增第一条匹配规则"} /></TableCell></TableRow>
+                ) : filtered.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.name}</TableCell>
                     <TableCell>{r.category ?? "—"}</TableCell>
