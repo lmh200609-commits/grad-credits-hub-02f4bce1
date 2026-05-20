@@ -15,10 +15,10 @@ import {
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
-import { toastError } from "@/lib/errors";
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toastError } from "@/lib/errors";
 
 type College = { id: string; name: string; code: string };
 type AdminRow = { user_id: string; college_id: string | null; profiles: { full_name: string | null; email: string | null } | null; colleges: { name: string } | null };
