@@ -130,37 +130,37 @@ const AppSidebar = () => {
 
   return (
     <Sidebar collapsible="icon">
+      {/* College brand banner — fixed at top, does not scroll with nav list */}
+      <div
+        className={`flex shrink-0 items-center gap-3 border-b px-3 py-3 ${collapsed ? "justify-center px-2" : ""}`}
+        style={{
+          backgroundImage:
+            "linear-gradient(135deg, hsl(var(--brand-strong)) 0%, hsl(var(--primary)) 100%)",
+          borderBottomColor: "hsl(var(--primary) / 0.4)",
+        }}
+      >
+        {college?.badge_url ? (
+          <img
+            key={college.badge_url}
+            src={college.badge_url}
+            alt=""
+            className="h-10 w-10 shrink-0 rounded-full bg-background object-contain p-0.5 ring-2 ring-white/60"
+          />
+        ) : (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white ring-2 ring-white/40">
+            {(college?.short_name || college?.name || "学").slice(0, 1)}
+          </div>
+        )}
+        {!collapsed && (
+          <div className="min-w-0 flex-1 leading-tight text-white">
+            <div className="truncate text-sm font-semibold">
+              {college?.short_name || college?.name || "学分认证系统"}
+            </div>
+            <div className="truncate text-[11px] text-white/75">学分认证系统</div>
+          </div>
+        )}
+      </div>
       <SidebarContent ref={scrollRef}>
-        {/* College brand banner — colored band that visibly differs per college */}
-        <div
-          className={`flex items-center gap-3 border-b px-3 py-3 ${collapsed ? "justify-center px-2" : ""}`}
-          style={{
-            backgroundImage:
-              "linear-gradient(135deg, hsl(var(--brand-strong)) 0%, hsl(var(--primary)) 100%)",
-            borderBottomColor: "hsl(var(--primary) / 0.4)",
-          }}
-        >
-          {college?.badge_url ? (
-            <img
-              key={college.badge_url}
-              src={college.badge_url}
-              alt=""
-              className="h-10 w-10 shrink-0 rounded-full bg-background object-contain p-0.5 ring-2 ring-white/60"
-            />
-          ) : (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-bold text-white ring-2 ring-white/40">
-              {(college?.short_name || college?.name || "学").slice(0, 1)}
-            </div>
-          )}
-          {!collapsed && (
-            <div className="min-w-0 flex-1 leading-tight text-white">
-              <div className="truncate text-sm font-semibold">
-                {college?.short_name || college?.name || "学分认证系统"}
-              </div>
-              <div className="truncate text-[11px] text-white/75">学分认证系统</div>
-            </div>
-          )}
-        </div>
         <SidebarGroup>
           <SidebarGroupLabel style={{ color: "hsl(var(--brand-strong))" }}>
             导航
@@ -265,7 +265,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
         <AppSidebar />
         <div className="flex flex-1 flex-col">
           <header
-            className="flex h-14 items-center justify-between gap-2 border-b-2 px-3 sm:px-4"
+            className="sticky top-0 z-20 flex h-14 items-center justify-between gap-2 border-b-2 px-3 sm:px-4"
             style={{
               backgroundColor: "hsl(var(--header-tint))",
               borderBottomColor: "hsl(var(--primary) / 0.35)",

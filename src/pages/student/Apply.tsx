@@ -527,12 +527,17 @@ const ApplyPage = () => {
           </Card>
         )}
         {collegeId && openWindow && (
-          <Card className="border-primary/30 bg-primary/5">
+          <Card className="border-2 border-primary bg-gradient-to-r from-primary/15 to-accent/10 shadow-md">
             <CardContent className="flex items-center gap-3 py-4">
-              <Clock className="h-5 w-5 text-primary" />
+              <Clock className="h-6 w-6 shrink-0 text-primary" />
               <div className="text-sm">
-                <div className="font-medium">当前批次：{openWindow.name}</div>
-                <div className="text-muted-foreground">截止时间：{new Date(openWindow.ends_at).toLocaleString()}</div>
+                <div className="text-base font-semibold text-primary">当前批次：{openWindow.name}</div>
+                <div className="font-medium text-foreground">
+                  截止时间：
+                  <span className="font-bold text-destructive">
+                    {new Date(openWindow.ends_at).toLocaleString()}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>

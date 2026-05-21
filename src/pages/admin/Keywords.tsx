@@ -46,7 +46,7 @@ const KeywordsPage = () => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
-  const [bulk, setBulk] = useState({ keywords: "", category: "", source: "" });
+  const [bulk, setBulk] = useState({ keywords: "", category: "" });
   const { scope, ready } = useLibraryScope("lib_scope_keywords");
 
   const load = async () => {
@@ -80,8 +80,7 @@ const KeywordsPage = () => {
       if (q) {
         const hit =
           k.keyword.toLowerCase().includes(q) ||
-          (k.category ?? "").toLowerCase().includes(q) ||
-          (k.source ?? "").toLowerCase().includes(q);
+          (k.category ?? "").toLowerCase().includes(q);
         if (!hit) return false;
       }
       if (fromTs !== null || toTs !== null) {
