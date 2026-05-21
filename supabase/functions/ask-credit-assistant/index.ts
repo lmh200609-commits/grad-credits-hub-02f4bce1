@@ -220,8 +220,8 @@ Deno.serve(async (req) => {
           Deno.env.get("SUPABASE_ANON_KEY")!,
           { global: { headers: { Authorization: authHeader } } },
         );
-        const { data: claims } = await userClient.auth.getClaims(token);
-        myUserId = claims?.claims?.sub ?? null;
+        const { data: userData } = await userClient.auth.getUser(token);
+        myUserId = userData?.user?.id ?? null;
       } catch (_) { myUserId = null; }
     }
 
