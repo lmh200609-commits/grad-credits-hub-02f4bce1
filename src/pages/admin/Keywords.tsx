@@ -132,7 +132,6 @@ const KeywordsPage = () => {
     const payload = finalList.map((k) => ({
       keyword: k.trim(),
       category: bulk.category.trim() || null,
-      source: bulk.source.trim() || null,
       created_by: user?.id ?? null,
       college_id: scopeWriteCollegeId(scope),
     }));
@@ -152,7 +151,6 @@ const KeywordsPage = () => {
       success_count: inserted.length,
       metadata: {
         category: bulk.category || null,
-        source: bulk.source || null,
         attempted: rawList.length,
         skipped_duplicates: skippedDup,
       },
@@ -161,7 +159,7 @@ const KeywordsPage = () => {
       title: "已保存",
       description: `新增 ${inserted.length} 个，跳过重复 ${rawList.length - inserted.length} 个（含规范化去重）`,
     });
-    setBulk({ keywords: "", category: "", source: "" });
+    setBulk({ keywords: "", category: "" });
     setOpen(false);
     load();
   };
@@ -178,7 +176,7 @@ const KeywordsPage = () => {
       target_labels: [k.keyword],
       affected_count: 1,
       success_count: 1,
-      metadata: { category: k.category, source: k.source },
+      metadata: { category: k.category },
     });
     toast({ title: "已删除" });
     load();
@@ -220,14 +218,6 @@ const KeywordsPage = () => {
                       value={bulk.category}
                       onChange={(e) => setBulk({ ...bulk, category: e.target.value })}
                       placeholder="如：竞赛 / 科研 / 实践"
-                    />
-                  </div>
-                  <div>
-                    <Label>来源说明（可选）</Label>
-                    <Input
-                      value={bulk.source}
-                      onChange={(e) => setBulk({ ...bulk, source: e.target.value })}
-                      placeholder="如：2023 届毕业生认证材料"
                     />
                   </div>
                 </div>
@@ -307,7 +297,7 @@ const KeywordsPage = () => {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索关键词 / 分类 / 来源"
+                  placeholder="搜索关键词 / 分类"
                   className="pl-8"
                 />
               </div>
@@ -319,7 +309,6 @@ const KeywordsPage = () => {
                 <TableRow>
                   <TableHead>关键词</TableHead>
                   <TableHead>分类</TableHead>
-                  <TableHead>来源</TableHead>
                   <TableHead>沉淀日期</TableHead>
                   <TableHead>使用次数</TableHead>
                   <TableHead className="text-right">操作</TableHead>
@@ -327,10 +316,10 @@ const KeywordsPage = () => {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableSkeleton rows={5} cols={6} />
+                  <TableSkeleton rows={5} cols={5} />
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={5}>
                       <EmptyState
                         title={search || dateRange ? "无匹配关键词" : "暂无关键词"}
                         description={
@@ -347,9 +336,6 @@ const KeywordsPage = () => {
                       <TableCell className="font-medium">{k.keyword}</TableCell>
                       <TableCell>
                         {k.category ? <Badge variant="secondary">{k.category}</Badge> : "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {k.source ?? EMPTY_PLACEHOLDER}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {formatDepositDate(k.created_at)}
