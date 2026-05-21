@@ -2,6 +2,8 @@ import { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { usePreviewTheme } from "@/hooks/usePreviewTheme";
+import RouteLoadingSkeleton from "@/components/RouteLoadingSkeleton";
+import { hasCachedSupabaseSession } from "@/lib/sessionCache";
 
 type AppRole = "super_admin" | "admin" | "teacher" | "student";
 
@@ -10,11 +12,8 @@ const RoleRoute = ({ role, children }: { role: AppRole | AppRole[]; children: Re
   const { active: previewActive, roleView } = usePreviewTheme();
   const roles = Array.isArray(role) ? role : [role];
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        加载中…
-      </div>
-    );
+    if (hasCachedSupabaseSession()) return <>{children}</>;
+    return <RouteLoadingSkeleton />;
   }
   if (!user) return <Navigate to="/login" replace />;
   // 预览模式下，若当前预览视角命中本路由所需角色，则放行（仅 UI 预览，不动真实角色）
