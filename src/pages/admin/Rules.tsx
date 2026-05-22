@@ -219,7 +219,7 @@ const RulesPage = () => {
                       </div>
                     </TableCell>
                     <TableCell>{r.credit}</TableCell>
-                    <TableCell>{r.active ? <Badge>启用</Badge> : <Badge variant="outline">停用</Badge>}</TableCell>
+                    <TableCell className="whitespace-nowrap">{r.active ? <Badge>启用</Badge> : <Badge variant="outline">停用</Badge>}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(r)}><Pencil className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4" /></Button>
