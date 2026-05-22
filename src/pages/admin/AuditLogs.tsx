@@ -23,6 +23,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import TableSkeleton from "@/components/TableSkeleton";
 import TablePagination from "@/components/TablePagination";
 import { fetchAll } from "@/lib/fetchAll";
+import { resolveDisplayName } from "@/lib/displayName";
 
 const PAGE_SIZE = 30;
 
@@ -60,9 +61,35 @@ const fmtTime = (s: string) => {
   return d.toLocaleString("zh-CN", { hour12: false });
 };
 
+type ActorInfo = { label: string };
+
+const ROLE_PRIORITY = ["super_admin", "admin", "teacher", "student"] as const;
+
+const formatActor = (
+  role: string | null,
+  fullName: string | null,
+  accountFallback: string,
+  collegeLabel: string | null,
+): string => {
+  const name = resolveDisplayName({ full_name: fullName }, accountFallback);
+  switch (role) {
+    case "super_admin":
+      return `超级管理员 ${name}`;
+    case "admin":
+      return `${collegeLabel ? collegeLabel : "学院"}管理员 ${name}`;
+    case "teacher":
+      return `教师 ${name}`;
+    case "student":
+      return `学生 ${name}`;
+    default:
+      return name;
+  }
+};
+
 const AuditLogs = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actors, setActors] = useState<Record<string, ActorInfo>>({});
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [actorSearch, setActorSearch] = useState("");
   const [from, setFrom] = useState("");
@@ -76,8 +103,64 @@ const AuditLogs = () => {
       supabase.from("audit_logs").select("*").order("created_at", { ascending: false }),
     );
     setLogs(data);
+    await loadActors(data);
     setLoading(false);
   };
+
+  const loadActors = async (rows: AuditLog[]) => {
+    const ids = Array.from(new Set(rows.map((r) => r.actor_id).filter((x): x is string => !!x)));
+    if (ids.length === 0) {
+      setActors({});
+      return;
+    }
+    const emailById = new Map<string, string | null>();
+    rows.forEach((r) => { if (r.actor_id && !emailById.has(r.actor_id)) emailById.set(r.actor_id, r.actor_email); });
+
+    const [profilesRes, rolesRes] = await Promise.all([
+      supabase.from("profiles").select("user_id, full_name").in("user_id", ids),
+      supabase.from("user_roles").select("user_id, role, college_id").in("user_id", ids),
+    ]);
+    const profiles = profilesRes.data ?? [];
+    const roles = rolesRes.data ?? [];
+
+    const collegeIds = Array.from(new Set(
+      roles.map((r) => r.college_id).filter((x): x is string => !!x),
+    ));
+    let collegeMap = new Map<string, string>();
+    if (collegeIds.length > 0) {
+      const { data: cols } = await supabase
+        .from("colleges")
+        .select("id, name, short_name")
+        .in("id", collegeIds);
+      (cols ?? []).forEach((c: any) => collegeMap.set(c.id, c.short_name || c.name));
+    }
+
+    const profileMap = new Map<string, string | null>();
+    profiles.forEach((p: any) => profileMap.set(p.user_id, p.full_name));
+
+    // pick top-priority role per user
+    const rolesByUser = new Map<string, { role: string; college_id: string | null }[]>();
+    roles.forEach((r: any) => {
+      const arr = rolesByUser.get(r.user_id) ?? [];
+      arr.push({ role: r.role, college_id: r.college_id });
+      rolesByUser.set(r.user_id, arr);
+    });
+
+    const map: Record<string, ActorInfo> = {};
+    ids.forEach((uid) => {
+      const userRoles = rolesByUser.get(uid) ?? [];
+      const sorted = [...userRoles].sort(
+        (a, b) => ROLE_PRIORITY.indexOf(a.role as any) - ROLE_PRIORITY.indexOf(b.role as any),
+      );
+      const top = sorted[0];
+      const fullName = profileMap.get(uid) ?? null;
+      const emailPrefix = (emailById.get(uid) ?? "").split("@")[0] ?? "";
+      const collegeLabel = top?.college_id ? collegeMap.get(top.college_id) ?? null : null;
+      map[uid] = { label: formatActor(top?.role ?? null, fullName, emailPrefix, collegeLabel) };
+    });
+    setActors(map);
+  };
+
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
@@ -157,7 +240,10 @@ const AuditLogs = () => {
                     <TableRow key={l.id}>
                       <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtTime(l.created_at)}</TableCell>
                       <TableCell><Badge variant={meta.variant}>{meta.label}</Badge></TableCell>
-                      <TableCell className="text-sm">{l.actor_email ? l.actor_email.split("@")[0] : "—"}</TableCell>
+                      <TableCell className="text-sm">
+                        {(l.actor_id && actors[l.actor_id]?.label)
+                          || (l.actor_email ? l.actor_email.split("@")[0] : "—")}
+                      </TableCell>
                       <TableCell className="text-right">{l.affected_count}</TableCell>
                       <TableCell className="text-right text-sm">
                         <span className="text-success">{l.success_count}</span>
@@ -192,7 +278,10 @@ const AuditLogs = () => {
           {detail && (
             <ScrollArea className="max-h-[60vh] pr-3">
               <div className="space-y-3 text-sm">
-                <div><span className="text-muted-foreground">操作者：</span>{detail.actor_email ? detail.actor_email.split("@")[0] : "—"}</div>
+                <div><span className="text-muted-foreground">操作者：</span>{
+                  (detail.actor_id && actors[detail.actor_id]?.label)
+                  || (detail.actor_email ? detail.actor_email.split("@")[0] : "—")
+                }</div>
                 <div>
                   <span className="text-muted-foreground">影响：</span>
                   共 {detail.affected_count} 条，成功 {detail.success_count}，失败 {detail.failure_count}
