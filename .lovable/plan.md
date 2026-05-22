@@ -1,45 +1,41 @@
-## 问题
-
-1. 系统从未导入身份证号（`profiles.id_card` 在导入流程中根本不写入），但 `reset-password` / `bulk-reset-password` 边缘函数却用 `id_card` 后 6 位生成默认密码，结果几乎都是 `000000` 兜底。
-2. 教师端/管理端在重置密码弹窗一律显示「学号 + 身份证后 6 位」，对教师账号也不应称"学号"。
-
 ## 目标
 
-默认密码统一为：**学号(学生) / 工号(教师·管理员) + 手机号后 6 位**；手机号缺失或不足 6 位时补 `0`。所有相关 UI 文案随角色显示「学号」或「工号」、且把「身份证后 6 位」改为「手机号后 6 位」。
+把审计日志（`/admin/audit-logs`）列表和详情弹窗里的"操作者"列，从当前显示的账号邮箱前缀，改为更可读的"角色 + 姓名"格式。
 
-## 改动范围
+## 显示规则
 
-### 1. 边缘函数（核心逻辑）
-- `supabase/functions/reset-password/index.ts`
-  - 查询 `profiles` 改为 `select("full_name, student_no, phone, email")`
-  - 生成密码：`tail = phone 末 6 位（不足补 0）`
-  - 顶部注释同步更新
-- `supabase/functions/bulk-reset-password/index.ts`
-  - `defaultPassword(studentNo, phone, email)`：用 `phone` 替换 `id_card`
-  - 查询字段、调用点同步更新
-  - 顶部注释同步更新
+根据操作者在 `user_roles` 中的最高角色决定文案（优先级：super_admin > admin > teacher > student）：
 
-### 2. 前端文案（按角色自适应）
-- `src/pages/admin/UsersManage.tsx`（管理员管理学生 / 教师 / 管理员）
-  - 单条重置确认弹窗描述：根据 `role`（`student` 用「学号」、其余用「工号」）+ 统一「手机号后 6 位」
-- `src/components/BulkUserDialog.tsx`（批量重置）
-  - 顶部说明 & 底部确认按钮描述：同样按 `role` 切换「学号/工号」，并改成「手机号后 6 位」
-- `src/pages/teacher/Students.tsx`（教师重置学生）
-  - 弹窗保持「学号」，但「身份证后 6 位」改为「手机号后 6 位」
+- **超级管理员**：`超级管理员 {full_name}`（若无姓名则回退为账号前缀）
+- **学院管理员（admin）**：`{学院 short_name 或 name}管理员 {full_name}`，例如 `经济学院管理员 刘明辉`
+- **教师**：`教师 {full_name}`，例如 `教师 刘明辉`
+- **学生**：`学生 {full_name}`（一般不会出现在审计日志，但保留兜底）
+- **查不到角色/姓名**：回退到原来的 `actor_email` 前缀，再不行显示 `—`
 
-### 3. 不改动
-- 数据库结构、`profiles.id_card` 字段保留（学生档案展示仍需要）。
-- 学生端 `MyProfile` 中身份证只读展示保持不变。
-- 证书 / AI 评估中身份证的用途与默认密码无关，不动。
+姓名解析复用 `src/lib/displayName.ts` 中的 `resolveDisplayName`，保持与工作台问候语一致。
 
-## 边界与一致性
+## 实现范围（仅前端，单文件）
 
-- `phone` 字段在导入模板中已存在（`import-users` 已写入）；对历史无 `phone` 的账号，密码尾巴回退为 `000000`，与现状一致，不破坏旧账号可用性。
-- 密码总长仍走 `< 8 则补 0 到 8 位` 的兜底，避免 Supabase Auth 6 位以下报错。
-- 审计日志 `action: reset_password / bulk_reset_password` 字段不变。
+只改 `src/pages/admin/AuditLogs.tsx`：
 
-## 验收
+1. 在 `load()` 里拉到 logs 之后，收集所有 `actor_id`（去重，排除 null）。
+2. 并行批量查询：
+   - `profiles`：`select user_id, full_name` where `user_id in (...)`
+   - `user_roles`：`select user_id, role, college_id` where `user_id in (...)`
+   - 根据 user_roles 收集到的 `college_id`，再查 `colleges`：`select id, name, short_name`
+3. 构建一个 `actorMap: Record<user_id, { label: string }>`，按上面的优先级规则拼接文案。
+4. 把状态 `setActors(actorMap)` 存到组件 state。
+5. 渲染处：
+   - 表格列 `操作者` 单元格：`actors[l.actor_id]?.label ?? (l.actor_email?.split("@")[0] ?? "—")`
+   - 详情弹窗中"操作者："那一行同样替换。
+6. 筛选框（按账号关键字搜索）保持不变 —— 仍按 `actor_email` 模糊匹配，避免破坏现有筛选体验（如需也支持按姓名搜索，可后续单独提）。
 
-- 在 `/admin/users/teachers` 点单个教师"重置密码"：弹窗文案显示「工号 + 手机号后 6 位」，提交后返回密码 = 工号 + 该教师手机号末 6 位。
-- 在 `/admin/users/students` 单条/批量重置：显示「学号 + 手机号后 6 位」。
-- 教师端 `/teacher/students` 重置学生密码：显示「学号 + 手机号后 6 位」，结果一致。
+## 不改动的部分
+
+- 数据库结构、RLS、edge function（`audit-log` 写入逻辑）均不变 —— 仍然只记录 `actor_id` + `actor_email`，姓名/角色在前端查询时拼接，保证历史日志也能正确显示。
+- 其他页面不受影响。
+
+## 风险/注意
+
+- 一次性可能有较多 `actor_id`，但审计日志页本身是分页/筛选后的数据，且 `.in()` 查询单次足够；若用户量极大可后续加缓存。
+- 用户角色可能变动，这里展示的是"当前角色"而非"操作发生时的角色"——符合大多数审计 UI 的常规做法；如需"历史角色快照"才需要改 edge function 落库，本次不做。
