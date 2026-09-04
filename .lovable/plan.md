@@ -1,231 +1,58 @@
-# 后端数据库更新方案
+# 流程回归：从「系统算学分」改为「系统只验真伪」
 
-## 背景
+按新流程，学生自己按学校标准模板填项目、自己核算学分；系统的唯一职责是判断**填报内容是否与佐证材料相符、人是不是本人、材料有没有造假（P图/AI生成）**。下面是按"改动最小、不动整体架构"为原则的增删改清单。
 
-服务器版本停留在 2026-05-20 20:31（CST，对应 12:31 UTC）之前。检查 `supabase/migrations/` 后确认，此时间点之后仅有两个迁移文件：
+## 一、要删 / 降级的（当前臃肿之处）
 
-1. `20260520124836_*.sql`（12:48 UTC ≈ 20:48 CST）—— 规则库/案例库/关键词三表的"总库 + 学院分库"分级改造（加 `college_id`、模板克隆函数、新建学院触发器、唯一索引、RLS 重写）
-2. `20260520125152_*.sql`（12:51 UTC ≈ 20:51 CST）—— 收紧读策略：非超管只能看到自己学院数据，不再能看到 NULL 模板池
+1. **学生端的关键词四维选择器**（项目/成果/级别/身份 从案例库检索拼装）
+   - 现状：`Apply.tsx` 把 `cases` 表当成学生的选项来源，学生要先"搜案例、点关键词"，再写说明、再传图。步骤多且和学校表格对不上。
+   - 改为：直接按学校《申请表》的字段填报，取消关键词搜索、最近搜索、相似案例推荐、模板文案区块。
+2. **AI 建议学分 / 自动定学分**
+   - 不再输出 `ai_suggested_credit`，不再按规则库匹配学分。学分以学生自填为准，教师复核时可改。
+   - 字段保留在库里（历史数据不丢），前端与 AI 提示词里不再使用。
+3. **规则库 / 案例库 / 关键词库不再出现在学生端**
+   - 三个库全部保留（表结构、分学院隔离、管理页都不动），但降级为**后台参照资料**：只给教师复核界面和 AI 判定当参考，学生端不再读取。
+   - 关键词库入口从学生流程移除；管理端保留（教师沉淀用）。
+4. **关键词指纹去重**（`keywords_fingerprint`）
+   - 学生不再选关键词，该去重失效。改为按「成果名称 + 认定项目」去重，图片仍用 `file_hash` 去重。
 
-5月21–22日仅有前端改动（审计日志显示、关键词状态横排、AppLayout 等），无新增数据库迁移。
+## 二、要改的
 
-## 操作步骤
+1. **学生提交表单**（`src/pages/student/Apply.tsx`）重构为学校表格结构，一次一条：
+   - 认定大类（教学科研 / 创新创业 / 学科竞赛 / 职业技能）— 下拉
+   - 认定项目（如"发表论文""大学生创新创业训练计划""国家级B类""英语四六级"）— 按大类联动下拉
+   - 认定成果名称 — 文本
+   - 认定级别 — 文本（学科竞赛类可从竞赛目录选）
+   - 本人排名 — 下拉（第一作者/其他作者/团队负责人/第N参与人/独立…）
+   - 自报学分 — 数字，学生自填
+   - 佐证材料 — 图片/PDF，必传
+   - 步骤条从 4 步缩为 2 步：**填写条目 → 上传佐证并提交**
+2. **AI 核验提示词**（`supabase/functions/evaluate-application/index.ts`）精简为三件事：
+   - 相符性：材料上的项目名称/级别/奖项/排名是否与学生填报一致
+   - 身份一致：材料上的姓名/学号是否与账号档案一致（防用他人证书）
+   - 真实性：PS/拼接/篡改痕迹
+   - 结论只输出 通过 / 驳回 / 需人工复核，**不再给学分**
+   - 案例库检索仍保留，但只作为"这类材料长什么样"的参考，不参与学分
+3. **AIGC 鉴别**（阿里云）保持现状不动，仍是造假检测的一环。
+4. **教师复核页**：核验结论区去掉"建议学分"，改为并排显示「学生自报学分 / 教师认定学分（可改）」。
+5. **审核记录、证书、统计**：`final_credit` 默认写入学生自报值，其余逻辑不变。
 
-打开你自托管 Supabase 的 SQL Editor → New Query → 粘贴下方完整 SQL → Run。脚本全部使用 `IF EXISTS / IF NOT EXISTS / OR REPLACE`，可重复执行，幂等安全。
+## 三、要加的
 
-```sql
--- =====================================================================
--- 1) 规则/案例/关键词 增加 college_id（NULL = 总库模板）
--- =====================================================================
-ALTER TABLE public.rules    ADD COLUMN IF NOT EXISTS college_id uuid REFERENCES public.colleges(id) ON DELETE CASCADE;
-ALTER TABLE public.cases    ADD COLUMN IF NOT EXISTS college_id uuid REFERENCES public.colleges(id) ON DELETE CASCADE;
-ALTER TABLE public.keywords ADD COLUMN IF NOT EXISTS college_id uuid REFERENCES public.colleges(id) ON DELETE CASCADE;
+1. **数据库新增字段**（一条迁移，只加列不改结构）：`item_category`、`item_project`、`achievement_name`、`level_name`、`self_rank`、`claimed_credit`。旧数据不受影响。
+2. **认定项目字典**：把《认定办法》里的四大类认定项目做成前端常量（不建表，避免加复杂度）；学科竞赛级别沿用《2024年度学科竞赛目录》，作为级别下拉的候选。
+3. **两张 Excel 导出**：
+   - 学生端：按《学生用申请表》格式导出本人本次窗口所有条目
+   - 学院端：按《学院用统计表》格式导出本院学生的总学分与等级
+4. **提交前自检提示**：填报后、提交前展示一条摘要（"你填的是：省级二等奖 / 第一作者 / 3 学分"），提醒学生佐证需与之一致，弄虚作假将按校规处理。
 
-CREATE INDEX IF NOT EXISTS idx_rules_college    ON public.rules(college_id);
-CREATE INDEX IF NOT EXISTS idx_cases_college    ON public.cases(college_id);
-CREATE INDEX IF NOT EXISTS idx_keywords_college ON public.keywords(college_id);
+## 四、不动的部分
 
--- =====================================================================
--- 2) 模板克隆函数：把 college_id IS NULL 的总库克隆到指定学院
--- =====================================================================
-CREATE OR REPLACE FUNCTION public.clone_template_to_college(_college uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_exists boolean;
-BEGIN
-  IF _college IS NULL THEN RETURN; END IF;
+登录与角色体系、学院隔离、提交窗口、审计日志、证书编号与验真、AIGC 队列、AI 模型配置、导入用户、看板统计——全部保持原样。
 
-  SELECT EXISTS(SELECT 1 FROM public.rules    WHERE college_id = _college)
-      OR EXISTS(SELECT 1 FROM public.cases    WHERE college_id = _college)
-      OR EXISTS(SELECT 1 FROM public.keywords WHERE college_id = _college)
-  INTO v_exists;
-  IF v_exists THEN RETURN; END IF;
+## 技术说明
 
-  CREATE TEMP TABLE IF NOT EXISTS _rule_map(old_id uuid, new_id uuid) ON COMMIT DROP;
-  TRUNCATE _rule_map;
-
-  WITH ins AS (
-    INSERT INTO public.rules(
-      college_id, name, category, identity, level, achievement, project,
-      description, credit, keywords, active, created_by
-    )
-    SELECT _college, name, category, identity, level, achievement, project,
-           description, credit, keywords, active, created_by
-    FROM public.rules
-    WHERE college_id IS NULL
-    RETURNING id, name, coalesce(category,'') AS c, coalesce(identity,'') AS i,
-              coalesce(level,'') AS l, coalesce(achievement,'') AS a, coalesce(project,'') AS p, credit
-  ),
-  src AS (
-    SELECT id AS old_id, name, coalesce(category,'') AS c, coalesce(identity,'') AS i,
-           coalesce(level,'') AS l, coalesce(achievement,'') AS a, coalesce(project,'') AS p, credit,
-           row_number() OVER (PARTITION BY name, coalesce(category,''), coalesce(identity,''),
-                              coalesce(level,''), coalesce(achievement,''), coalesce(project,''), credit
-                              ORDER BY id) AS rn
-    FROM public.rules WHERE college_id IS NULL
-  ),
-  dst AS (
-    SELECT id AS new_id, name, c, i, l, a, p, credit,
-           row_number() OVER (PARTITION BY name, c, i, l, a, p, credit ORDER BY id) AS rn
-    FROM ins
-  )
-  INSERT INTO _rule_map(old_id, new_id)
-  SELECT s.old_id, d.new_id
-  FROM src s JOIN dst d
-    ON s.name=d.name AND s.c=d.c AND s.i=d.i AND s.l=d.l AND s.a=d.a AND s.p=d.p AND s.credit=d.credit AND s.rn=d.rn;
-
-  INSERT INTO public.cases(college_id, title, summary, rule_id, awarded_credit, notes, created_by)
-  SELECT _college, c.title, c.summary, m.new_id, c.awarded_credit, c.notes, c.created_by
-  FROM public.cases c
-  LEFT JOIN _rule_map m ON m.old_id = c.rule_id
-  WHERE c.college_id IS NULL;
-
-  INSERT INTO public.keywords(college_id, keyword, category, source, usage_count, active, created_by)
-  SELECT _college, keyword, category, source, usage_count, active, created_by
-  FROM public.keywords
-  WHERE college_id IS NULL
-  ON CONFLICT DO NOTHING;
-END $$;
-
--- =====================================================================
--- 3) keywords 唯一约束改为「按学院」分区
--- =====================================================================
-DO $$ DECLARE r record; BEGIN
-  FOR r IN
-    SELECT conname FROM pg_constraint
-    WHERE conrelid='public.keywords'::regclass AND contype='u'
-  LOOP EXECUTE format('ALTER TABLE public.keywords DROP CONSTRAINT %I', r.conname); END LOOP;
-END $$;
-DROP INDEX IF EXISTS public.keywords_keyword_key;
-DROP INDEX IF EXISTS public.keywords_keyword_unique;
-
-CREATE UNIQUE INDEX IF NOT EXISTS keywords_college_keyword_uniq
-  ON public.keywords(college_id, keyword) WHERE college_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS keywords_template_keyword_uniq
-  ON public.keywords(keyword) WHERE college_id IS NULL;
-
--- =====================================================================
--- 4) keywords 归一化合并触发函数：按学院作用域
--- =====================================================================
-CREATE OR REPLACE FUNCTION public.keywords_normalize_and_merge()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = public
-AS $$
-DECLARE
-  v_existing_id uuid;
-  v_new_kw text;
-BEGIN
-  v_new_kw := public.normalize_keyword(NEW.keyword);
-  IF v_new_kw IS NULL THEN RETURN NULL; END IF;
-  NEW.keyword := v_new_kw;
-
-  SELECT id INTO v_existing_id
-  FROM public.keywords
-  WHERE keyword = v_new_kw
-    AND college_id IS NOT DISTINCT FROM NEW.college_id
-    AND (TG_OP = 'INSERT' OR id <> NEW.id)
-  LIMIT 1;
-
-  IF v_existing_id IS NOT NULL THEN
-    UPDATE public.keywords
-      SET usage_count = usage_count + COALESCE(NEW.usage_count,0),
-          active = active OR COALESCE(NEW.active,true),
-          updated_at = now()
-    WHERE id = v_existing_id;
-    IF TG_OP = 'UPDATE' THEN DELETE FROM public.keywords WHERE id = NEW.id; END IF;
-    RETURN NULL;
-  END IF;
-  RETURN NEW;
-END $$;
-
--- =====================================================================
--- 5) 回填：把总库克隆到所有现有学院
--- =====================================================================
-DO $$
-DECLARE r record;
-BEGIN
-  FOR r IN SELECT id FROM public.colleges LOOP
-    PERFORM public.clone_template_to_college(r.id);
-  END LOOP;
-END $$;
-
--- =====================================================================
--- 6) 新建学院自动克隆触发器
--- =====================================================================
-CREATE OR REPLACE FUNCTION public.colleges_seed_libraries()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  PERFORM public.clone_template_to_college(NEW.id);
-  RETURN NEW;
-END $$;
-
-DROP TRIGGER IF EXISTS trg_colleges_seed_libraries ON public.colleges;
-CREATE TRIGGER trg_colleges_seed_libraries
-AFTER INSERT ON public.colleges
-FOR EACH ROW EXECUTE FUNCTION public.colleges_seed_libraries();
-
--- =====================================================================
--- 7) RLS 重写：读 = 本学院（或超管）；写 = 本学院 admin 或超管
---    （已合并第二次迁移的"非超管不可见 NULL 模板"收紧策略）
--- =====================================================================
-DROP POLICY IF EXISTS "rules read all authenticated"     ON public.rules;
-DROP POLICY IF EXISTS "rules admin manage"               ON public.rules;
-DROP POLICY IF EXISTS "rules read scoped"                ON public.rules;
-DROP POLICY IF EXISTS "rules super_admin manage"         ON public.rules;
-DROP POLICY IF EXISTS "rules admin manage own college"   ON public.rules;
-
-DROP POLICY IF EXISTS "cases read all authenticated"     ON public.cases;
-DROP POLICY IF EXISTS "cases admin manage"               ON public.cases;
-DROP POLICY IF EXISTS "cases read scoped"                ON public.cases;
-DROP POLICY IF EXISTS "cases super_admin manage"         ON public.cases;
-DROP POLICY IF EXISTS "cases admin manage own college"   ON public.cases;
-
-DROP POLICY IF EXISTS "keywords read all authenticated"  ON public.keywords;
-DROP POLICY IF EXISTS "keywords admin manage"            ON public.keywords;
-DROP POLICY IF EXISTS "keywords read scoped"             ON public.keywords;
-DROP POLICY IF EXISTS "keywords super_admin manage"      ON public.keywords;
-DROP POLICY IF EXISTS "keywords admin manage own college" ON public.keywords;
-
-CREATE POLICY "rules read scoped" ON public.rules FOR SELECT TO authenticated
-USING (is_super_admin(auth.uid()) OR college_id = current_user_college_id());
-CREATE POLICY "rules super_admin manage" ON public.rules FOR ALL TO authenticated
-USING (is_super_admin(auth.uid())) WITH CHECK (is_super_admin(auth.uid()));
-CREATE POLICY "rules admin manage own college" ON public.rules FOR ALL TO authenticated
-USING (has_role(auth.uid(),'admin'::app_role) AND college_id = current_user_college_id())
-WITH CHECK (has_role(auth.uid(),'admin'::app_role) AND college_id = current_user_college_id());
-
-CREATE POLICY "cases read scoped" ON public.cases FOR SELECT TO authenticated
-USING (is_super_admin(auth.uid()) OR college_id = current_user_college_id());
-CREATE POLICY "cases super_admin manage" ON public.cases FOR ALL TO authenticated
-USING (is_super_admin(auth.uid())) WITH CHECK (is_super_admin(auth.uid()));
-CREATE POLICY "cases admin manage own college" ON public.cases FOR ALL TO authenticated
-USING (has_role(auth.uid(),'admin'::app_role) AND college_id = current_user_college_id())
-WITH CHECK (has_role(auth.uid(),'admin'::app_role) AND college_id = current_user_college_id());
-
-CREATE POLICY "keywords read scoped" ON public.keywords FOR SELECT TO authenticated
-USING (is_super_admin(auth.uid()) OR college_id = current_user_college_id());
-CREATE POLICY "keywords super_admin manage" ON public.keywords FOR ALL TO authenticated
-USING (is_super_admin(auth.uid())) WITH CHECK (is_super_admin(auth.uid()));
-CREATE POLICY "keywords admin manage own college" ON public.keywords FOR ALL TO authenticated
-USING (has_role(auth.uid(),'admin'::app_role) AND college_id = current_user_college_id())
-WITH CHECK (has_role(auth.uid(),'admin'::app_role) AND college_id = current_user_college_id());
-```
-
-## 前端
-
-前端无需我做改动 —— 你按计划在新 GitHub 仓库 `npm run build` 出 `dist/` 后上传到自托管服务器即可。前端会读取 `.env`（`VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` / `VITE_SUPABASE_PROJECT_ID`），确保打包前 `.env` 指向的是你自托管 Supabase 实例。
-
-## 注意事项
-
-- 执行前建议先在 Supabase Dashboard 备份 `rules / cases / keywords` 三张表（导出 CSV 或 `pg_dump`）。
-- 脚本第 5 步会为现有每个学院克隆一份模板数据；若某学院已有数据，会自动跳过，不会重复写入。
-- Edge Functions（`audit-log` 等）会随项目自动部署，无需手工操作；若你的自托管也跑 Edge Functions，则需要将 `supabase/functions/` 目录一并部署。
+- 一条 Supabase 迁移：`ALTER TABLE public.applications ADD COLUMN ...`（全部可空，带默认值），无需改 RLS 与 GRANT。
+- 前端改动集中在 `src/pages/student/Apply.tsx`（重写表单部分）、`src/pages/ApplicationDetail.tsx` 与 `src/pages/Reviews.tsx`（展示新字段、学分双列）、新增 `src/lib/creditCatalog.ts`（认定项目字典）与 `src/lib/exportForms.ts`（两张表导出）。
+- 边缘函数只改 `evaluate-application` 的提示词与写回字段；`process-eval-queue`、`aigc-detect` 等不动。
+- `cases` / `rules` / `keywords` 表与管理页零改动，只是学生端不再读取。
